@@ -3,9 +3,10 @@
 //! O mesmo resultado serve para os dois modos do `mdv`: a TUI desenha as linhas
 //! direto no `ratatui` e o modo `--plain` converte para ANSI e imprime.
 
+use std::borrow::Cow;
 use std::sync::OnceLock;
 
-use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, CodeBlockKind, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use syntect::easy::HighlightLines;
@@ -25,6 +26,8 @@ const INLINE_CODE_BG: Color = Color::Rgb(47, 52, 60);
 const CODE_BG: Color = Color::Rgb(40, 44, 52);
 const QUOTE: Color = Color::Rgb(139, 148, 158);
 const BULLET: Color = Color::Rgb(126, 231, 135);
+
+const REPLACEMENT: char = '\u{FFFD}';
 
 type Piece = (String, Style);
 
@@ -53,13 +56,57 @@ pub fn render(md: &str, width: usize) -> Rendered {
         table: None,
     };
     for ev in Parser::new_ext(md, opts) {
-        r.handle(ev);
+        r.handle(sanitize_event(ev));
     }
     r.flush_inline();
     while r.lines.last().is_some_and(is_blank) {
         r.lines.pop();
     }
     Rendered { lines: r.lines, headings: r.headings }
+}
+
+/// Ponto único de entrada do texto do documento: troca caracteres de controle
+/// (ESC, BEL, C1, `\r` solto...) por U+FFFD, para que nada do Markdown vire
+/// comando de terminal. Preserva `\n` e `\t`; `\r\n` vira `\n`.
+fn sanitize(s: &str) -> Cow<'_, str> {
+    let is_unsafe = |c: char| c.is_control() && c != '\n' && c != '\t';
+    if !s.contains(is_unsafe) {
+        return Cow::Borrowed(s);
+    }
+    let unified = s.replace("\r\n", "\n");
+    Cow::Owned(
+        unified
+            .chars()
+            .map(|c| if is_unsafe(c) { REPLACEMENT } else { c })
+            .collect(),
+    )
+}
+
+fn sanitize_cow(s: CowStr<'_>) -> CowStr<'_> {
+    match sanitize(&s) {
+        Cow::Borrowed(_) => s,
+        Cow::Owned(clean) => CowStr::from(clean),
+    }
+}
+
+/// Sanitiza todo texto vindo do documento que chega a `Renderer::handle`.
+fn sanitize_event(ev: Event<'_>) -> Event<'_> {
+    match ev {
+        Event::Text(t) => Event::Text(sanitize_cow(t)),
+        Event::Code(t) => Event::Code(sanitize_cow(t)),
+        Event::Html(t) => Event::Html(sanitize_cow(t)),
+        Event::InlineHtml(t) => Event::InlineHtml(sanitize_cow(t)),
+        Event::Start(Tag::Link { link_type, dest_url, title, id }) => Event::Start(Tag::Link {
+            link_type,
+            dest_url: sanitize_cow(dest_url),
+            title,
+            id,
+        }),
+        Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(lang))) => {
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(sanitize_cow(lang))))
+        }
+        other => other,
+    }
 }
 
 /// Converte linhas estilizadas em texto com escapes ANSI (ou texto puro se `color` for falso).
@@ -781,4 +828,88 @@ fn wrap(toks: &[Piece], avail: usize) -> Vec<Vec<Span<'static>>> {
     }
     trim_trailing(&mut lines, &mut cur, &mut trailing);
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ESC: char = '\x1b';
+
+    /// Remove somente sequências SGR bem formadas (`ESC [ dígitos;… m`), as que o `to_ansi` gera.
+    fn strip_sgr(s: &str) -> String {
+        let mut out = String::new();
+        let mut rest = s;
+        while let Some(pos) = rest.find(ESC) {
+            out.push_str(&rest[..pos]);
+            let after = &rest[pos + 1..];
+            let sgr_len = after
+                .strip_prefix('[')
+                .and_then(|p| p.find(|c: char| !(c.is_ascii_digit() || c == ';')).map(|n| (p, n)))
+                .filter(|(p, n)| p[*n..].starts_with('m'))
+                .map(|(_, n)| n + 2);
+            match sgr_len {
+                Some(n) => rest = &after[n..],
+                None => {
+                    out.push(ESC);
+                    rest = after;
+                }
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+
+    fn plain_output(md: &str) -> String {
+        to_ansi(&render(md, 80).lines, true)
+    }
+
+    fn assert_no_control_chars(md: &str) {
+        let visible = strip_sgr(&plain_output(md));
+        let bad: Vec<char> = visible.chars().filter(|c| c.is_control() && *c != '\n').collect();
+        assert!(bad.is_empty(), "caracteres de controle na saída: {bad:?}");
+    }
+
+    #[test]
+    fn sanitiza_escape_em_titulo() {
+        assert_no_control_chars("# ti\x1b]0;pwn\x07tulo\n");
+    }
+
+    #[test]
+    fn sanitiza_escape_em_texto_e_codigo_inline() {
+        assert_no_control_chars("texto \x1b[2J e `code \x1b]52;c;AAAA\x07`\n");
+    }
+
+    #[test]
+    fn sanitiza_escape_em_url_de_link() {
+        assert_no_control_chars("[x](http://a/\x1b]0;pwn\x07b)\n");
+    }
+
+    #[test]
+    fn sanitiza_escape_em_bloco_de_codigo_e_linguagem() {
+        assert_no_control_chars("```rs\x1b[2J\nlet a = \"\x1b[2J\";\n```\n");
+        assert_no_control_chars("    indentado \x1b[31m\n");
+    }
+
+    #[test]
+    fn sanitiza_escape_em_html() {
+        assert_no_control_chars("<div>\x1b[2J</div>\n\ntexto <b\x1b[2J>x</b>\n");
+    }
+
+    #[test]
+    fn sanitiza_escape_vindo_de_entidade() {
+        assert_no_control_chars("a &#27;[2J b &#x9b;31m\n");
+    }
+
+    #[test]
+    fn sanitiza_controles_c1_e_retorno_de_carro_solto() {
+        assert_no_control_chars("a\u{9b}31m b\rc\n");
+    }
+
+    #[test]
+    fn preserva_texto_comum_e_tabulacao_em_codigo() {
+        let out = strip_sgr(&plain_output("```\n\tx\r\ny\n```\n"));
+        assert!(out.contains("    x"), "tab deveria virar espaços: {out:?}");
+        assert!(out.contains('y'));
+    }
 }
