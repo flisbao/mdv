@@ -611,26 +611,14 @@ impl Renderer {
         if ncols == 0 {
             return;
         }
-        let mut widths = vec![1usize; ncols];
+        let mut natural = vec![1usize; ncols];
         for row in &t.rows {
             for (i, cell) in row.iter().enumerate() {
                 let w: usize = cell.iter().map(|(s, _)| s.width()).sum();
-                widths[i] = widths[i].max(w);
+                natural[i] = natural[i].max(w);
             }
         }
-        let mut total: usize = widths.iter().sum::<usize>() + 3 * ncols + 1;
-        while total > avail {
-            let (idx, &mx) = widths
-                .iter()
-                .enumerate()
-                .max_by_key(|(_, w)| **w)
-                .expect("ncols > 0");
-            if mx <= 3 {
-                break;
-            }
-            widths[idx] -= 1;
-            total -= 1;
-        }
+        let widths = compute_column_widths(&natural, avail);
 
         let dim = Style::default().fg(DIM);
         let border = |l: &str, m: &str, r: &str| -> Line<'static> {
@@ -671,6 +659,48 @@ impl Renderer {
         out.push(border("└", "┴", "┘"));
         self.lines.extend(out);
     }
+}
+
+/// Largura de borda e preenchimento por coluna (`│ ` + ` `) mais a borda final.
+const CELL_OVERHEAD: usize = 3;
+const MIN_COL_WIDTH: usize = 3;
+
+/// Reduz as colunas mais largas até a tabela caber em `avail`, sem passar de
+/// `MIN_COL_WIDTH` por coluna. Equivale a tirar 1 coluna da mais larga por vez
+/// (empates saem da última), mas em O(n log largura) em vez de O(n * largura).
+fn compute_column_widths(natural: &[usize], avail: usize) -> Vec<usize> {
+    let budget = avail.saturating_sub(CELL_OVERHEAD * natural.len() + 1);
+    if natural.iter().sum::<usize>() <= budget {
+        return natural.to_vec();
+    }
+    let capped_sum = |cap: usize| -> usize { natural.iter().map(|&w| w.min(cap)).sum() };
+    let widest = natural.iter().copied().max().unwrap_or(0);
+    let cap = largest_cap_within(MIN_COL_WIDTH, widest, budget, capped_sum);
+    let mut leftover = budget.saturating_sub(capped_sum(cap));
+    natural
+        .iter()
+        .map(|&w| {
+            if w > cap && leftover > 0 {
+                leftover -= 1;
+                cap + 1
+            } else {
+                w.min(cap)
+            }
+        })
+        .collect()
+}
+
+/// Maior teto em `lo..=hi` cuja soma ainda cabe no orçamento (`lo` se nenhum couber).
+fn largest_cap_within(mut lo: usize, mut hi: usize, budget: usize, sum: impl Fn(usize) -> usize) -> usize {
+    while lo < hi {
+        let mid = lo + (hi - lo).div_ceil(2);
+        if sum(mid) <= budget {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    lo
 }
 
 fn clean_code(s: &str) -> String {
@@ -925,6 +955,67 @@ mod tests {
     fn largura_minima_e_respeitada_em_render() {
         let out = render("---\n", 0);
         assert_eq!(out.lines[0].width(), MIN_WIDTH);
+    }
+
+    /// Algoritmo original (uma unidade por iteração), usado como referência.
+    fn reference_widths(natural: &[usize], avail: usize) -> Vec<usize> {
+        let mut widths = natural.to_vec();
+        let n = widths.len();
+        let mut total: usize = widths.iter().sum::<usize>() + 3 * n + 1;
+        while total > avail {
+            let (idx, &mx) = widths.iter().enumerate().max_by_key(|(_, w)| **w).unwrap();
+            if mx <= 3 {
+                break;
+            }
+            widths[idx] -= 1;
+            total -= 1;
+        }
+        widths
+    }
+
+    #[test]
+    fn larguras_de_coluna_iguais_ao_algoritmo_de_referencia() {
+        let mut seed = 12345u64;
+        let mut next = |m: u64| {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((seed >> 33) % m) as usize
+        };
+        for _ in 0..2000 {
+            let ncols = 1 + next(8);
+            let natural: Vec<usize> = (0..ncols).map(|_| 1 + next(40)).collect();
+            let avail = next(120);
+            assert_eq!(
+                compute_column_widths(&natural, avail),
+                reference_widths(&natural, avail),
+                "natural={natural:?} avail={avail}"
+            );
+        }
+    }
+
+    #[test]
+    fn larguras_de_coluna_nao_dependem_do_tamanho_da_celula() {
+        let mut natural = vec![5usize; 3000];
+        natural[1500] = 3_000_000;
+        let started = std::time::Instant::now();
+        let widths = compute_column_widths(&natural, 100);
+        assert!(started.elapsed() < std::time::Duration::from_millis(200));
+        assert_eq!(widths.len(), 3000);
+        assert!(widths.iter().all(|&w| w >= 3));
+    }
+
+    #[test]
+    fn tabela_larga_renderiza_em_tempo_limitado() {
+        let ncols = 3000;
+        let header = format!("|{}\n", " h |".repeat(ncols));
+        let sep = format!("|{}\n", "---|".repeat(ncols));
+        let mut cells = vec!["c".to_string(); ncols];
+        cells[ncols / 2] = "x".repeat(3_000_000);
+        let row = format!("| {} |\n", cells.join(" | "));
+        let md = format!("{header}{sep}{row}");
+        let started = std::time::Instant::now();
+        let out = render(&md, 80);
+        assert!(!out.lines.is_empty());
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
     }
 
     #[test]
