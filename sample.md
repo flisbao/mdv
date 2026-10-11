@@ -1,0 +1,44 @@
+# Meu Projeto
+
+Um app em **Rust** que mostra *Markdown* direto no `terminal`, com ~~bugs~~ cores e um [link de exemplo](https://www.rust-lang.org).
+
+## Instalação
+
+- Rust 1.75+
+- [x] `cargo install --path .`
+- [ ] Configurar tema
+  - item aninhado
+  - outro item aninhado
+
+1. Primeiro passo
+2. Segundo passo com um texto bem comprido para forçar a quebra de linha dentro do item da lista numerada
+3. Terceiro passo
+
+> Uma citação em bloco, que também pode quebrar linha quando o texto fica longo o bastante para passar da largura.
+>
+> Segundo parágrafo da citação.
+
+### Exemplo de código
+
+```rust
+fn main() {
+    let nome = "mundo";
+    println!("Olá, {nome}!");
+}
+```
+
+```bash
+cargo run -- README.md
+```
+
+### Dependências
+
+| Crate          | Papel              | Versão |
+|:---------------|:------------------:|-------:|
+| pulldown-cmark | parser de Markdown |   0.13 |
+| ratatui        | interface (TUI)    |   0.29 |
+| syntect        | cores no código    |      5 |
+
+---
+
+Acentuação, emojis e CJK também funcionam: ação, coração, 日本語.
