@@ -288,8 +288,12 @@ impl App {
     }
 
     fn scroll_by(&mut self, d: isize) {
-        let max = self.max_scroll() as isize;
-        self.scroll = (self.scroll as isize + d).clamp(0, max) as usize;
+        let target = if d.is_negative() {
+            self.scroll.saturating_sub(d.unsigned_abs())
+        } else {
+            self.scroll.saturating_add(d.unsigned_abs())
+        };
+        self.scroll = target.min(self.max_scroll());
     }
 
     fn scroll_to(&mut self, n: usize) {
@@ -380,8 +384,8 @@ impl App {
             return false;
         }
 
-        let page = self.view_h.saturating_sub(1).max(1) as isize;
-        let half = (self.view_h / 2).max(1) as isize;
+        let page = isize::try_from(self.view_h.saturating_sub(1).max(1)).unwrap_or(isize::MAX);
+        let half = isize::try_from((self.view_h / 2).max(1)).unwrap_or(isize::MAX);
         match k.code {
             KeyCode::Char('q') => return true,
             KeyCode::Esc => {
@@ -443,9 +447,9 @@ impl App {
 
         let pad = (content.width as usize).saturating_sub(w) / 2;
         let inner = Rect {
-            x: content.x + pad as u16,
+            x: content.x.saturating_add(u16::try_from(pad).unwrap_or(u16::MAX)),
             y: content.y,
-            width: (w as u16).min(content.width),
+            width: u16::try_from(w).unwrap_or(u16::MAX).min(content.width),
             height: content.height,
         };
         let end = (self.scroll + self.view_h).min(self.rendered.lines.len());

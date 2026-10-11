@@ -202,8 +202,11 @@ fn hl() -> &'static (SyntaxSet, Theme) {
     static HL: OnceLock<(SyntaxSet, Theme)> = OnceLock::new();
     HL.get_or_init(|| {
         let ss = SyntaxSet::load_defaults_newlines();
-        let ts = ThemeSet::load_defaults();
-        let theme = ts.themes["base16-ocean.dark"].clone();
+        let mut ts = ThemeSet::load_defaults();
+        let theme = ts
+            .themes
+            .remove("base16-ocean.dark")
+            .expect("tema embutido `base16-ocean.dark` ausente no syntect");
         (ss, theme)
     })
 }
@@ -346,7 +349,7 @@ impl Renderer {
                 if let Some(l) = self.lists.last_mut() {
                     let marker = match l.ordered {
                         Some(n) => {
-                            l.ordered = Some(n + 1);
+                            l.ordered = Some(n.saturating_add(1));
                             format!("{n}. ")
                         }
                         None => {
