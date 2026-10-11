@@ -248,8 +248,8 @@ impl Renderer {
             Event::Rule => {
                 self.flush_inline();
                 self.push_blank();
-                let rule = "─".repeat(self.width);
-                self.lines.push(Line::from(Span::styled(rule, Style::default().fg(DIM))));
+                let rule = "─".repeat(self.content_width());
+                self.push_prefixed(vec![vec![Span::styled(rule, Style::default().fg(DIM))]]);
                 self.push_blank();
             }
             Event::TaskListMarker(done) => {
@@ -261,10 +261,15 @@ impl Renderer {
             }
             Event::Html(h) => {
                 self.flush_inline();
+                let dim = Style::default().fg(DIM);
+                let avail = self.content_width();
+                let mut bodies: Vec<Vec<Span<'static>>> = Vec::new();
                 for l in h.lines() {
-                    self.lines
-                        .push(Line::from(Span::styled(l.to_string(), Style::default().fg(DIM))));
+                    for chunk in split_by_width(&[(l.to_string(), dim)], avail) {
+                        bodies.push(chunk.into_iter().map(|(t, st)| Span::styled(t, st)).collect());
+                    }
                 }
+                self.push_prefixed(bodies);
             }
             Event::InlineHtml(h) => {
                 self.inline.push((h.to_string(), Style::default().fg(DIM)));
@@ -487,22 +492,41 @@ impl Renderer {
     fn prefixes(&self) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
         let mut first = self.quote_prefix();
         let mut cont = self.quote_prefix();
-        let n = self.lists.len();
-        for (i, lvl) in self.lists.iter().enumerate() {
+        for lvl in &self.lists {
             let pad = " ".repeat(lvl.width);
             match &lvl.pending {
-                Some((m, st)) if i + 1 == n => first.push(Span::styled(m.clone(), *st)),
-                _ => first.push(Span::raw(pad.clone())),
+                Some((m, st)) => first.push(Span::styled(m.clone(), *st)),
+                None => first.push(Span::raw(pad.clone())),
             }
             cont.push(Span::raw(pad));
         }
         (first, cont)
     }
 
-    /// Marca o marcador do item atual como já impresso (ele sai só na primeira linha).
+    /// Marca os marcadores de item como já impressos (saem só na primeira linha).
+    /// Vale para todos os níveis: `- - x` abre dois itens antes de qualquer texto.
     fn take_marker(&mut self) {
-        if let Some(lvl) = self.lists.last_mut() {
+        for lvl in &mut self.lists {
             lvl.pending = None;
+        }
+    }
+
+    /// Colunas disponíveis para o conteúdo depois dos prefixos de citação e lista.
+    fn content_width(&self) -> usize {
+        let (first, _) = self.prefixes();
+        let pw: usize = first.iter().map(|s| s.content.width()).sum();
+        self.width.saturating_sub(pw).max(1)
+    }
+
+    /// Acrescenta linhas já quebradas à saída, com os prefixos de citação e lista
+    /// (o marcador do item só na primeira).
+    fn push_prefixed(&mut self, bodies: Vec<Vec<Span<'static>>>) {
+        let (first, cont) = self.prefixes();
+        self.take_marker();
+        for (i, body) in bodies.into_iter().enumerate() {
+            let mut v = if i == 0 { first.clone() } else { cont.clone() };
+            v.extend(body);
+            self.lines.push(Line::from(v));
         }
     }
 
@@ -533,8 +557,9 @@ impl Renderer {
             _ => ("", H1),
         };
         let mw = marker.width();
-        let wrapped = wrap(&toks, self.width.saturating_sub(mw).max(10));
-        for (i, spans) in wrapped.into_iter().enumerate() {
+        let avail = self.content_width();
+        let mut bodies: Vec<Vec<Span<'static>>> = Vec::new();
+        for (i, spans) in wrap(&toks, avail.saturating_sub(mw).max(1)).into_iter().enumerate() {
             let mut v: Vec<Span<'static>> = Vec::new();
             if mw > 0 {
                 v.push(if i == 0 {
@@ -544,13 +569,13 @@ impl Renderer {
                 });
             }
             v.extend(spans);
-            self.lines.push(Line::from(v));
+            bodies.push(v);
         }
         if matches!(level, HeadingLevel::H1) {
-            let rule = "═".repeat(self.width);
-            self.lines
-                .push(Line::from(Span::styled(rule, Style::default().fg(DIM))));
+            let rule = "═".repeat(avail);
+            bodies.push(vec![Span::styled(rule, Style::default().fg(DIM))]);
         }
+        self.push_prefixed(bodies);
         self.push_blank();
     }
 
@@ -612,14 +637,17 @@ impl Renderer {
         let (first, cont) = self.prefixes();
         let pw: usize = cont.iter().map(|s| s.content.width()).sum();
         let avail = self.width.saturating_sub(pw);
-        let ncols = t.rows.iter().map(|r| r.len()).max().unwrap_or(0);
-        if ncols == 0 {
+        let total_cols = t.rows.iter().map(|r| r.len()).max().unwrap_or(0);
+        if total_cols == 0 {
             return;
         }
         self.take_marker();
+        // Colunas além do que cabe (cada uma precisa de MIN_COL_WIDTH + borda) são omitidas.
+        let ncols = total_cols.min((avail.saturating_sub(1) / (CELL_OVERHEAD + MIN_COL_WIDTH)).max(1));
+        let hidden = total_cols - ncols;
         let mut natural = vec![1usize; ncols];
         for row in &t.rows {
-            for (i, cell) in row.iter().enumerate() {
+            for (i, cell) in row.iter().take(ncols).enumerate() {
                 let w: usize = cell.iter().map(|(s, _)| s.width()).sum();
                 natural[i] = natural[i].max(w);
             }
@@ -663,6 +691,12 @@ impl Renderer {
             }
         }
         out.push(border(&cont, "└", "┴", "┘"));
+        if hidden > 0 {
+            let note = [(format!("… +{hidden} colunas"), dim)];
+            let mut v = cont.clone();
+            v.extend(fit(&note, avail).0);
+            out.push(Line::from(v));
+        }
         self.lines.extend(out);
     }
 }
@@ -753,11 +787,18 @@ fn split_by_width(pieces: &[Piece], avail: usize) -> Vec<Vec<Piece>> {
     let mut w = 0;
     for (text, style) in pieces {
         for ch in text.chars() {
-            let cw = ch.width().unwrap_or(0);
+            let mut cw = ch.width().unwrap_or(0);
             if w + cw > avail && w > 0 {
                 out.push(Vec::new());
                 w = 0;
             }
+            // Caractere mais largo que a linha inteira (1 coluna): não cabe de jeito nenhum.
+            let ch = if cw > avail {
+                cw = REPLACEMENT.width().unwrap_or(1);
+                REPLACEMENT
+            } else {
+                ch
+            };
             let line = out.last_mut().expect("sempre há uma linha");
             match line.last_mut() {
                 Some((s, st)) if *st == *style => s.push(ch),
@@ -1025,7 +1066,11 @@ mod tests {
     }
 
     fn rendered_text(md: &str) -> Vec<String> {
-        render(md, 80)
+        rendered_text_at(md, 80)
+    }
+
+    fn rendered_text_at(md: &str, width: usize) -> Vec<String> {
+        render(md, width)
             .lines
             .iter()
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
@@ -1064,5 +1109,89 @@ mod tests {
         let out = strip_sgr(&plain_output("```\n\tx\r\ny\n```\n"));
         assert!(out.contains("    x"), "tab deveria virar espaços: {out:?}");
         assert!(out.contains('y'));
+    }
+
+    fn assert_fits(md: &str, width: usize) {
+        for (i, l) in render(md, width).lines.iter().enumerate() {
+            let text: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
+            assert!(l.width() <= width, "linha {i} com {} colunas (max {width}): {text:?}", l.width());
+        }
+    }
+
+    #[test]
+    fn regua_respeita_prefixo_de_citacao_e_lista() {
+        assert_fits("> ---\n", 30);
+        assert_fits("- a\n\n  ---\n", 30);
+        assert_fits("> - a\n>\n>   ---\n", 30);
+        let lines = rendered_text_at("> ---\n", 30);
+        assert!(lines.iter().any(|l| l.starts_with("▎ ─")), "{lines:?}");
+        let lines = rendered_text_at("- ---x\n\n  ---\n", 30);
+        assert!(lines.iter().any(|l| l.starts_with("  ─")), "{lines:?}");
+    }
+
+    #[test]
+    fn html_em_bloco_respeita_prefixo_e_largura() {
+        let long = "x".repeat(200);
+        assert_fits(&format!("> <div>{long}</div>\n"), 40);
+        assert_fits(&format!("- item\n\n  <div>{long}</div>\n"), 40);
+        assert_fits(&format!("<div>{long}</div>\n"), 40);
+    }
+
+    #[test]
+    fn titulos_respeitam_prefixo_de_citacao_e_lista() {
+        assert_fits("> # um titulo bem comprido que precisa quebrar em varias linhas\n", 30);
+        assert_fits("- ## um titulo bem comprido que precisa quebrar em varias linhas\n", 30);
+        assert_fits("> ### um titulo bem comprido que precisa quebrar em varias linhas\n", 30);
+    }
+
+    #[test]
+    fn titulo_em_citacao_mantem_barra_na_primeira_linha() {
+        let lines = rendered_text("> # titulo\n");
+        assert!(lines.iter().any(|l| l.starts_with("▎ ") && l.contains("titulo")), "{lines:?}");
+    }
+
+    #[test]
+    fn tabela_com_muitas_colunas_cabe_na_largura() {
+        let n = 30;
+        let header = format!("|{}\n", " h |".repeat(n));
+        let sep = format!("|{}\n", "---|".repeat(n));
+        let row = format!("|{}\n", " c |".repeat(n));
+        assert_fits(&format!("{header}{sep}{row}"), 20);
+        assert_fits(&format!("> {header}> {sep}> {row}"), 20);
+    }
+
+    #[test]
+    fn tabela_com_colunas_ocultas_avisa() {
+        let n = 30;
+        let header = format!("|{}\n", " h |".repeat(n));
+        let sep = format!("|{}\n", "---|".repeat(n));
+        let lines = rendered_text_at(&format!("{header}{sep}"), 20);
+        assert!(lines.iter().any(|l| l.contains("colunas")), "{lines:?}");
+    }
+
+    #[test]
+    fn caractere_largo_nao_estoura_uma_coluna() {
+        let pieces = vec![("世界a".to_string(), Style::default())];
+        for chunk in split_by_width(&pieces, 1) {
+            let w: usize = chunk.iter().map(|(t, _)| t.width()).sum();
+            assert!(w <= 1, "chunk com {w} colunas: {chunk:?}");
+        }
+    }
+
+    #[test]
+    fn lista_dentro_de_item_mantem_marcador_externo() {
+        let lines = rendered_text("- - x\n");
+        assert_eq!(lines[0], "• ◦ x");
+        let lines = rendered_text("1. - x\n   - y\n");
+        assert!(lines[0].starts_with("1. ◦ x"), "{lines:?}");
+        assert!(lines[1].starts_with("   ◦ y"), "{lines:?}");
+    }
+
+    #[test]
+    fn linhas_respeitam_largura_em_documento_misto() {
+        let md = "> - item com texto comprido que precisa quebrar bastante\n>   ```\n>   codigo largo largo largo largo largo\n>   ```\n\n1. - # t\n";
+        for w in [20, 25, 40, 80] {
+            assert_fits(md, w);
+        }
     }
 }
