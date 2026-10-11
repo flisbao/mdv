@@ -503,6 +503,9 @@ fn line_text(l: &Line<'_>) -> String {
 
 /// Destaca as ocorrências da busca (`q` já em minúsculas) dentro de cada trecho da linha.
 fn highlight_line(line: &Line<'static>, q: &str) -> Line<'static> {
+    if q.is_empty() {
+        return line.clone();
+    }
     let hl = Style::default().bg(Color::Rgb(255, 213, 79)).fg(Color::Black);
     let mut out: Vec<Span<'static>> = Vec::new();
     for span in &line.spans {
@@ -607,6 +610,26 @@ mod tests {
     fn outros_erros_de_escrita_continuam_erros() {
         let err = write_tolerating_closed_pipe(FailingWriter(io::ErrorKind::PermissionDenied), b"x");
         assert_eq!(err.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn destaque_com_busca_vazia_nao_altera_a_linha() {
+        let line = Line::from(vec![Span::raw("abc"), Span::raw("def")]);
+        assert_eq!(highlight_line(&line, ""), line);
+    }
+
+    #[test]
+    fn destaque_marca_cada_ocorrencia() {
+        let line = Line::from("a-b-a");
+        let out = highlight_line(&line, "a");
+        let marked: Vec<&str> = out
+            .spans
+            .iter()
+            .filter(|s| s.style.bg.is_some())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert_eq!(marked, ["a", "a"]);
+        assert_eq!(line_text(&out), "a-b-a");
     }
 
     #[test]
