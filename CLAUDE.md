@@ -13,7 +13,7 @@ cat README.md | cargo run --release  # stdin
 cargo clippy
 ```
 
-Não há testes automatizados (nenhum `#[cfg(test)]` nem `tests/`). Para validar mudanças de renderização, use `-p` com `sample.md` — funciona sem terminal interativo.
+`cargo test` roda os testes unitários (`render.rs`, `main.rs`) e `tests/cli.rs`. Para validar mudanças de renderização, também use `-p` com `sample.md` — funciona sem terminal interativo.
 
 O projeto, README e mensagens de erro/ajuda são em português.
 
@@ -21,8 +21,8 @@ O projeto, README e mensagens de erro/ajuda são em português.
 
 Dois arquivos, um único pipeline: Markdown → `Vec<Line>` do ratatui → (TUI | ANSI).
 
-- `src/render.rs`: `render(md, width) -> Rendered { lines, headings }`. Máquina de estados sobre eventos do `pulldown-cmark` (`Renderer::handle/start/end`). As linhas saem **já quebradas na largura pedida** (quebra com `unicode-width`, em `wrap`/`fit`/`split_by_width`), então quem consome não faz wrap. `headings` guarda o índice em `lines` de cada título (usado na navegação `]`/`[`). Blocos de código usam `syntect` (`default-fancy`, sem onig; syntax/theme em `OnceLock` via `hl()`). `to_ansi` converte as mesmas linhas para SGR no modo `--plain`.
-- `src/main.rs`: parsing manual de argumentos, escolha de modo e TUI. Modo plain é usado se `-p` ou se stdout não é TTY. `App` guarda o markdown, o `Rendered` e o estado de scroll/busca; re-renderiza (`rerender`) quando a largura da tela muda (`dirty`/`render_width`) ou o arquivo muda. Live reload é por polling de `mtime` no timeout de 250 ms do `event::poll` (`check_reload`), não por inotify. Busca (`/`, `n`/`N`) opera sobre o texto das linhas já renderizadas (`line_text`, `highlight_line`), por isso só acha ocorrências dentro de um mesmo trecho estilizado.
+- `src/render.rs`: `render(md, width) -> Rendered { lines, headings }`. Máquina de estados sobre eventos do `pulldown-cmark` (`Renderer::handle/start/end`), com o estado dividido em `InlineBuffer` (texto em linha, estilos, links), `ListStack`, `CodeBlock` e `TableBuilder`. As linhas saem **já quebradas na largura pedida** (quebra com `unicode-width`, em `wrap`/`fit`/`split_by_width`), então quem consome não faz wrap. `headings` guarda o índice em `lines` de cada título (usado na navegação `]`/`[`). Blocos de código usam `syntect` (`default-fancy`, sem onig; syntax/theme em `OnceLock` via `hl()`). `to_ansi` converte as mesmas linhas para SGR no modo `--plain`.
+- `src/main.rs`: parsing manual de argumentos, escolha de modo e TUI. Modo plain é usado se `-p` ou se stdout não é TTY. `App` guarda o markdown, o `Rendered`, um `Viewport` (scroll) e um `SearchState` (busca); re-renderiza (`rerender`) quando a largura da tela muda (`dirty`/`render_width`) ou o arquivo muda. Live reload é por polling de `mtime` no timeout de 250 ms do `event::poll` (`check_reload`), não por inotify. Busca (`/`, `n`/`N`) opera sobre o texto das linhas já renderizadas (`line_text`, `highlight_line`), por isso só acha ocorrências dentro de um mesmo trecho estilizado.
 
 Qualquer recurso novo de formatação entra em `render.rs` e vale automaticamente para TUI e `--plain`.
 
