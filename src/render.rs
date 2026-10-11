@@ -33,7 +33,29 @@ pub const MAX_WIDTH: usize = 1000;
 
 const REPLACEMENT: char = '\u{FFFD}';
 
-type Piece = (String, Style);
+/// Trecho de texto com estilo.
+type Styled = (String, Style);
+
+/// Item do texto em linha: trecho estilizado ou quebra de linha forçada.
+#[derive(Clone)]
+enum Piece {
+    Text(String, Style),
+    Break,
+}
+
+impl Piece {
+    /// Texto e estilo para contextos sem quebra de linha (células de tabela): `Break` vira espaço.
+    fn as_text(&self) -> (&str, Style) {
+        match self {
+            Piece::Text(t, st) => (t, *st),
+            Piece::Break => (" ", Style::default()),
+        }
+    }
+
+    fn width(&self) -> usize {
+        self.as_text().0.width()
+    }
+}
 
 /// Resultado da renderização.
 #[derive(Default)]
@@ -229,21 +251,21 @@ impl Renderer {
                     self.code_buf.push_str(&t);
                 } else {
                     let st = self.style();
-                    self.inline.push((t.to_string(), st));
+                    self.inline.push(Piece::Text(t.to_string(), st));
                 }
             }
             Event::Code(c) => {
                 let st = self
                     .style()
                     .patch(Style::default().fg(INLINE_CODE_FG).bg(INLINE_CODE_BG));
-                self.inline.push((c.to_string(), st));
+                self.inline.push(Piece::Text(c.to_string(), st));
             }
             Event::SoftBreak => {
                 let st = self.style();
-                self.inline.push((" ".into(), st));
+                self.inline.push(Piece::Text(" ".into(), st));
             }
             Event::HardBreak => {
-                self.inline.push(("\n".into(), Style::default()));
+                self.inline.push(Piece::Break);
             }
             Event::Rule => {
                 self.flush_inline();
@@ -272,7 +294,7 @@ impl Renderer {
                 self.push_prefixed(bodies);
             }
             Event::InlineHtml(h) => {
-                self.inline.push((h.to_string(), Style::default().fg(DIM)));
+                self.inline.push(Piece::Text(h.to_string(), Style::default().fg(DIM)));
             }
             _ => {}
         }
@@ -347,7 +369,7 @@ impl Renderer {
             Tag::Image { .. } => {
                 self.styles.push(Style::default().add_modifier(Modifier::ITALIC));
                 self.inline
-                    .push(("[imagem: ".into(), Style::default().fg(DIM)));
+                    .push(Piece::Text("[imagem: ".into(), Style::default().fg(DIM)));
             }
             Tag::Table(aligns) => {
                 self.flush_inline();
@@ -432,12 +454,12 @@ impl Renderer {
                 if let Some(url) = self.links.pop() {
                     if !url.is_empty() && !url.starts_with('#') {
                         self.inline
-                            .push((format!(" ({url})"), Style::default().fg(DIM)));
+                            .push(Piece::Text(format!(" ({url})"), Style::default().fg(DIM)));
                     }
                 }
             }
             TagEnd::Image => {
-                self.inline.push(("]".into(), Style::default().fg(DIM)));
+                self.inline.push(Piece::Text("]".into(), Style::default().fg(DIM)));
                 self.styles.pop();
             }
             TagEnd::TableCell => {
@@ -602,7 +624,7 @@ impl Renderer {
         self.lines.push(Line::from(v));
 
         for line in LinesWithEndings::from(&code) {
-            let pieces: Vec<Piece> = match h.highlight_line(line, ss) {
+            let pieces: Vec<Styled> = match h.highlight_line(line, ss) {
                 Ok(regions) => regions
                     .iter()
                     .map(|(st, txt)| {
@@ -648,7 +670,7 @@ impl Renderer {
         let mut natural = vec![1usize; ncols];
         for row in &t.rows {
             for (i, cell) in row.iter().take(ncols).enumerate() {
-                let w: usize = cell.iter().map(|(s, _)| s.width()).sum();
+                let w: usize = cell.iter().map(Piece::width).sum();
                 natural[i] = natural[i].max(w);
             }
         }
@@ -692,7 +714,7 @@ impl Renderer {
         }
         out.push(border(&cont, "└", "┴", "┘"));
         if hidden > 0 {
-            let note = [(format!("… +{hidden} colunas"), dim)];
+            let note = [Piece::Text(format!("… +{hidden} colunas"), dim)];
             let mut v = cont.clone();
             v.extend(fit(&note, avail).0);
             out.push(Line::from(v));
@@ -749,41 +771,45 @@ fn clean_code(s: &str) -> String {
 
 /// Corta a célula para caber em `w` colunas, usando "…" quando precisa truncar.
 fn fit(cell: &[Piece], w: usize) -> (Vec<Span<'static>>, usize) {
-    let total: usize = cell.iter().map(|(s, _)| s.width()).sum();
+    let total: usize = cell.iter().map(Piece::width).sum();
     if total <= w {
         let spans = cell
             .iter()
-            .map(|(t, st)| Span::styled(t.clone(), *st))
+            .map(|p| {
+                let (t, st) = p.as_text();
+                Span::styled(t.to_string(), st)
+            })
             .collect();
         return (spans, total);
     }
     let limit = w.saturating_sub(1);
     let mut used = 0;
     let mut out: Vec<Span<'static>> = Vec::new();
-    'outer: for (text, st) in cell {
+    'outer: for piece in cell {
+        let (text, st) = piece.as_text();
         let mut buf = String::new();
         for ch in text.chars() {
             let cw = ch.width().unwrap_or(0);
             if used + cw > limit {
                 if !buf.is_empty() {
-                    out.push(Span::styled(buf, *st));
+                    out.push(Span::styled(buf, st));
                 }
-                out.push(Span::styled("…", *st));
+                out.push(Span::styled("…", st));
                 used += 1;
                 break 'outer;
             }
             buf.push(ch);
             used += cw;
         }
-        out.push(Span::styled(buf, *st));
+        out.push(Span::styled(buf, st));
     }
     (out, used)
 }
 
 /// Quebra em pedaços de no máximo `avail` colunas, caractere a caractere.
-fn split_by_width(pieces: &[Piece], avail: usize) -> Vec<Vec<Piece>> {
+fn split_by_width(pieces: &[Styled], avail: usize) -> Vec<Vec<Styled>> {
     let avail = avail.max(1);
-    let mut out: Vec<Vec<Piece>> = vec![Vec::new()];
+    let mut out: Vec<Vec<Styled>> = vec![Vec::new()];
     let mut w = 0;
     for (text, style) in pieces {
         for ch in text.chars() {
@@ -812,7 +838,7 @@ fn split_by_width(pieces: &[Piece], avail: usize) -> Vec<Vec<Piece>> {
 
 enum Unit {
     Space(Style),
-    Word(Vec<Piece>),
+    Word(Vec<Styled>),
     Break,
 }
 
@@ -844,11 +870,11 @@ fn trim_trailing(lines: &mut [Vec<Span<'static>>], cur: &mut usize, trailing: &m
 fn wrap(toks: &[Piece], avail: usize) -> Vec<Vec<Span<'static>>> {
     let avail = avail.max(1);
     let mut units: Vec<Unit> = Vec::new();
-    for (text, style) in toks {
-        if text == "\n" {
+    for piece in toks {
+        let Piece::Text(text, style) = piece else {
             units.push(Unit::Break);
             continue;
-        }
+        };
         let mut buf = String::new();
         let mut buf_space = false;
         for ch in text.chars() {
@@ -1193,5 +1219,17 @@ mod tests {
         for w in [20, 25, 40, 80] {
             assert_fits(md, w);
         }
+    }
+
+    #[test]
+    fn entidade_de_nova_linha_nao_vira_quebra() {
+        let lines = rendered_text("a&#10;b\n");
+        assert_eq!(lines, vec!["a b"]);
+    }
+
+    #[test]
+    fn quebra_forcada_continua_quebrando_linha() {
+        let lines = rendered_text("a\\\nb\n");
+        assert_eq!(lines, vec!["a", "b"]);
     }
 }
