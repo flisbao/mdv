@@ -39,8 +39,8 @@ pub const MAX_WIDTH: usize = 1000;
 /// Menor largura útil para texto corrido e código, mesmo com prefixos largos.
 const MIN_BODY_WIDTH: usize = 10;
 
-/// Blocos de código maiores que isto não são realçados (o realce custa ~3 s/MiB e
-/// trava a UI a cada re-render).
+/// Orçamento de realce por documento: o realce custa ~3 s/MiB e roda a cada re-render,
+/// então blocos que estourem o que resta do orçamento (ou o teto de um único bloco) saem sem cor.
 const MAX_HIGHLIGHT_BYTES: usize = 256 * 1024;
 
 const REPLACEMENT: char = '\u{FFFD}';
@@ -397,6 +397,7 @@ struct Renderer {
     quote_depth: usize,
     code: Option<CodeBlock>,
     table: Option<TableBuilder>,
+    highlight_left: usize,
 }
 
 impl Renderer {
@@ -409,6 +410,7 @@ impl Renderer {
             quote_depth: 0,
             code: None,
             table: None,
+            highlight_left: MAX_HIGHLIGHT_BYTES,
         }
     }
 
@@ -728,9 +730,10 @@ impl Renderer {
 
     fn render_code(&mut self, block: &CodeBlock) {
         let (ss, theme) = hl();
-        let syntax = if block.lang.is_empty() || block.buf.len() > MAX_HIGHLIGHT_BYTES {
+        let syntax = if block.lang.is_empty() || block.buf.len() > self.highlight_left {
             ss.find_syntax_plain_text()
         } else {
+            self.highlight_left -= block.buf.len();
             ss.find_syntax_by_token(&block.lang)
                 .unwrap_or_else(|| ss.find_syntax_plain_text())
         };
@@ -1442,5 +1445,26 @@ mod tests {
         let line = "fn main() { let a = 1; } // x\n";
         let code = line.repeat(MAX_HIGHLIGHT_BYTES / line.len() + 1);
         assert_eq!(distinct_code_colors(&code), 1);
+    }
+
+    #[test]
+    fn orcamento_de_realce_vale_para_o_documento_inteiro() {
+        let block = "fn main() { let a = 1; } // x\n".repeat(2000);
+        let blocks = MAX_HIGHLIGHT_BYTES / block.len() + 2;
+        let md = format!("```rust\n{block}```\n\n").repeat(blocks);
+        let mut colors_per_block: Vec<std::collections::HashSet<String>> = Vec::new();
+        for line in &render(&md, 80).lines {
+            if line.spans.first().is_some_and(|s| s.content.starts_with('╭')) {
+                colors_per_block.push(std::collections::HashSet::new());
+            }
+            for span in line.spans.iter().filter(|s| s.style.bg == Some(CODE_BG)) {
+                if let (Some(set), Some(fg)) = (colors_per_block.last_mut(), span.style.fg) {
+                    set.insert(format!("{fg:?}"));
+                }
+            }
+        }
+        assert_eq!(colors_per_block.len(), blocks);
+        assert!(colors_per_block[0].len() > 1, "primeiro bloco cabe no orçamento");
+        assert_eq!(colors_per_block[blocks - 1].len(), 1, "último bloco estoura o orçamento");
     }
 }
