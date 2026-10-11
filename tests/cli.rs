@@ -29,3 +29,11 @@ fn largura_gigante_e_limitada() {
         .unwrap_or(0);
     assert!(widest <= 1000, "linha com {widest} colunas");
 }
+
+#[test]
+fn arquivo_nao_regular_e_rejeitado() {
+    let out = mdv(&["-p", "/dev/zero"], "");
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("/dev/zero"), "stderr: {err}");
+}

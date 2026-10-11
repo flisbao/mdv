@@ -3,7 +3,7 @@ mod render;
 use std::error::Error;
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -14,6 +14,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::{DefaultTerminal, Frame};
 use unicode_width::UnicodeWidthStr;
+
+/// Teto de bytes lidos de arquivo ou stdin (protege a memória).
+const MAX_INPUT_BYTES: u64 = 16 * 1024 * 1024;
 
 const HELP: &str = "\
 mdv - visualizador de Markdown no terminal
@@ -70,7 +73,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (source, md) = match path.as_deref() {
         Some("-") => (Source::Stdin, read_stdin()?),
         Some(p) => {
-            let md = fs::read_to_string(p).map_err(|e| format!("não consegui ler {p}: {e}"))?;
+            let md = read_markdown_file(Path::new(p))
+                .map_err(|e| format!("não consegui ler {p}: {e}"))?;
             (Source::File(PathBuf::from(p)), md)
         }
         None if !io::stdin().is_terminal() => (Source::Stdin, read_stdin()?),
@@ -109,9 +113,29 @@ fn parse_width(value: &str) -> Option<usize> {
 }
 
 fn read_stdin() -> io::Result<String> {
-    let mut s = String::new();
-    io::stdin().read_to_string(&mut s)?;
-    Ok(s)
+    read_limited(io::stdin().lock(), MAX_INPUT_BYTES)
+}
+
+/// Lê um arquivo regular (nunca dispositivo, FIFO ou diretório) respeitando o teto.
+fn read_markdown_file(path: &Path) -> io::Result<String> {
+    if !fs::metadata(path)?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "não é um arquivo regular",
+        ));
+    }
+    read_limited(fs::File::open(path)?, MAX_INPUT_BYTES)
+}
+
+/// Lê UTF-8 de `reader`, falhando se passar de `max` bytes (sem ler além de `max + 1`).
+fn read_limited(reader: impl Read, max: u64) -> io::Result<String> {
+    let mut bytes = Vec::new();
+    reader.take(max + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > max {
+        let msg = format!("entrada maior que {} MiB", max / (1024 * 1024));
+        return Err(io::Error::new(io::ErrorKind::InvalidData, msg));
+    }
+    String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 fn file_mtime(p: &PathBuf) -> Option<SystemTime> {
@@ -219,7 +243,7 @@ impl App {
         let Source::File(p) = &self.source else { return };
         let m = file_mtime(p);
         if m.is_some() && m != self.mtime {
-            if let Ok(s) = fs::read_to_string(p) {
+            if let Ok(s) = read_markdown_file(p) {
                 self.md = s;
                 self.mtime = m;
                 self.dirty = true;
@@ -310,7 +334,7 @@ impl App {
             KeyCode::Char('N') => self.step_match(false),
             KeyCode::Char('r') => {
                 if let Source::File(p) = &self.source {
-                    if let Ok(s) = fs::read_to_string(p) {
+                    if let Ok(s) = read_markdown_file(p) {
                         self.md = s;
                         self.mtime = file_mtime(p);
                         self.dirty = true;
@@ -445,6 +469,42 @@ mod tests {
         assert_eq!(parse_width("5"), Some(render::MIN_WIDTH));
         assert_eq!(parse_width("80"), Some(80));
         assert_eq!(parse_width("18446744073709551615"), Some(render::MAX_WIDTH));
+    }
+
+    #[test]
+    fn read_limited_aceita_exatamente_o_teto() {
+        let text = read_limited(&b"abcd"[..], 4).unwrap();
+        assert_eq!(text, "abcd");
+    }
+
+    #[test]
+    fn read_limited_rejeita_acima_do_teto() {
+        let err = read_limited(&b"abcde"[..], 4).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn read_limited_nao_le_alem_do_teto() {
+        let mut infinite = io::repeat(b'a');
+        assert!(read_limited(&mut infinite, 1024).is_err());
+    }
+
+    #[test]
+    fn read_limited_rejeita_utf8_invalido() {
+        let err = read_limited(&[0xff, 0xfe][..], 16).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn read_markdown_file_rejeita_diretorio() {
+        let err = read_markdown_file(Path::new(".")).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn read_markdown_file_rejeita_dispositivo() {
+        let err = read_markdown_file(Path::new("/dev/zero")).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     }
 
     #[test]
