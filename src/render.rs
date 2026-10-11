@@ -31,6 +31,10 @@ const BULLET: Color = Color::Rgb(126, 231, 135);
 pub const MIN_WIDTH: usize = 20;
 pub const MAX_WIDTH: usize = 1000;
 
+/// Blocos de código maiores que isto não são realçados (o realce custa ~3 s/MiB e
+/// trava a UI a cada re-render).
+const MAX_HIGHLIGHT_BYTES: usize = 256 * 1024;
+
 const REPLACEMENT: char = '\u{FFFD}';
 
 /// Trecho de texto com estilo.
@@ -607,7 +611,7 @@ impl Renderer {
         let lang = self.code.clone().unwrap_or_default();
         let code = std::mem::take(&mut self.code_buf);
         let (ss, theme) = hl();
-        let syntax = if lang.is_empty() {
+        let syntax = if lang.is_empty() || code.len() > MAX_HIGHLIGHT_BYTES {
             ss.find_syntax_plain_text()
         } else {
             ss.find_syntax_by_token(&lang)
@@ -1260,5 +1264,28 @@ mod tests {
     #[test]
     fn espaco_sem_quebra_nao_e_separador_de_palavra() {
         assert_eq!(rendered_text("aaaaaaaaaa\u{a0}bbbbbbbbb\n"), vec!["aaaaaaaaaa\u{a0}bbbbbbbbb"]);
+    }
+
+    fn distinct_code_colors(code: &str) -> usize {
+        let md = format!("```rust\n{code}```\n");
+        let mut colors: Vec<Option<Color>> = Vec::new();
+        for span in render(&md, 80).lines.iter().flat_map(|l| &l.spans) {
+            if span.style.bg == Some(CODE_BG) && span.style.fg.is_some() && !colors.contains(&span.style.fg) {
+                colors.push(span.style.fg);
+            }
+        }
+        colors.len()
+    }
+
+    #[test]
+    fn codigo_pequeno_e_destacado() {
+        assert!(distinct_code_colors("fn main() { let a = 1; } // x\n") > 1);
+    }
+
+    #[test]
+    fn codigo_enorme_nao_e_destacado_para_nao_travar_a_ui() {
+        let line = "fn main() { let a = 1; } // x\n";
+        let code = line.repeat(MAX_HIGHLIGHT_BYTES / line.len() + 1);
+        assert_eq!(distinct_code_colors(&code), 1);
     }
 }
