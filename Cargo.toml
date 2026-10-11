@@ -2,6 +2,7 @@
 name = "mdv"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "Visualizador de Markdown no terminal (renderizador + TUI)"
 
 [dependencies]
@@ -14,3 +15,8 @@ unicode-width = "0.2"
 lto = true
 strip = true
 overflow-checks = true
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/mdv", dest = "/usr/bin/mdv", mode = "755" },
+]

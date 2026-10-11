@@ -1,0 +1,103 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # glibc do runner define o piso de compatibilidade: 22.04 => glibc 2.35 (Ubuntu 22.04+, Debian 12+, Fedora 36+).
+          - name: linux-x86_64
+            runner: ubuntu-22.04
+            musl: false
+            pkg: true
+          - name: linux-aarch64
+            runner: ubuntu-22.04-arm
+            musl: false
+            pkg: true
+          # Binário estático: roda em qualquer distro Linux x86_64, inclusive Alpine.
+          - name: linux-x86_64-musl
+            runner: ubuntu-22.04
+            musl: true
+            pkg: false
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.musl && 'x86_64-unknown-linux-musl' || '' }}
+
+      - name: Instalar musl-tools
+        if: matrix.musl
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build (musl, estático)
+        if: matrix.musl
+        run: |
+          cargo build --release --target x86_64-unknown-linux-musl
+          echo "BIN=target/x86_64-unknown-linux-musl/release/mdv" >> "$GITHUB_ENV"
+
+      - name: Build
+        if: ${{ !matrix.musl }}
+        run: |
+          cargo build --release
+          echo "BIN=target/release/mdv" >> "$GITHUB_ENV"
+
+      - name: Instalar cargo-deb e cargo-generate-rpm
+        if: matrix.pkg
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb,cargo-generate-rpm
+
+      - name: Gerar .deb e .rpm
+        if: matrix.pkg
+        run: |
+          cargo deb --no-build
+          cargo generate-rpm
+
+      - name: Empacotar
+        run: |
+          mkdir -p dist
+          stage="mdv-${GITHUB_REF_NAME}-${{ matrix.name }}"
+          mkdir "$stage"
+          cp "$BIN" README.md "$stage/"
+          tar -czf "dist/$stage.tar.gz" "$stage"
+          if [ "${{ matrix.pkg }}" = "true" ]; then
+            cp target/debian/*.deb target/generate-rpm/*.rpm dist/
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: publicar release
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Gerar SHA256SUMS
+        run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+
+      - name: Criar release
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
