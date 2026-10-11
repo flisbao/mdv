@@ -1,5 +1,6 @@
 mod render;
 
+use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
@@ -17,6 +18,17 @@ use unicode_width::UnicodeWidthStr;
 
 /// Teto de bytes lidos de arquivo ou stdin (protege a memória).
 const MAX_INPUT_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Largura máxima do texto quando `-w` não é informado.
+const DEFAULT_WIDTH: usize = 100;
+/// Largura do `--plain` quando o tamanho do terminal é desconhecido.
+const FALLBACK_TERMINAL_WIDTH: usize = 80;
+/// Colunas deixadas livres nas laterais da TUI.
+const TUI_MARGIN: usize = 4;
+/// Menor largura de texto na TUI, mesmo em terminais minúsculos.
+const MIN_TUI_WIDTH: usize = 10;
+/// Intervalo entre verificações de alteração do arquivo (live reload).
+const POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 const HELP: &str = "\
 mdv - visualizador de Markdown no terminal
@@ -50,7 +62,7 @@ enum Source {
 
 /// Opções da linha de comando para exibir um documento.
 #[derive(Debug, PartialEq)]
-struct Options {
+struct Cli {
     plain: bool,
     width: Option<usize>,
     path: Option<String>,
@@ -60,7 +72,43 @@ struct Options {
 enum Command {
     Help,
     Version,
-    Run(Options),
+    Run(Cli),
+}
+
+impl Cli {
+    /// Interpreta os argumentos (sem o nome do programa). `--` encerra as opções.
+    fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
+        let mut cli = Cli { plain: false, width: None, path: None };
+        let mut args = args.into_iter();
+        let mut only_paths = false;
+        while let Some(a) = args.next() {
+            if only_paths || a == "-" || !a.starts_with('-') {
+                cli.set_path(a)?;
+                continue;
+            }
+            match a.as_str() {
+                "--" => only_paths = true,
+                "-p" | "--plain" => cli.plain = true,
+                "-w" | "--width" => {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| format!("a opção {a} precisa de uma largura"))?;
+                    cli.width = Some(parse_width(&value)?);
+                }
+                "-h" | "--help" => return Ok(Command::Help),
+                "-V" | "--version" => return Ok(Command::Version),
+                _ => return Err(format!("opção desconhecida: {a}")),
+            }
+        }
+        Ok(Command::Run(cli))
+    }
+
+    fn set_path(&mut self, path: String) -> Result<(), String> {
+        if self.path.replace(path).is_some() {
+            return Err("informe um único arquivo".to_string());
+        }
+        Ok(())
+    }
 }
 
 /// Falha que encerra o programa; o código de saída depende do tipo.
@@ -93,75 +141,51 @@ fn main() -> ExitCode {
     }
 }
 
-/// Interpreta os argumentos (sem o nome do programa). `--` encerra as opções.
-fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
-    let mut opts = Options { plain: false, width: None, path: None };
-    let mut args = args.into_iter();
-    let mut only_paths = false;
-    while let Some(a) = args.next() {
-        if only_paths || a == "-" || !a.starts_with('-') {
-            set_path(&mut opts, a)?;
-            continue;
-        }
-        match a.as_str() {
-            "--" => only_paths = true,
-            "-p" | "--plain" => opts.plain = true,
-            "-w" | "--width" => {
-                let value = args
-                    .next()
-                    .ok_or_else(|| format!("a opção {a} precisa de uma largura"))?;
-                opts.width = Some(parse_width(&value)?);
-            }
-            "-h" | "--help" => return Ok(Command::Help),
-            "-V" | "--version" => return Ok(Command::Version),
-            _ => return Err(format!("opção desconhecida: {a}")),
-        }
-    }
-    Ok(Command::Run(opts))
-}
-
-fn set_path(opts: &mut Options, path: String) -> Result<(), String> {
-    if opts.path.replace(path).is_some() {
-        return Err("informe um único arquivo".to_string());
-    }
-    Ok(())
-}
-
 fn run_cli() -> Result<(), Failure> {
-    let opts = match parse_args(std::env::args().skip(1)).map_err(Failure::Usage)? {
+    let cli = match Cli::parse(std::env::args().skip(1)).map_err(Failure::Usage)? {
         Command::Help => return write_stdout(HELP),
         Command::Version => return write_stdout(&format!("mdv {}\n", env!("CARGO_PKG_VERSION"))),
-        Command::Run(opts) => opts,
+        Command::Run(cli) => cli,
     };
+    let (source, md) = load_source(cli.path.as_deref())?;
+    let stdout_tty = io::stdout().is_terminal();
+    if cli.plain || !stdout_tty {
+        run_plain(&md, cli.width, stdout_tty)
+    } else {
+        run_tui(source, md, cli.width.unwrap_or(DEFAULT_WIDTH))
+    }
+}
 
-    let (source, md) = match opts.path.as_deref() {
-        Some("-") => (Source::Stdin, read_stdin().map_err(read_failure("stdin"))?),
+/// Lê o documento do arquivo informado, de stdin (`-` ou entrada redirecionada).
+fn load_source(path: Option<&str>) -> Result<(Source, String), Failure> {
+    match path {
+        Some("-") => Ok((Source::Stdin, read_stdin().map_err(read_failure("stdin"))?)),
         Some(p) => {
             let md = read_markdown_file(Path::new(p)).map_err(read_failure(p))?;
-            (Source::File(PathBuf::from(p)), md)
+            Ok((Source::File(PathBuf::from(p)), md))
         }
         None if !io::stdin().is_terminal() => {
-            (Source::Stdin, read_stdin().map_err(read_failure("stdin"))?)
+            Ok((Source::Stdin, read_stdin().map_err(read_failure("stdin"))?))
         }
-        None => return Err(Failure::Usage("nenhum arquivo informado".to_string())),
-    };
-
-    let stdout_tty = io::stdout().is_terminal();
-    if opts.plain || !stdout_tty {
-        let w = opts.width.unwrap_or_else(|| {
-            terminal::size()
-                .map(|(c, _)| c as usize)
-                .unwrap_or(80)
-                .min(100)
-        });
-        let out = render::render(&md, w);
-        let text = render::to_ansi(&out.lines, stdout_tty);
-        return write_stdout(&text);
+        None => Err(Failure::Usage("nenhum arquivo informado".to_string())),
     }
+}
 
-    let mut app = App::new(source, md, opts.width.unwrap_or(100));
+/// Imprime o documento renderizado (com cores só se a saída for um terminal).
+fn run_plain(md: &str, width: Option<usize>, color: bool) -> Result<(), Failure> {
+    let width = width.unwrap_or_else(|| {
+        terminal::size()
+            .map_or(FALLBACK_TERMINAL_WIDTH, |(cols, _)| usize::from(cols))
+            .min(DEFAULT_WIDTH)
+    });
+    let out = render::render(md, width);
+    write_stdout(&render::to_ansi(&out.lines, color))
+}
+
+fn run_tui(source: Source, md: String, width: usize) -> Result<(), Failure> {
+    let mut app = App::new(source, md, width);
     let mut term = ratatui::init();
-    let res = run(&mut term, &mut app);
+    let res = event_loop(&mut term, &mut app);
     ratatui::restore();
     res.map_err(|e| Failure::Runtime(format!("erro no terminal: {e}")))
 }
@@ -218,14 +242,14 @@ fn read_limited(reader: impl Read, max: u64) -> io::Result<String> {
     String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
-fn file_mtime(p: &PathBuf) -> Option<SystemTime> {
+fn file_mtime(p: &Path) -> Option<SystemTime> {
     fs::metadata(p).and_then(|m| m.modified()).ok()
 }
 
-fn run(term: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
+fn event_loop(term: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     loop {
         term.draw(|f| app.draw(f))?;
-        if event::poll(Duration::from_millis(250))? {
+        if event::poll(POLL_INTERVAL)? {
             if let Event::Key(k) = event::read()? {
                 if k.kind == KeyEventKind::Press && app.on_key(k) {
                     return Ok(());
@@ -234,6 +258,84 @@ fn run(term: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
         } else {
             app.check_reload();
         }
+    }
+}
+
+/// Janela de rolagem sobre as linhas renderizadas.
+#[derive(Default)]
+struct Viewport {
+    scroll: usize,
+    height: usize,
+}
+
+impl Viewport {
+    fn max_scroll(&self, total: usize) -> usize {
+        total.saturating_sub(self.height)
+    }
+
+    fn scroll_by(&mut self, delta: isize, total: usize) {
+        let target = if delta.is_negative() {
+            self.scroll.saturating_sub(delta.unsigned_abs())
+        } else {
+            self.scroll.saturating_add(delta.unsigned_abs())
+        };
+        self.scroll_to(target, total);
+    }
+
+    fn scroll_to(&mut self, line: usize, total: usize) {
+        self.scroll = line.min(self.max_scroll(total));
+    }
+}
+
+/// Busca incremental: texto em edição, termo confirmado e linhas encontradas.
+#[derive(Default)]
+struct SearchState {
+    /// Texto sendo digitado (`Some` enquanto o prompt `/` está aberto).
+    input: Option<String>,
+    query: String,
+    matches: Vec<usize>,
+    current: usize,
+}
+
+impl SearchState {
+    fn refresh(&mut self, lines: &[Line<'_>]) {
+        self.matches.clear();
+        if self.query.is_empty() {
+            return;
+        }
+        let q = self.query.to_lowercase();
+        for (i, l) in lines.iter().enumerate() {
+            if line_text(l).to_lowercase().contains(&q) {
+                self.matches.push(i);
+            }
+        }
+        if self.current >= self.matches.len() {
+            self.current = 0;
+        }
+    }
+
+    /// Confirma `query` e escolhe a primeira ocorrência a partir de `scroll`.
+    fn commit(&mut self, query: String, lines: &[Line<'_>], scroll: usize) {
+        self.query = query;
+        self.refresh(lines);
+        self.current = self.matches.iter().position(|&m| m >= scroll).unwrap_or(0);
+    }
+
+    fn clear(&mut self) {
+        self.query.clear();
+        self.matches.clear();
+    }
+
+    fn step(&mut self, forward: bool) {
+        let n = self.matches.len();
+        if n == 0 {
+            return;
+        }
+        self.current = if forward { (self.current + 1) % n } else { (self.current + n - 1) % n };
+    }
+
+    fn current_line(&self) -> Option<usize> {
+        self.matches.get(self.current).copied()
     }
 }
 
@@ -246,12 +348,8 @@ struct App {
     rendered: render::Rendered,
     render_width: usize,
     dirty: bool,
-    scroll: usize,
-    view_h: usize,
-    input: Option<String>,
-    query: String,
-    matches: Vec<usize>,
-    match_idx: usize,
+    view: Viewport,
+    search: SearchState,
 }
 
 impl App {
@@ -259,8 +357,7 @@ impl App {
         let (name, mtime) = match &source {
             Source::File(p) => (
                 p.file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| p.display().to_string()),
+                    .map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into_owned()),
                 file_mtime(p),
             ),
             Source::Stdin => ("stdin".to_string(), None),
@@ -270,94 +367,68 @@ impl App {
             name,
             md,
             mtime,
-            max_width: max_width.max(20),
+            max_width: render::clamp_width(max_width),
             rendered: render::Rendered::default(),
             render_width: 0,
             dirty: true,
-            scroll: 0,
-            view_h: 0,
-            input: None,
-            query: String::new(),
-            matches: Vec::new(),
-            match_idx: 0,
+            view: Viewport::default(),
+            search: SearchState::default(),
         }
     }
 
-    fn max_scroll(&self) -> usize {
-        self.rendered.lines.len().saturating_sub(self.view_h)
+    fn total_lines(&self) -> usize {
+        self.rendered.lines.len()
     }
 
-    fn scroll_by(&mut self, d: isize) {
-        let target = if d.is_negative() {
-            self.scroll.saturating_sub(d.unsigned_abs())
-        } else {
-            self.scroll.saturating_add(d.unsigned_abs())
-        };
-        self.scroll = target.min(self.max_scroll());
+    fn scroll_by(&mut self, delta: isize) {
+        self.view.scroll_by(delta, self.total_lines());
     }
 
-    fn scroll_to(&mut self, n: usize) {
-        self.scroll = n.min(self.max_scroll());
+    fn scroll_to(&mut self, line: usize) {
+        self.view.scroll_to(line, self.total_lines());
     }
 
     fn rerender(&mut self, w: usize) {
         self.rendered = render::render(&self.md, w);
         self.render_width = w;
         self.dirty = false;
-        self.refresh_matches();
+        self.search.refresh(&self.rendered.lines);
     }
 
-    fn refresh_matches(&mut self) {
-        self.matches.clear();
-        if self.query.is_empty() {
-            return;
-        }
-        let q = self.query.to_lowercase();
-        for (i, l) in self.rendered.lines.iter().enumerate() {
-            if line_text(l).to_lowercase().contains(&q) {
-                self.matches.push(i);
-            }
-        }
-        if self.match_idx >= self.matches.len() {
-            self.match_idx = 0;
-        }
-    }
-
+    /// Recarrega só se o arquivo mudou desde a última leitura.
     fn check_reload(&mut self) {
         let Source::File(p) = &self.source else { return };
-        let m = file_mtime(p);
-        if m.is_some() && m != self.mtime {
-            if let Ok(s) = read_markdown_file(p) {
-                self.md = s;
-                self.mtime = m;
-                self.dirty = true;
-            }
+        let mtime = file_mtime(p);
+        if mtime.is_some() && mtime != self.mtime {
+            self.reload();
         }
     }
 
-    fn set_search(&mut self, q: String) {
-        self.query = q;
-        self.refresh_matches();
-        self.match_idx = self
-            .matches
-            .iter()
-            .position(|&m| m >= self.scroll)
-            .unwrap_or(0);
+    /// Relê o arquivo; se a leitura falhar, mantém o documento atual.
+    fn reload(&mut self) {
+        let Source::File(p) = &self.source else { return };
+        // Mtime lido antes do conteúdo: uma escrita no meio da leitura é detectada na próxima volta.
+        let mtime = file_mtime(p);
+        if let Ok(md) = read_markdown_file(p) {
+            self.md = md;
+            self.mtime = mtime;
+            self.dirty = true;
+        }
+    }
+
+    fn set_search(&mut self, query: String) {
+        self.search.commit(query, &self.rendered.lines, self.view.scroll);
         self.goto_match();
     }
 
     fn goto_match(&mut self) {
-        if let Some(&l) = self.matches.get(self.match_idx) {
-            self.scroll_to(l.saturating_sub(self.view_h / 3));
+        if let Some(line) = self.search.current_line() {
+            self.scroll_to(line.saturating_sub(self.view.height / 3));
         }
     }
 
     fn step_match(&mut self, forward: bool) {
-        let n = self.matches.len();
-        if n == 0 {
-            return;
-        }
-        self.match_idx = if forward { (self.match_idx + 1) % n } else { (self.match_idx + n - 1) % n };
+        self.search.step(forward);
         self.goto_match();
     }
 
@@ -366,68 +437,66 @@ impl App {
         if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
             return true;
         }
-
-        if let Some(mut buf) = self.input.take() {
-            match k.code {
-                KeyCode::Esc => {}
-                KeyCode::Enter => self.set_search(buf),
-                KeyCode::Backspace => {
-                    buf.pop();
-                    self.input = Some(buf);
-                }
-                KeyCode::Char(c) => {
-                    buf.push(c);
-                    self.input = Some(buf);
-                }
-                _ => self.input = Some(buf),
-            }
+        if let Some(buf) = self.search.input.take() {
+            self.on_search_key(k.code, buf);
             return false;
         }
 
-        let page = isize::try_from(self.view_h.saturating_sub(1).max(1)).unwrap_or(isize::MAX);
-        let half = isize::try_from((self.view_h / 2).max(1)).unwrap_or(isize::MAX);
+        let height = self.view.height;
+        let page = isize::try_from(height.saturating_sub(1).max(1)).unwrap_or(isize::MAX);
+        let half = isize::try_from((height / 2).max(1)).unwrap_or(isize::MAX);
         match k.code {
             KeyCode::Char('q') => return true,
             KeyCode::Esc => {
-                if self.query.is_empty() {
+                if self.search.query.is_empty() {
                     return true;
                 }
-                self.query.clear();
-                self.matches.clear();
+                self.search.clear();
             }
             KeyCode::Char('j') | KeyCode::Down | KeyCode::Enter => self.scroll_by(1),
             KeyCode::Char('k') | KeyCode::Up => self.scroll_by(-1),
-            KeyCode::Char(' ') | KeyCode::PageDown | KeyCode::Char('f') => self.scroll_by(page),
+            KeyCode::Char(' ' | 'f') | KeyCode::PageDown => self.scroll_by(page),
             KeyCode::Char('b') | KeyCode::PageUp => self.scroll_by(-page),
             KeyCode::Char('d') => self.scroll_by(half),
             KeyCode::Char('u') => self.scroll_by(-half),
             KeyCode::Char('g') | KeyCode::Home => self.scroll_to(0),
             KeyCode::Char('G') | KeyCode::End => self.scroll_to(usize::MAX),
             KeyCode::Char(']') => {
-                if let Some(&h) = self.rendered.headings.iter().find(|&&h| h > self.scroll) {
+                let scroll = self.view.scroll;
+                if let Some(&h) = self.rendered.headings.iter().find(|&&h| h > scroll) {
                     self.scroll_to(h);
                 }
             }
             KeyCode::Char('[') => {
-                if let Some(&h) = self.rendered.headings.iter().rev().find(|&&h| h < self.scroll) {
+                let scroll = self.view.scroll;
+                if let Some(&h) = self.rendered.headings.iter().rev().find(|&&h| h < scroll) {
                     self.scroll_to(h);
                 }
             }
-            KeyCode::Char('/') => self.input = Some(String::new()),
+            KeyCode::Char('/') => self.search.input = Some(String::new()),
             KeyCode::Char('n') => self.step_match(true),
             KeyCode::Char('N') => self.step_match(false),
-            KeyCode::Char('r') => {
-                if let Source::File(p) = &self.source {
-                    if let Ok(s) = read_markdown_file(p) {
-                        self.md = s;
-                        self.mtime = file_mtime(p);
-                        self.dirty = true;
-                    }
-                }
-            }
+            KeyCode::Char('r') => self.reload(),
             _ => {}
         }
         false
+    }
+
+    /// Trata uma tecla com o prompt de busca aberto (`buf` é o texto digitado até agora).
+    fn on_search_key(&mut self, code: KeyCode, mut buf: String) {
+        match code {
+            KeyCode::Esc => {}
+            KeyCode::Enter => self.set_search(buf),
+            KeyCode::Backspace => {
+                buf.pop();
+                self.search.input = Some(buf);
+            }
+            KeyCode::Char(c) => {
+                buf.push(c);
+                self.search.input = Some(buf);
+            }
+            _ => self.search.input = Some(buf),
+        }
     }
 
     fn draw(&mut self, f: &mut Frame) {
@@ -435,26 +504,27 @@ impl App {
         let [content, status] =
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
 
-        let w = (content.width as usize)
-            .saturating_sub(4)
+        let w = usize::from(content.width)
+            .saturating_sub(TUI_MARGIN)
             .min(self.max_width)
-            .max(10);
+            .max(MIN_TUI_WIDTH);
         if self.dirty || w != self.render_width {
             self.rerender(w);
         }
-        self.view_h = content.height as usize;
-        self.scroll = self.scroll.min(self.max_scroll());
+        self.view.height = usize::from(content.height);
+        self.view.scroll = self.view.scroll.min(self.view.max_scroll(self.total_lines()));
 
-        let pad = (content.width as usize).saturating_sub(w) / 2;
+        let pad = usize::from(content.width).saturating_sub(w) / 2;
         let inner = Rect {
             x: content.x.saturating_add(u16::try_from(pad).unwrap_or(u16::MAX)),
             y: content.y,
             width: u16::try_from(w).unwrap_or(u16::MAX).min(content.width),
             height: content.height,
         };
-        let end = (self.scroll + self.view_h).min(self.rendered.lines.len());
-        let q = self.query.to_lowercase();
-        let visible: Vec<Line<'static>> = self.rendered.lines[self.scroll..end]
+        let start = self.view.scroll;
+        let end = (start + self.view.height).min(self.total_lines());
+        let q = self.search.query.to_lowercase();
+        let visible: Vec<Line<'static>> = self.rendered.lines[start..end]
             .iter()
             .map(|l| if q.is_empty() { l.clone() } else { highlight_line(l, &q) })
             .collect();
@@ -464,31 +534,15 @@ impl App {
             .bg(Color::Rgb(59, 66, 82))
             .fg(Color::Rgb(229, 233, 240));
         f.render_widget(
-            Paragraph::new(self.status_line(status.width as usize)).style(bar),
+            Paragraph::new(self.status_line(usize::from(status.width))).style(bar),
             status,
         );
     }
 
     fn status_line(&self, width: usize) -> Line<'static> {
-        let left = if let Some(buf) = &self.input {
-            format!(" /{buf}█")
-        } else {
-            let max = self.max_scroll();
-            let pct = if max == 0 { 100 } else { self.scroll * 100 / max };
-            let mut s = format!(" {}  {pct}%", self.name);
-            if !self.query.is_empty() {
-                if self.matches.is_empty() {
-                    s.push_str(&format!("  /{}: nada encontrado", self.query));
-                } else {
-                    s.push_str(&format!(
-                        "  /{} [{}/{}]",
-                        self.query,
-                        self.match_idx + 1,
-                        self.matches.len()
-                    ));
-                }
-            }
-            s
+        let left = match &self.search.input {
+            Some(buf) => format!(" /{buf}█"),
+            None => self.status_left(),
         };
         let right = "j/k rolar  [ ] títulos  / buscar  q sair ";
         let (lw, rw) = (left.width(), right.width());
@@ -498,6 +552,33 @@ impl App {
             left
         };
         Line::from(text)
+    }
+
+    /// Nome do arquivo, posição no documento e estado da busca.
+    fn status_left(&self) -> String {
+        let total = self.total_lines();
+        let pct = self
+            .view
+            .scroll
+            .saturating_mul(100)
+            .checked_div(self.view.max_scroll(total))
+            .unwrap_or(100);
+        let mut s = format!(" {}  {pct}%", self.name);
+        let search = &self.search;
+        if !search.query.is_empty() {
+            if search.matches.is_empty() {
+                let _ = write!(s, "  /{}: nada encontrado", search.query);
+            } else {
+                let _ = write!(
+                    s,
+                    "  /{} [{}/{}]",
+                    search.query,
+                    search.current + 1,
+                    search.matches.len()
+                );
+            }
+        }
+        s
     }
 }
 
@@ -644,11 +725,11 @@ mod tests {
     }
 
     fn args(list: &[&str]) -> Result<Command, String> {
-        parse_args(list.iter().map(|s| s.to_string()))
+        Cli::parse(list.iter().map(|s| s.to_string()))
     }
 
     fn run_opts(plain: bool, width: Option<usize>, path: Option<&str>) -> Result<Command, String> {
-        Ok(Command::Run(Options { plain, width, path: path.map(String::from) }))
+        Ok(Command::Run(Cli { plain, width, path: path.map(String::from) }))
     }
 
     #[test]

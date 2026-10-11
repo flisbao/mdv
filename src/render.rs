@@ -515,11 +515,9 @@ impl Renderer {
                     t.begin_row();
                 }
             }
-            Tag::TableCell => {
-                if self.table.as_ref().is_some_and(|t| t.in_head) {
-                    self.inline
-                        .push_style(Style::default().fg(H2).add_modifier(Modifier::BOLD));
-                }
+            Tag::TableCell if self.table.as_ref().is_some_and(|t| t.in_head) => {
+                self.inline
+                    .push_style(Style::default().fg(H2).add_modifier(Modifier::BOLD));
             }
             _ => {}
         }
