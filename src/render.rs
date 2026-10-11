@@ -40,6 +40,8 @@ type Styled = (String, Style);
 #[derive(Clone)]
 enum Piece {
     Text(String, Style),
+    /// Código em linha: os espaços são literais (não colapsam nem quebram a linha).
+    Code(String, Style),
     Break,
 }
 
@@ -47,7 +49,7 @@ impl Piece {
     /// Texto e estilo para contextos sem quebra de linha (células de tabela): `Break` vira espaço.
     fn as_text(&self) -> (&str, Style) {
         match self {
-            Piece::Text(t, st) => (t, *st),
+            Piece::Text(t, st) | Piece::Code(t, st) => (t, *st),
             Piece::Break => (" ", Style::default()),
         }
     }
@@ -258,7 +260,7 @@ impl Renderer {
                 let st = self
                     .style()
                     .patch(Style::default().fg(INLINE_CODE_FG).bg(INLINE_CODE_BG));
-                self.inline.push(Piece::Text(c.to_string(), st));
+                self.inline.push(Piece::Code(c.to_string(), st));
             }
             Event::SoftBreak => {
                 let st = self.style();
@@ -842,6 +844,11 @@ enum Unit {
     Break,
 }
 
+/// Espaços que separam palavras; os "sem quebra" (NBSP e similares) fazem parte da palavra.
+fn is_breaking_space(ch: char) -> bool {
+    ch.is_whitespace() && !matches!(ch, '\u{a0}' | '\u{2007}' | '\u{202f}')
+}
+
 fn push_run(units: &mut Vec<Unit>, text: String, is_space: bool, style: Style) {
     if is_space {
         if !matches!(units.last(), Some(Unit::Space(_))) {
@@ -871,14 +878,21 @@ fn wrap(toks: &[Piece], avail: usize) -> Vec<Vec<Span<'static>>> {
     let avail = avail.max(1);
     let mut units: Vec<Unit> = Vec::new();
     for piece in toks {
-        let Piece::Text(text, style) = piece else {
-            units.push(Unit::Break);
-            continue;
+        let (text, style) = match piece {
+            Piece::Text(text, style) => (text, style),
+            Piece::Code(text, style) => {
+                push_run(&mut units, text.clone(), false, *style);
+                continue;
+            }
+            Piece::Break => {
+                units.push(Unit::Break);
+                continue;
+            }
         };
         let mut buf = String::new();
         let mut buf_space = false;
         for ch in text.chars() {
-            let sp = ch.is_whitespace();
+            let sp = is_breaking_space(ch);
             if !buf.is_empty() && sp != buf_space {
                 push_run(&mut units, std::mem::take(&mut buf), buf_space, *style);
             }
@@ -1231,5 +1245,20 @@ mod tests {
     fn quebra_forcada_continua_quebrando_linha() {
         let lines = rendered_text("a\\\nb\n");
         assert_eq!(lines, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn codigo_em_linha_preserva_espacos() {
+        assert_eq!(rendered_text("x `a      b` y\n"), vec!["x a      b y"]);
+    }
+
+    #[test]
+    fn codigo_em_linha_longo_respeita_largura() {
+        assert_fits("`um trecho de codigo com varias palavras separadas por espacos` fim\n", 20);
+    }
+
+    #[test]
+    fn espaco_sem_quebra_nao_e_separador_de_palavra() {
+        assert_eq!(rendered_text("aaaaaaaaaa\u{a0}bbbbbbbbb\n"), vec!["aaaaaaaaaa\u{a0}bbbbbbbbb"]);
     }
 }
