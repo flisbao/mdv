@@ -37,3 +37,59 @@ fn arquivo_nao_regular_e_rejeitado() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("/dev/zero"), "stderr: {err}");
 }
+
+fn stderr_of(out: &Output) -> String {
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+#[test]
+fn largura_invalida_e_rejeitada() {
+    let out = mdv(&["-p", "-w", "abc", "-"], "x\n");
+    assert_eq!(out.status.code(), Some(2));
+    let err = stderr_of(&out);
+    assert!(err.contains("abc") && err.contains("largura"), "stderr: {err}");
+}
+
+#[test]
+fn largura_sem_valor_e_rejeitada() {
+    let out = mdv(&["-p", "-w"], "x\n");
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr_of(&out).contains("largura"), "stderr: {}", stderr_of(&out));
+}
+
+#[test]
+fn opcao_desconhecida_e_rejeitada() {
+    let out = mdv(&["--nao-existe", "-"], "x\n");
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr_of(&out).contains("--nao-existe"), "stderr: {}", stderr_of(&out));
+}
+
+#[test]
+fn dois_arquivos_sao_rejeitados() {
+    let out = mdv(&["a.md", "b.md"], "");
+    assert_eq!(out.status.code(), Some(2));
+}
+
+#[test]
+fn duplo_hifen_encerra_as_opcoes() {
+    let out = mdv(&["-p", "--", "-arquivo-inexistente.md"], "");
+    assert_eq!(out.status.code(), Some(1));
+    let err = stderr_of(&out);
+    assert!(err.contains("-arquivo-inexistente.md"), "stderr: {err}");
+    assert!(!err.contains("desconhecida"), "stderr: {err}");
+}
+
+#[test]
+fn erro_de_leitura_nao_usa_formato_debug() {
+    let out = mdv(&["-p", "nao-existe.md"], "");
+    assert_eq!(out.status.code(), Some(1));
+    let err = stderr_of(&out);
+    assert!(err.starts_with("mdv: "), "stderr: {err}");
+    assert!(!err.contains("Error:") && !err.contains('"'), "stderr: {err}");
+}
+
+#[test]
+fn ajuda_sai_com_sucesso() {
+    let out = mdv(&["--help"], "");
+    assert!(out.status.success());
+}

@@ -1,9 +1,9 @@
 mod render;
 
-use std::error::Error;
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::time::{Duration, SystemTime};
 
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -48,68 +48,142 @@ enum Source {
     Stdin,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let mut plain = false;
-    let mut width: Option<usize> = None;
-    let mut path: Option<String> = None;
+/// Opções da linha de comando para exibir um documento.
+#[derive(Debug, PartialEq)]
+struct Options {
+    plain: bool,
+    width: Option<usize>,
+    path: Option<String>,
+}
 
-    let mut args = std::env::args().skip(1);
+#[derive(Debug, PartialEq)]
+enum Command {
+    Help,
+    Version,
+    Run(Options),
+}
+
+/// Falha que encerra o programa; o código de saída depende do tipo.
+enum Failure {
+    /// Uso incorreto da linha de comando (código 2).
+    Usage(String),
+    /// Erro ao ler a entrada ou usar o terminal (código 1).
+    Runtime(String),
+}
+
+impl Failure {
+    fn exit_code(&self) -> ExitCode {
+        match self {
+            Failure::Usage(_) => ExitCode::from(2),
+            Failure::Runtime(_) => ExitCode::from(1),
+        }
+    }
+}
+
+fn main() -> ExitCode {
+    match run_cli() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(failure) => {
+            match &failure {
+                Failure::Usage(msg) => eprintln!("mdv: {msg}\nUse `mdv --help` para ver as opções."),
+                Failure::Runtime(msg) => eprintln!("mdv: {msg}"),
+            }
+            failure.exit_code()
+        }
+    }
+}
+
+/// Interpreta os argumentos (sem o nome do programa). `--` encerra as opções.
+fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
+    let mut opts = Options { plain: false, width: None, path: None };
+    let mut args = args.into_iter();
+    let mut only_paths = false;
     while let Some(a) = args.next() {
+        if only_paths || a == "-" || !a.starts_with('-') {
+            set_path(&mut opts, a)?;
+            continue;
+        }
         match a.as_str() {
-            "-p" | "--plain" => plain = true,
-            "-w" | "--width" => width = args.next().and_then(|v| parse_width(&v)),
-            "-h" | "--help" => {
-                print!("{HELP}");
-                return Ok(());
+            "--" => only_paths = true,
+            "-p" | "--plain" => opts.plain = true,
+            "-w" | "--width" => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| format!("a opção {a} precisa de uma largura"))?;
+                opts.width = Some(parse_width(&value)?);
             }
-            "-V" | "--version" => {
-                println!("mdv {}", env!("CARGO_PKG_VERSION"));
-                return Ok(());
-            }
-            _ => path = Some(a),
+            "-h" | "--help" => return Ok(Command::Help),
+            "-V" | "--version" => return Ok(Command::Version),
+            _ => return Err(format!("opção desconhecida: {a}")),
         }
     }
+    Ok(Command::Run(opts))
+}
 
-    let (source, md) = match path.as_deref() {
-        Some("-") => (Source::Stdin, read_stdin()?),
-        Some(p) => {
-            let md = read_markdown_file(Path::new(p))
-                .map_err(|e| format!("não consegui ler {p}: {e}"))?;
-            (Source::File(PathBuf::from(p)), md)
-        }
-        None if !io::stdin().is_terminal() => (Source::Stdin, read_stdin()?),
-        None => {
-            eprint!("{HELP}");
-            std::process::exit(2);
-        }
-    };
-
-    let stdout_tty = io::stdout().is_terminal();
-    if plain || !stdout_tty {
-        let w = width
-            .unwrap_or_else(|| {
-                terminal::size()
-                    .map(|(c, _)| c as usize)
-                    .unwrap_or(80)
-                    .min(100)
-            });
-        let out = render::render(&md, w);
-        let text = render::to_ansi(&out.lines, stdout_tty);
-        io::stdout().write_all(text.as_bytes())?;
-        return Ok(());
+fn set_path(opts: &mut Options, path: String) -> Result<(), String> {
+    if opts.path.replace(path).is_some() {
+        return Err("informe um único arquivo".to_string());
     }
-
-    let mut app = App::new(source, md, width.unwrap_or(100));
-    let mut term = ratatui::init();
-    let res = run(&mut term, &mut app);
-    ratatui::restore();
-    res?;
     Ok(())
 }
 
+fn run_cli() -> Result<(), Failure> {
+    let opts = match parse_args(std::env::args().skip(1)).map_err(Failure::Usage)? {
+        Command::Help => {
+            print!("{HELP}");
+            return Ok(());
+        }
+        Command::Version => {
+            println!("mdv {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+        Command::Run(opts) => opts,
+    };
+
+    let (source, md) = match opts.path.as_deref() {
+        Some("-") => (Source::Stdin, read_stdin().map_err(read_failure("stdin"))?),
+        Some(p) => {
+            let md = read_markdown_file(Path::new(p)).map_err(read_failure(p))?;
+            (Source::File(PathBuf::from(p)), md)
+        }
+        None if !io::stdin().is_terminal() => {
+            (Source::Stdin, read_stdin().map_err(read_failure("stdin"))?)
+        }
+        None => return Err(Failure::Usage("nenhum arquivo informado".to_string())),
+    };
+
+    let stdout_tty = io::stdout().is_terminal();
+    if opts.plain || !stdout_tty {
+        let w = opts.width.unwrap_or_else(|| {
+            terminal::size()
+                .map(|(c, _)| c as usize)
+                .unwrap_or(80)
+                .min(100)
+        });
+        let out = render::render(&md, w);
+        let text = render::to_ansi(&out.lines, stdout_tty);
+        return io::stdout()
+            .write_all(text.as_bytes())
+            .map_err(|e| Failure::Runtime(format!("não consegui escrever a saída: {e}")));
+    }
+
+    let mut app = App::new(source, md, opts.width.unwrap_or(100));
+    let mut term = ratatui::init();
+    let res = run(&mut term, &mut app);
+    ratatui::restore();
+    res.map_err(|e| Failure::Runtime(format!("erro no terminal: {e}")))
+}
+
+fn read_failure(what: &str) -> impl FnOnce(io::Error) -> Failure + '_ {
+    move |e| Failure::Runtime(format!("não consegui ler {what}: {e}"))
+}
+
 /// Interpreta o valor de `-w`, limitando-o ao intervalo suportado pelo renderizador.
-fn parse_width(value: &str) -> Option<usize> {
-    value.parse().ok().map(render::clamp_width)
+fn parse_width(value: &str) -> Result<usize, String> {
+    value
+        .parse()
+        .map(render::clamp_width)
+        .map_err(|_| format!("largura inválida: {value} (esperado um número inteiro positivo)"))
 }
 
 fn read_stdin() -> io::Result<String> {
@@ -466,9 +540,9 @@ mod tests {
 
     #[test]
     fn parse_width_limita_aos_extremos() {
-        assert_eq!(parse_width("5"), Some(render::MIN_WIDTH));
-        assert_eq!(parse_width("80"), Some(80));
-        assert_eq!(parse_width("18446744073709551615"), Some(render::MAX_WIDTH));
+        assert_eq!(parse_width("5"), Ok(render::MIN_WIDTH));
+        assert_eq!(parse_width("80"), Ok(80));
+        assert_eq!(parse_width("18446744073709551615"), Ok(render::MAX_WIDTH));
     }
 
     #[test]
@@ -509,6 +583,43 @@ mod tests {
 
     #[test]
     fn parse_width_rejeita_nao_numero() {
-        assert_eq!(parse_width("abc"), None);
+        assert!(parse_width("abc").unwrap_err().contains("abc"));
+        assert!(parse_width("-3").is_err());
+        assert!(parse_width("").is_err());
+    }
+
+    fn args(list: &[&str]) -> Result<Command, String> {
+        parse_args(list.iter().map(|s| s.to_string()))
+    }
+
+    fn run_opts(plain: bool, width: Option<usize>, path: Option<&str>) -> Result<Command, String> {
+        Ok(Command::Run(Options { plain, width, path: path.map(String::from) }))
+    }
+
+    #[test]
+    fn parse_args_aceita_opcoes_e_arquivo() {
+        assert_eq!(args(&["-p", "-w", "60", "a.md"]), run_opts(true, Some(60), Some("a.md")));
+        assert_eq!(args(&["--width", "5", "-"]), run_opts(false, Some(render::MIN_WIDTH), Some("-")));
+        assert_eq!(args(&[]), run_opts(false, None, None));
+    }
+
+    #[test]
+    fn parse_args_rejeita_opcao_desconhecida_e_largura_ruim() {
+        assert!(args(&["--zzz"]).unwrap_err().contains("--zzz"));
+        assert!(args(&["-w"]).is_err());
+        assert!(args(&["-w", "x"]).is_err());
+        assert!(args(&["a.md", "b.md"]).is_err());
+    }
+
+    #[test]
+    fn parse_args_duplo_hifen_trata_o_resto_como_caminho() {
+        assert_eq!(args(&["--", "-p"]), run_opts(false, None, Some("-p")));
+        assert!(args(&["--", "a", "b"]).is_err());
+    }
+
+    #[test]
+    fn parse_args_ajuda_e_versao() {
+        assert_eq!(args(&["-h"]), Ok(Command::Help));
+        assert_eq!(args(&["a.md", "-V"]), Ok(Command::Version));
     }
 }
