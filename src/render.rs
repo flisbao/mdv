@@ -483,24 +483,27 @@ impl Renderer {
     }
 
     /// Prefixos (primeira linha, linhas seguintes) com citação e indentação de listas.
-    /// Consome o marcador pendente do item atual.
-    fn prefixes(&mut self) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
+    /// Não altera o estado: quem desenha a primeira linha chama `take_marker`.
+    fn prefixes(&self) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
         let mut first = self.quote_prefix();
         let mut cont = self.quote_prefix();
         let n = self.lists.len();
-        for (i, lvl) in self.lists.iter_mut().enumerate() {
+        for (i, lvl) in self.lists.iter().enumerate() {
             let pad = " ".repeat(lvl.width);
-            if i + 1 == n {
-                match lvl.pending.take() {
-                    Some((m, st)) => first.push(Span::styled(m, st)),
-                    None => first.push(Span::raw(pad.clone())),
-                }
-            } else {
-                first.push(Span::raw(pad.clone()));
+            match &lvl.pending {
+                Some((m, st)) if i + 1 == n => first.push(Span::styled(m.clone(), *st)),
+                _ => first.push(Span::raw(pad.clone())),
             }
             cont.push(Span::raw(pad));
         }
         (first, cont)
+    }
+
+    /// Marca o marcador do item atual como já impresso (ele sai só na primeira linha).
+    fn take_marker(&mut self) {
+        if let Some(lvl) = self.lists.last_mut() {
+            lvl.pending = None;
+        }
     }
 
     fn flush_inline(&mut self) {
@@ -509,6 +512,7 @@ impl Renderer {
         }
         let toks = std::mem::take(&mut self.inline);
         let (first, cont) = self.prefixes();
+        self.take_marker();
         let pw: usize = first.iter().map(|s| s.content.width()).sum();
         let avail = self.width.saturating_sub(pw).max(10);
         for (i, spans) in wrap(&toks, avail).into_iter().enumerate() {
@@ -561,13 +565,14 @@ impl Renderer {
                 .unwrap_or_else(|| ss.find_syntax_plain_text())
         };
         let mut h = HighlightLines::new(syntax, theme);
-        let (_, cont) = self.prefixes();
+        let (first, cont) = self.prefixes();
+        self.take_marker();
         let pw: usize = cont.iter().map(|s| s.content.width()).sum();
         let avail = self.width.saturating_sub(pw + 2).max(10);
         let dim = Style::default().fg(DIM);
 
         let header = if lang.is_empty() { "╭─".to_string() } else { format!("╭─ {lang}") };
-        let mut v = cont.clone();
+        let mut v = first;
         v.push(Span::styled(header, dim));
         self.lines.push(Line::from(v));
 
@@ -604,13 +609,14 @@ impl Renderer {
     }
 
     fn render_table(&mut self, t: TableState) {
-        let (_, cont) = self.prefixes();
+        let (first, cont) = self.prefixes();
         let pw: usize = cont.iter().map(|s| s.content.width()).sum();
         let avail = self.width.saturating_sub(pw);
         let ncols = t.rows.iter().map(|r| r.len()).max().unwrap_or(0);
         if ncols == 0 {
             return;
         }
+        self.take_marker();
         let mut natural = vec![1usize; ncols];
         for row in &t.rows {
             for (i, cell) in row.iter().enumerate() {
@@ -621,18 +627,18 @@ impl Renderer {
         let widths = compute_column_widths(&natural, avail);
 
         let dim = Style::default().fg(DIM);
-        let border = |l: &str, m: &str, r: &str| -> Line<'static> {
+        let border = |prefix: &[Span<'static>], l: &str, m: &str, r: &str| -> Line<'static> {
             let mut s = String::from(l);
             for (i, w) in widths.iter().enumerate() {
                 s.push_str(&"─".repeat(w + 2));
                 s.push_str(if i + 1 == ncols { r } else { m });
             }
-            let mut v = cont.clone();
+            let mut v = prefix.to_vec();
             v.push(Span::styled(s, dim));
             Line::from(v)
         };
 
-        let mut out: Vec<Line<'static>> = vec![border("┌", "┬", "┐")];
+        let mut out: Vec<Line<'static>> = vec![border(&first, "┌", "┬", "┐")];
         for (ri, row) in t.rows.iter().enumerate() {
             let mut v = cont.clone();
             v.push(Span::styled("│", dim));
@@ -653,10 +659,10 @@ impl Renderer {
             }
             out.push(Line::from(v));
             if ri == 0 && t.header {
-                out.push(border("├", "┼", "┤"));
+                out.push(border(&cont, "├", "┼", "┤"));
             }
         }
-        out.push(border("└", "┴", "┘"));
+        out.push(border(&cont, "└", "┴", "┘"));
         self.lines.extend(out);
     }
 }
@@ -1016,6 +1022,41 @@ mod tests {
         let out = render(&md, 80);
         assert!(!out.lines.is_empty());
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    fn rendered_text(md: &str) -> Vec<String> {
+        render(md, 80)
+            .lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect()
+    }
+
+    #[test]
+    fn item_iniciado_por_bloco_de_codigo_mantem_marcador() {
+        let lines = rendered_text("- ```rust\n  let a = 1;\n  ```\n");
+        assert!(lines[0].starts_with("• "), "primeira linha: {:?}", lines[0]);
+        assert!(!lines[1].contains('•'));
+    }
+
+    #[test]
+    fn item_ordenado_iniciado_por_bloco_de_codigo_mantem_numero() {
+        let lines = rendered_text("1. ```\n   x\n   ```\n2. dois\n");
+        assert!(lines[0].starts_with("1. "), "primeira linha: {:?}", lines[0]);
+        assert!(lines.iter().any(|l| l.starts_with("2. ")));
+    }
+
+    #[test]
+    fn item_iniciado_por_tabela_mantem_marcador() {
+        let lines = rendered_text("- | a | b |\n  |---|---|\n  | 1 | 2 |\n");
+        assert!(lines[0].starts_with("• "), "primeira linha: {:?}", lines[0]);
+        assert_eq!(lines.iter().filter(|l| l.contains('•')).count(), 1);
+    }
+
+    #[test]
+    fn marcador_sai_uma_unica_vez_por_item() {
+        let lines = rendered_text("- texto longo que quebra em varias linhas porque e bem comprido mesmo e passa de oitenta colunas facilmente\n");
+        assert_eq!(lines.iter().filter(|l| l.contains('•')).count(), 1);
     }
 
     #[test]
