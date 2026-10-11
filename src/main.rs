@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     while let Some(a) = args.next() {
         match a.as_str() {
             "-p" | "--plain" => plain = true,
-            "-w" | "--width" => width = args.next().and_then(|v| v.parse().ok()),
+            "-w" | "--width" => width = args.next().and_then(|v| parse_width(&v)),
             "-h" | "--help" => {
                 print!("{HELP}");
                 return Ok(());
@@ -88,8 +88,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .map(|(c, _)| c as usize)
                     .unwrap_or(80)
                     .min(100)
-            })
-            .max(20);
+            });
         let out = render::render(&md, w);
         let text = render::to_ansi(&out.lines, stdout_tty);
         io::stdout().write_all(text.as_bytes())?;
@@ -102,6 +101,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     ratatui::restore();
     res?;
     Ok(())
+}
+
+/// Interpreta o valor de `-w`, limitando-o ao intervalo suportado pelo renderizador.
+fn parse_width(value: &str) -> Option<usize> {
+    value.parse().ok().map(render::clamp_width)
 }
 
 fn read_stdin() -> io::Result<String> {
@@ -430,4 +434,21 @@ fn highlight_line(line: &Line<'static>, q: &str) -> Line<'static> {
         out.extend(parts);
     }
     Line::from(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_width_limita_aos_extremos() {
+        assert_eq!(parse_width("5"), Some(render::MIN_WIDTH));
+        assert_eq!(parse_width("80"), Some(80));
+        assert_eq!(parse_width("18446744073709551615"), Some(render::MAX_WIDTH));
+    }
+
+    #[test]
+    fn parse_width_rejeita_nao_numero() {
+        assert_eq!(parse_width("abc"), None);
+    }
 }

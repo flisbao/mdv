@@ -27,6 +27,10 @@ const CODE_BG: Color = Color::Rgb(40, 44, 52);
 const QUOTE: Color = Color::Rgb(139, 148, 158);
 const BULLET: Color = Color::Rgb(126, 231, 135);
 
+/// Limites de largura de renderização (evitam alocações gigantes em `repeat`).
+pub const MIN_WIDTH: usize = 20;
+pub const MAX_WIDTH: usize = 1000;
+
 const REPLACEMENT: char = '\u{FFFD}';
 
 type Piece = (String, Style);
@@ -39,10 +43,14 @@ pub struct Rendered {
     pub headings: Vec<usize>,
 }
 
+pub fn clamp_width(width: usize) -> usize {
+    width.clamp(MIN_WIDTH, MAX_WIDTH)
+}
+
 pub fn render(md: &str, width: usize) -> Rendered {
     let opts = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
     let mut r = Renderer {
-        width: width.max(10),
+        width: clamp_width(width),
         lines: Vec::new(),
         headings: Vec::new(),
         inline: Vec::new(),
@@ -904,6 +912,19 @@ mod tests {
     #[test]
     fn sanitiza_controles_c1_e_retorno_de_carro_solto() {
         assert_no_control_chars("a\u{9b}31m b\rc\n");
+    }
+
+    #[test]
+    fn largura_enorme_e_limitada_em_render() {
+        let out = render("---\n\n# t\n", usize::MAX);
+        let widest = out.lines.iter().map(|l| l.width()).max().unwrap_or(0);
+        assert!(widest <= MAX_WIDTH, "linha com {widest} colunas");
+    }
+
+    #[test]
+    fn largura_minima_e_respeitada_em_render() {
+        let out = render("---\n", 0);
+        assert_eq!(out.lines[0].width(), MIN_WIDTH);
     }
 
     #[test]
