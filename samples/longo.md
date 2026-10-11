@@ -1,0 +1,35 @@
+# Documento longo
+
+Este arquivo existe para testar rolagem, busca (`/`, `n`, `N`), navegação por títulos (`]`, `[`) e desempenho de re-render.
+
+## Seção 1
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer posuere erat a ante venenatis dapibus posuere velit aliquet. Donec ullamcorper nulla non metus auctor fringilla. Vestibulum id ligula porta felis euismod semper.
+
+Cras mattis consectetur purus sit amet fermentum. Maecenas sed diam eget risus varius blandit sit amet non magna. Nullam quis risus eget urna mollis ornare vel eu leo.
+
+## Seção 2
+
+Palavra-chave para busca: abacaxi. Outra ocorrência de abacaxi aqui.
+
+Praesent commodo cursus magna, vel scelerisque nisl consectetur et. Sed posuere consectetur est at lobortis. Morbi leo risus, porta ac consectetur ac, vestibulum at eros.
+
+### Seção 2.1
+
+Aenean lacinia bibendum nulla sed consectetur. Curabitur blandit tempus porttitor. Etiam porta sem malesuada magna mollis euismod.
+
+### Seção 2.2
+
+Donec sed odio dui. Nulla vitae elit libero, a pharetra augue. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh.
+
+## Seção 3
+
+abacaxi aparece de novo, junto com mangas e goiabas.
+
+#### Subseção 3.1.1
+
+Vivamus sagittis lacus vel augue laoreet rutrum faucibus dolor auctor. Duis mollis, est non commodo luctus, nisi erat porttitor ligula.
+
+## Seção 4
+
+Último parágrafo: `fim do documento`.
