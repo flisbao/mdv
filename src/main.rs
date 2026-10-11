@@ -129,14 +129,8 @@ fn set_path(opts: &mut Options, path: String) -> Result<(), String> {
 
 fn run_cli() -> Result<(), Failure> {
     let opts = match parse_args(std::env::args().skip(1)).map_err(Failure::Usage)? {
-        Command::Help => {
-            print!("{HELP}");
-            return Ok(());
-        }
-        Command::Version => {
-            println!("mdv {}", env!("CARGO_PKG_VERSION"));
-            return Ok(());
-        }
+        Command::Help => return write_stdout(HELP),
+        Command::Version => return write_stdout(&format!("mdv {}\n", env!("CARGO_PKG_VERSION"))),
         Command::Run(opts) => opts,
     };
 
@@ -162,9 +156,7 @@ fn run_cli() -> Result<(), Failure> {
         });
         let out = render::render(&md, w);
         let text = render::to_ansi(&out.lines, stdout_tty);
-        return io::stdout()
-            .write_all(text.as_bytes())
-            .map_err(|e| Failure::Runtime(format!("não consegui escrever a saída: {e}")));
+        return write_stdout(&text);
     }
 
     let mut app = App::new(source, md, opts.width.unwrap_or(100));
@@ -172,6 +164,20 @@ fn run_cli() -> Result<(), Failure> {
     let res = run(&mut term, &mut app);
     ratatui::restore();
     res.map_err(|e| Failure::Runtime(format!("erro no terminal: {e}")))
+}
+
+fn write_stdout(text: &str) -> Result<(), Failure> {
+    write_tolerating_closed_pipe(io::stdout().lock(), text.as_bytes())
+        .map_err(|e| Failure::Runtime(format!("não consegui escrever a saída: {e}")))
+}
+
+/// Escreve tudo em `out`. Se o leitor fechou o pipe (`mdv -p x | head`), a saída
+/// foi simplesmente encerrada: isso não é erro.
+fn write_tolerating_closed_pipe(mut out: impl Write, bytes: &[u8]) -> io::Result<()> {
+    match out.write_all(bytes).and_then(|()| out.flush()) {
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        other => other,
+    }
 }
 
 fn read_failure(what: &str) -> impl FnOnce(io::Error) -> Failure + '_ {
@@ -579,6 +585,28 @@ mod tests {
     fn read_markdown_file_rejeita_dispositivo() {
         let err = read_markdown_file(Path::new("/dev/zero")).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    struct FailingWriter(io::ErrorKind);
+
+    impl Write for FailingWriter {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(self.0.into())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn pipe_quebrado_na_escrita_e_saida_normal() {
+        assert!(write_tolerating_closed_pipe(FailingWriter(io::ErrorKind::BrokenPipe), b"x").is_ok());
+    }
+
+    #[test]
+    fn outros_erros_de_escrita_continuam_erros() {
+        let err = write_tolerating_closed_pipe(FailingWriter(io::ErrorKind::PermissionDenied), b"x");
+        assert_eq!(err.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
     }
 
     #[test]

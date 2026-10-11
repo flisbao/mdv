@@ -93,3 +93,26 @@ fn ajuda_sai_com_sucesso() {
     let out = mdv(&["--help"], "");
     assert!(out.status.success());
 }
+
+#[test]
+fn pipe_fechado_na_saida_nao_e_erro() {
+    let input = "linha de texto\n\n".repeat(100_000);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mdv"))
+        .args(["-p", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("mdv deve iniciar");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(input.as_bytes())
+        .expect("escrever stdin");
+    // Como `mdv ... | head -0`: o leitor some antes de a saída (bem maior que o pipe) acabar.
+    drop(child.stdout.take());
+    let out = child.wait_with_output().expect("mdv deve terminar");
+    assert!(out.status.success(), "stderr: {}", stderr_of(&out));
+    assert!(out.stderr.is_empty(), "stderr: {}", stderr_of(&out));
+}
