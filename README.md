@@ -91,6 +91,17 @@ TECLAS (modo interativo):
 - A busca encontra ocorrências dentro de um mesmo trecho estilizado.
 - Imagens aparecem como `[imagem: texto alternativo]`.
 
+## Changelog
+
+<!-- mdv:changelog:start -->
+### v0.1.1
+
+_2026-10-13_
+
+- ci/docs: release multiplataforma e README atualizado a cada release (#1)
+- chore: track Cargo.lock for reproducible release builds
+<!-- mdv:changelog:end -->
+
 ## Desenvolvimento
 
 ```bash

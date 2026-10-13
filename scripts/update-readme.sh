@@ -5,6 +5,8 @@
 # Blocos (entre <!-- mdv:NOME:start --> e <!-- mdv:NOME:end -->):
 #   install  links de download da versão <tag>
 #   help     saída real de `mdv --help` do binário publicado
+#   changelog  histórico por release, mais novo primeiro; cada release acrescenta
+#            os commits desde a tag anterior (idempotente por tag)
 set -euo pipefail
 
 tag=${1:?uso: update-readme.sh <tag> <binario> [README.md]}
@@ -43,5 +45,29 @@ replace() { # nome conteúdo
   mv "$readme.tmp" "$readme"
 }
 
+# Changelog: commits entre a tag anterior e <tag>, sem os commits automáticos de README/versão.
+changelog_block() {
+  local start="<!-- mdv:changelog:start -->" end="<!-- mdv:changelog:end -->" existing prev range log date entry
+  existing=$(awk -v s="$start" -v e="$end" '$0 == e { on = 0 } on { print } $0 == s { on = 1 }' "$readme")
+  if printf '%s\n' "$existing" | grep -qxF "### $tag"; then
+    printf '%s' "$existing"
+    return
+  fi
+  prev=$(git describe --tags --abbrev=0 "$tag^" 2>/dev/null || true)
+  range="${prev:+$prev..}$tag"
+  log=$(git log --no-merges --pretty='- %s' "$range" | grep -vE '^- (docs\(readme\):|chore: versão)' || true)
+  [ -n "$log" ] || log="- Sem mudanças registradas."
+  date=$(git log -1 --format=%cs "$tag")
+  entry=$(printf '### %s\n\n_%s_\n\n%s' "$tag" "$date" "$log")
+  if [ -n "$existing" ]; then
+    printf '%s\n\n%s' "$entry" "$existing"
+  else
+    printf '%s' "$entry"
+  fi
+}
+
+changelog=$(changelog_block)
+
 replace install "$install"
 replace help "$help"
+replace changelog "$changelog"
