@@ -1,4 +1,5 @@
 mod cli;
+mod image;
 mod render;
 
 use std::fmt::Write as _;
@@ -102,7 +103,7 @@ fn run_cli() -> Result<(), Failure> {
     let (source, md) = load_source(cli.path.as_deref())?;
     let stdout_tty = io::stdout().is_terminal();
     if cli.plain || !stdout_tty {
-        run_plain(&md, cli.width, stdout_tty)
+        run_plain(&md, &source, cli.width, stdout_tty)
     } else {
         run_tui(source, md, cli.width.unwrap_or(DEFAULT_WIDTH))
     }
@@ -123,14 +124,26 @@ fn load_source(path: Option<&str>) -> Result<(Source, String), Failure> {
     }
 }
 
+/// Imagens relativas são resolvidas a partir da pasta do arquivo (ou do diretório atual, com stdin).
+fn image_store(source: &Source) -> image::ImageStore {
+    let base = match source {
+        Source::File(p) => p
+            .parent()
+            .map(|d| if d.as_os_str().is_empty() { PathBuf::from(".") } else { d.to_path_buf() }),
+        Source::Stdin => None,
+    };
+    image::ImageStore::new(base)
+}
+
 /// Imprime o documento renderizado (com cores só se a saída for um terminal).
-fn run_plain(md: &str, width: Option<usize>, color: bool) -> Result<(), Failure> {
+fn run_plain(md: &str, source: &Source, width: Option<usize>, color: bool) -> Result<(), Failure> {
     let width = width.unwrap_or_else(|| {
         terminal::size()
             .map_or(FALLBACK_TERMINAL_WIDTH, |(cols, _)| usize::from(cols))
             .min(DEFAULT_WIDTH)
     });
-    let out = render::render(md, width);
+    let images = image_store(source);
+    let out = render::render_with(md, &render::RenderOpts { width, images: Some(&images) });
     write_stdout(&render::to_ansi(&out.lines, color))
 }
 
@@ -285,6 +298,7 @@ impl SearchState {
 
 struct App {
     source: Source,
+    images: image::ImageStore,
     name: String,
     md: String,
     mtime: Option<SystemTime>,
@@ -307,6 +321,7 @@ impl App {
             Source::Stdin => ("stdin".to_string(), None),
         };
         App {
+            images: image_store(&source),
             source,
             name,
             md,
@@ -333,7 +348,8 @@ impl App {
     }
 
     fn rerender(&mut self, w: usize) {
-        self.rendered = render::render(&self.md, w);
+        self.rendered =
+            render::render_with(&self.md, &render::RenderOpts { width: w, images: Some(&self.images) });
         self.render_width = w;
         self.dirty = false;
         self.search.refresh(&self.rendered.lines);

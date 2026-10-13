@@ -16,6 +16,8 @@ use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+use crate::image::{halfblock, ImageState, ImageStore, MAX_IMAGE_COLS, MAX_IMAGE_ROWS};
+
 const H1: Color = Color::Rgb(210, 168, 255);
 const H2: Color = Color::Rgb(121, 192, 255);
 const H3: Color = Color::Rgb(126, 231, 135);
@@ -83,10 +85,21 @@ pub fn clamp_width(width: usize) -> usize {
     width.clamp(MIN_WIDTH, MAX_WIDTH)
 }
 
+/// Opções de renderização: largura e, se houver, onde buscar imagens.
+pub struct RenderOpts<'a> {
+    pub width: usize,
+    pub images: Option<&'a ImageStore>,
+}
+
+#[allow(dead_code)] // atalho usado pelos testes
 pub fn render(md: &str, width: usize) -> Rendered {
-    let opts = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
-    let mut r = Renderer::new(width);
-    for ev in Parser::new_ext(md, opts) {
+    render_with(md, &RenderOpts { width, images: None })
+}
+
+pub fn render_with(md: &str, opts: &RenderOpts) -> Rendered {
+    let parse_opts = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
+    let mut r = Renderer::new(opts.width, opts.images);
+    for ev in Parser::new_ext(md, parse_opts) {
         r.handle(sanitize_event(ev));
     }
     r.finish()
@@ -389,7 +402,13 @@ impl TableBuilder {
     }
 }
 
-struct Renderer {
+/// Imagem Markdown em andamento: destino e posição em `inline` do "[imagem: " de fallback.
+struct ImageCtx {
+    url: String,
+    mark: usize,
+}
+
+struct Renderer<'a> {
     width: usize,
     out: Rendered,
     inline: InlineBuffer,
@@ -398,11 +417,15 @@ struct Renderer {
     code: Option<CodeBlock>,
     table: Option<TableBuilder>,
     highlight_left: usize,
+    images: Option<&'a ImageStore>,
+    image: Option<ImageCtx>,
 }
 
-impl Renderer {
-    fn new(width: usize) -> Self {
+impl<'a> Renderer<'a> {
+    fn new(width: usize, images: Option<&'a ImageStore>) -> Self {
         Renderer {
+            images,
+            image: None,
             width: clamp_width(width),
             out: Rendered::default(),
             inline: InlineBuffer::default(),
@@ -499,8 +522,9 @@ impl Renderer {
                 self.inline
                     .push_style(Style::default().fg(LINK).add_modifier(Modifier::UNDERLINED));
             }
-            Tag::Image { .. } => {
+            Tag::Image { dest_url, .. } => {
                 self.inline.push_style(Style::default().add_modifier(Modifier::ITALIC));
+                self.image = Some(ImageCtx { url: dest_url.to_string(), mark: self.inline.pieces.len() });
                 self.inline.push_dim("[imagem: ");
             }
             Tag::Table(aligns) => {
@@ -561,10 +585,7 @@ impl Renderer {
             TagEnd::Item => self.flush_inline(),
             TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough => self.inline.pop_style(),
             TagEnd::Link => self.end_link(),
-            TagEnd::Image => {
-                self.inline.push_dim("]");
-                self.inline.pop_style();
-            }
+            TagEnd::Image => self.end_image(),
             TagEnd::TableCell => self.end_table_cell(),
             TagEnd::TableHead => {
                 if let Some(t) = &mut self.table {
@@ -624,6 +645,38 @@ impl Renderer {
             if !url.is_empty() && !url.starts_with('#') {
                 self.inline.push_dim(format!(" ({url})"));
             }
+        }
+    }
+
+    fn end_image(&mut self) {
+        self.inline.pop_style();
+        // Em célula de tabela não há como intercalar linhas de imagem: fica o texto alternativo.
+        let store = if self.table.is_some() { None } else { self.images };
+        let state = self
+            .image
+            .take()
+            .zip(store)
+            .map(|(ctx, store)| (ctx.mark, store.get(&ctx.url)));
+        match state {
+            Some((mark, ImageState::Ready(img))) => {
+                self.inline.pieces.truncate(mark);
+                self.flush_inline();
+                self.push_image(&img);
+            }
+            Some((_, ImageState::Loading)) => self.inline.push_dim(" … carregando]"),
+            Some((_, ImageState::Failed(e))) => self.inline.push_dim(format!(" — {e}]")),
+            None => self.inline.push_dim("]"),
+        }
+    }
+
+    fn push_image(&mut self, img: &image::DynamicImage) {
+        let (first, cont) = self.prefixes();
+        self.take_marker();
+        let cols = self.width.saturating_sub(spans_width(&first)).clamp(1, MAX_IMAGE_COLS);
+        for (i, line) in halfblock(img, cols, MAX_IMAGE_ROWS).into_iter().enumerate() {
+            let mut v = if i == 0 { first.clone() } else { cont.clone() };
+            v.extend(line.spans);
+            self.out.lines.push(Line::from(v));
         }
     }
 
@@ -1466,5 +1519,58 @@ mod tests {
         assert_eq!(colors_per_block.len(), blocks);
         assert!(colors_per_block[0].len() > 1, "primeiro bloco cabe no orçamento");
         assert_eq!(colors_per_block[blocks - 1].len(), 1, "último bloco estoura o orçamento");
+    }
+
+    fn joined_text(r: &Rendered) -> String {
+        r.lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn imagem_local_vira_meio_bloco() {
+        let dir = tempfile::tempdir().unwrap();
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(4, 4, image::Rgba([200, 10, 10, 255])));
+        let mut png = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut png, image::ImageFormat::Png).unwrap();
+        std::fs::write(dir.path().join("a.png"), png.into_inner()).unwrap();
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        let r = render_with("antes\n\n![logo](a.png)\n\ndepois", &RenderOpts { width: 40, images: Some(&store) });
+        let t = joined_text(&r);
+        assert!(t.contains('▀'), "{t}");
+        assert!(!t.contains("[imagem"), "{t}");
+        assert!(t.contains("antes") && t.contains("depois"));
+    }
+
+    #[test]
+    fn imagem_quebrada_mostra_alt_e_motivo() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        let r = render_with("![logo](nao.png)", &RenderOpts { width: 40, images: Some(&store) });
+        let t = joined_text(&r);
+        assert!(t.contains("[imagem: logo"), "{t}");
+        assert!(t.contains('—'), "{t}");
+    }
+
+    #[test]
+    fn imagem_em_celula_de_tabela_continua_texto() {
+        let dir = tempfile::tempdir().unwrap();
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(4, 4, image::Rgba([1, 2, 3, 255])));
+        let mut png = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut png, image::ImageFormat::Png).unwrap();
+        std::fs::write(dir.path().join("a.png"), png.into_inner()).unwrap();
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        let r = render_with("| a |\n|---|\n| ![x](a.png) |\n", &RenderOpts { width: 40, images: Some(&store) });
+        let t = joined_text(&r);
+        assert!(!t.contains('▀'), "{t}");
+        assert!(t.contains("[imagem: x]"), "{t}");
+    }
+
+    #[test]
+    fn sem_store_mantem_comportamento_antigo() {
+        let t = joined_text(&render("![logo](a.png)", 40));
+        assert_eq!(t.trim(), "[imagem: logo]");
     }
 }

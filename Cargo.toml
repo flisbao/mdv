@@ -10,6 +10,10 @@ pulldown-cmark = { version = "0.13", default-features = false }
 ratatui = "0.29"
 syntect = { version = "5", default-features = false, features = ["parsing", "default-syntaxes", "default-themes", "regex-fancy"] }
 unicode-width = "0.2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 lto = true
