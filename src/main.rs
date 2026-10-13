@@ -200,20 +200,44 @@ fn image_store(source: &Source, cli: &cli::Cli, blocking: bool) -> image::ImageS
     store
 }
 
-/// Único ponto que decide como o texto da entrada vira linhas, conforme o modo (TUI e `--plain`).
-fn render_doc(
+/// Como a entrada é interpretada: o modo e as opções que só valem para JSON ou tabela.
+#[derive(Clone)]
+struct DocOpts {
     mode: cli::Mode,
-    json_path: Option<&str>,
-    text: &str,
-    width: usize,
-    images: &image::ImageStore,
-) -> render::Rendered {
-    match mode {
+    json_path: Option<String>,
+    head: usize,
+    cols: Vec<String>,
+    no_header: bool,
+}
+
+impl DocOpts {
+    fn from_cli(cli: &cli::Cli) -> Self {
+        DocOpts {
+            mode: cli.mode,
+            json_path: cli.json_path.clone(),
+            head: cli.head,
+            cols: cli.cols.clone(),
+            no_header: cli.no_header,
+        }
+    }
+}
+
+/// Único ponto que decide como o texto da entrada vira linhas, conforme o modo (TUI e `--plain`).
+fn render_doc(doc: &DocOpts, text: &str, width: usize, images: &image::ImageStore) -> render::Rendered {
+    match doc.mode {
         cli::Mode::Markdown => {
             render::render_with(text, &render::RenderOpts { width, images: Some(images) })
         }
-        cli::Mode::Json => data::render_json(text, json_path, width),
-        cli::Mode::Table { .. } => render::error_rendered("CSV/TSV ainda não suportado"),
+        cli::Mode::Json => data::render_json(text, doc.json_path.as_deref(), width),
+        cli::Mode::Table { delimiter } => {
+            let opts = data::TableOpts {
+                delimiter,
+                head: doc.head,
+                cols: doc.cols.clone(),
+                no_header: doc.no_header,
+            };
+            data::render_table_data(text, &opts, width)
+        }
     }
 }
 
@@ -234,7 +258,7 @@ fn run_plain(md: &str, source: &Source, width: Option<usize>, color: bool, cli: 
             .min(DEFAULT_WIDTH)
     });
     let images = image_store(source, cli, true);
-    let out = render_doc(cli.mode, cli.json_path.as_deref(), md, width, &images);
+    let out = render_doc(&DocOpts::from_cli(cli), md, width, &images);
     write_stdout(&render::to_ansi(&out.lines, color))
 }
 
@@ -393,8 +417,7 @@ struct App {
     images: image::ImageStore,
     seen_images_version: u64,
     raw: bool,
-    mode: cli::Mode,
-    json_path: Option<String>,
+    doc: DocOpts,
     stream: Option<Receiver<String>>,
     stick_bottom: bool,
     latest_dir: Option<PathBuf>,
@@ -423,8 +446,7 @@ impl App {
             images: image_store(&source, cli, false),
             seen_images_version: 0,
             raw: false,
-            mode: cli.mode,
-            json_path: cli.json_path.clone(),
+            doc: DocOpts::from_cli(cli),
             stream: None,
             stick_bottom: false,
             latest_dir: None,
@@ -508,9 +530,9 @@ impl App {
 
     fn rerender(&mut self, w: usize) {
         self.rendered = if self.raw {
-            render::render_code_only(&self.md, raw_lang(self.mode), w)
+            render::render_code_only(&self.md, raw_lang(self.doc.mode), w)
         } else {
-            render_doc(self.mode, self.json_path.as_deref(), &self.md, w, &self.images)
+            render_doc(&self.doc, &self.md, w, &self.images)
         };
         self.render_width = w;
         self.dirty = false;

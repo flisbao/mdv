@@ -15,6 +15,7 @@ ureq = { version = "2", default-features = false, features = ["tls"] }
 url = "2"
 tempfile = "3"
 serde_json = { version = "1", features = ["preserve_order"] }
+csv = "1"
 
 [profile.release]
 lto = true

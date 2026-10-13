@@ -105,6 +105,31 @@ pub fn render_code_only(code: &str, lang: &str, width: usize) -> Rendered {
     r.out
 }
 
+/// Desenha só uma tabela já em células de texto (CSV/TSV); `header` estiliza a primeira linha.
+pub fn render_table_only(
+    rows: Vec<Vec<String>>,
+    header: bool,
+    aligns: Vec<Alignment>,
+    width: usize,
+) -> Rendered {
+    let head_style = Style::default().fg(H2).add_modifier(Modifier::BOLD);
+    let rows: Vec<Vec<Vec<Piece>>> = rows
+        .into_iter()
+        .enumerate()
+        .map(|(ri, row)| {
+            row.into_iter()
+                .map(|cell| {
+                    let st = if header && ri == 0 { head_style } else { Style::default() };
+                    vec![Piece::Text(sanitize(&cell).into_owned(), st)]
+                })
+                .collect()
+        })
+        .collect();
+    let mut r = Renderer::new(width, None);
+    r.render_table(&TableBuilder { aligns, rows, cur: Vec::new(), has_header: header, in_head: false });
+    r.out
+}
+
 /// Uma linha vermelha com a mensagem de erro (saneada).
 pub fn error_rendered(msg: &str) -> Rendered {
     let st = Style::default().fg(Color::Rgb(248, 81, 73)).add_modifier(Modifier::BOLD);

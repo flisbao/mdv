@@ -110,6 +110,28 @@ fn json_invalido_mostra_erro_na_saida() {
     assert!(text.contains("JSON inválido"), "{text}");
 }
 
+#[test]
+fn csv_subcomando_mostra_tabela_com_rodape() {
+    let out = mdv(&["csv", "-p", "-"], "id,nome,nota\n1,Ana,9.5\n2,Bia,10\n");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("Ana") && text.contains("2 de 2 linhas · 3 colunas"), "{text}");
+}
+
+#[test]
+fn tsv_com_cols_mostra_so_a_coluna() {
+    let out = mdv(&["tsv", "-p", "--cols", "b", "-"], "a\tb\n1\t2\n");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("│ 2 │") && !text.contains("│ 1") && !text.contains("│ a"), "{text}");
+}
+
+#[test]
+fn csv_com_head_e_delimiter() {
+    let out = mdv(&["csv", "-p", "--delimiter", ";", "--head", "1", "-"], "n;m\n1;x\n2;y\n");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("1 de 2 linhas") && !text.contains('y'), "{text}");
+}
+
 const MERMAID_MD: &str = "```mermaid\ngraph TD; A-->B\n```\n";
 
 #[test]
