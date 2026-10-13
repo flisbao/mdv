@@ -1,4 +1,5 @@
 mod cli;
+mod data;
 mod image;
 mod mermaid;
 mod net;
@@ -199,6 +200,32 @@ fn image_store(source: &Source, cli: &cli::Cli, blocking: bool) -> image::ImageS
     store
 }
 
+/// Único ponto que decide como o texto da entrada vira linhas, conforme o modo (TUI e `--plain`).
+fn render_doc(
+    mode: cli::Mode,
+    json_path: Option<&str>,
+    text: &str,
+    width: usize,
+    images: &image::ImageStore,
+) -> render::Rendered {
+    match mode {
+        cli::Mode::Markdown => {
+            render::render_with(text, &render::RenderOpts { width, images: Some(images) })
+        }
+        cli::Mode::Json => data::render_json(text, json_path, width),
+        cli::Mode::Table { .. } => render::error_rendered("CSV/TSV ainda não suportado"),
+    }
+}
+
+/// Linguagem usada para mostrar a fonte crua (`m`).
+fn raw_lang(mode: cli::Mode) -> &'static str {
+    match mode {
+        cli::Mode::Markdown => "md",
+        cli::Mode::Json => "json",
+        cli::Mode::Table { .. } => "text",
+    }
+}
+
 /// Imprime o documento renderizado (com cores só se a saída for um terminal).
 fn run_plain(md: &str, source: &Source, width: Option<usize>, color: bool, cli: &cli::Cli) -> Result<(), Failure> {
     let width = width.unwrap_or_else(|| {
@@ -207,7 +234,7 @@ fn run_plain(md: &str, source: &Source, width: Option<usize>, color: bool, cli: 
             .min(DEFAULT_WIDTH)
     });
     let images = image_store(source, cli, true);
-    let out = render::render_with(md, &render::RenderOpts { width, images: Some(&images) });
+    let out = render_doc(cli.mode, cli.json_path.as_deref(), md, width, &images);
     write_stdout(&render::to_ansi(&out.lines, color))
 }
 
@@ -366,6 +393,8 @@ struct App {
     images: image::ImageStore,
     seen_images_version: u64,
     raw: bool,
+    mode: cli::Mode,
+    json_path: Option<String>,
     stream: Option<Receiver<String>>,
     stick_bottom: bool,
     latest_dir: Option<PathBuf>,
@@ -394,6 +423,8 @@ impl App {
             images: image_store(&source, cli, false),
             seen_images_version: 0,
             raw: false,
+            mode: cli.mode,
+            json_path: cli.json_path.clone(),
             stream: None,
             stick_bottom: false,
             latest_dir: None,
@@ -477,9 +508,9 @@ impl App {
 
     fn rerender(&mut self, w: usize) {
         self.rendered = if self.raw {
-            render::render_code_only(&self.md, "md", w)
+            render::render_code_only(&self.md, raw_lang(self.mode), w)
         } else {
-            render::render_with(&self.md, &render::RenderOpts { width: w, images: Some(&self.images) })
+            render_doc(self.mode, self.json_path.as_deref(), &self.md, w, &self.images)
         };
         self.render_width = w;
         self.dirty = false;

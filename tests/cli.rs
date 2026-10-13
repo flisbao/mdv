@@ -81,6 +81,35 @@ fn latest_exige_uma_pasta() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("--latest"));
 }
 
+#[test]
+fn json_subcomando_com_path_mostra_so_o_trecho() {
+    let out = mdv(
+        &["json", "-p", "-", "--path", ".a.b"],
+        "{\"a\":{\"b\":[1,2,{\"c\":\"x\"}]},\"z\":null}",
+    );
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("lista · 3 itens") && text.contains("\"c\": \"x\""), "{text}");
+    assert!(!text.contains("\"z\""), "{text}");
+}
+
+#[test]
+fn json_por_extensao_do_arquivo() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("d.json");
+    std::fs::write(&f, "{\"nome\":\"mdv\"}").unwrap();
+    let out = mdv(&["-p", f.to_str().unwrap()], "");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("objeto · 1 chaves") && text.contains("\"nome\": \"mdv\""), "{text}");
+}
+
+#[test]
+fn json_invalido_mostra_erro_na_saida() {
+    let out = mdv(&["json", "-p", "-"], "{");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("JSON inválido"), "{text}");
+}
+
 const MERMAID_MD: &str = "```mermaid\ngraph TD; A-->B\n```\n";
 
 #[test]

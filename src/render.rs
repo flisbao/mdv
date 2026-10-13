@@ -22,7 +22,7 @@ const H1: Color = Color::Rgb(210, 168, 255);
 const H2: Color = Color::Rgb(121, 192, 255);
 const H3: Color = Color::Rgb(126, 231, 135);
 const H4: Color = Color::Rgb(230, 237, 243);
-const DIM: Color = Color::Rgb(110, 118, 129);
+pub(crate) const DIM: Color = Color::Rgb(110, 118, 129);
 const LINK: Color = Color::Rgb(88, 166, 255);
 const INLINE_CODE_FG: Color = Color::Rgb(255, 166, 87);
 const INLINE_CODE_BG: Color = Color::Rgb(47, 52, 60);
@@ -106,7 +106,6 @@ pub fn render_code_only(code: &str, lang: &str, width: usize) -> Rendered {
 }
 
 /// Uma linha vermelha com a mensagem de erro (saneada).
-#[allow(dead_code)] // usado pelos visualizadores de dados (Tasks 8 e 9)
 pub fn error_rendered(msg: &str) -> Rendered {
     let st = Style::default().fg(Color::Rgb(248, 81, 73)).add_modifier(Modifier::BOLD);
     Rendered {
