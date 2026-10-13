@@ -99,7 +99,7 @@ jobs:
         if: ${{ !matrix.windows }}
         run: |
           mkdir -p dist
-          stage="mdv-${GITHUB_REF_NAME}-${{ matrix.name }}"
+          stage="mdv-${GITHUB_REF_NAME//\//-}-${{ matrix.name }}"
           mkdir "$stage"
           cp "$BIN" README.md "$stage/"
           tar -czf "dist/$stage.tar.gz" "$stage"
@@ -112,7 +112,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          $stage = "mdv-$env:GITHUB_REF_NAME-${{ matrix.name }}"
+          $stage = "mdv-$($env:GITHUB_REF_NAME -replace '/', '-')-${{ matrix.name }}"
           New-Item -ItemType Directory $stage | Out-Null
           Copy-Item $env:BIN, README.md $stage
           Compress-Archive -Path $stage -DestinationPath "dist/$stage.zip"
