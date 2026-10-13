@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::sync::OnceLock;
 
-use pulldown_cmark::{Alignment, CodeBlockKind, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, BlockQuoteKind, CodeBlockKind, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use syntect::easy::HighlightLines;
@@ -85,6 +85,31 @@ pub fn clamp_width(width: usize) -> usize {
     width.clamp(MIN_WIDTH, MAX_WIDTH)
 }
 
+struct ThinkLine {
+    opens: bool,
+    closes: bool,
+    rest: String,
+}
+
+fn think_tags(line: &str) -> Option<ThinkLine> {
+    const OPEN: [&str; 2] = ["<think>", "<thinking>"];
+    const CLOSE: [&str; 2] = ["</think>", "</thinking>"];
+    let opens = OPEN.iter().any(|t| line.contains(t));
+    let closes = CLOSE.iter().any(|t| line.contains(t));
+    if !opens && !closes {
+        return None;
+    }
+    let mut rest = line.to_string();
+    for t in OPEN.iter().chain(CLOSE.iter()) {
+        rest = rest.replace(t, "");
+    }
+    Some(ThinkLine { opens, closes, rest: rest.trim().to_string() })
+}
+
+fn summary_text(line: &str) -> Option<&str> {
+    line.trim().strip_prefix("<summary>")?.strip_suffix("</summary>").map(str::trim)
+}
+
 /// Opções de renderização: largura e, se houver, onde buscar imagens.
 pub struct RenderOpts<'a> {
     pub width: usize,
@@ -97,7 +122,13 @@ pub fn render(md: &str, width: usize) -> Rendered {
 }
 
 pub fn render_with(md: &str, opts: &RenderOpts) -> Rendered {
-    let parse_opts = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
+    // `ENABLE_MATH` fica de fora de propósito: textos de LLM com `$5 e $10` seriam lidos como fórmula.
+    let parse_opts = Options::ENABLE_TABLES
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_FOOTNOTES
+        | Options::ENABLE_GFM
+        | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS;
     let mut r = Renderer::new(opts.width, opts.images);
     for ev in Parser::new_ext(md, parse_opts) {
         r.handle(sanitize_event(ev));
@@ -419,6 +450,7 @@ struct Renderer<'a> {
     highlight_left: usize,
     images: Option<&'a ImageStore>,
     image: Option<ImageCtx>,
+    think: usize,
 }
 
 impl<'a> Renderer<'a> {
@@ -426,6 +458,7 @@ impl<'a> Renderer<'a> {
         Renderer {
             images,
             image: None,
+            think: 0,
             width: clamp_width(width),
             out: Rendered::default(),
             inline: InlineBuffer::default(),
@@ -465,7 +498,11 @@ impl<'a> Renderer<'a> {
             Event::Rule => self.rule(),
             Event::TaskListMarker(done) => self.lists.set_task_marker(done),
             Event::Html(h) => self.html_block(&h),
-            Event::InlineHtml(h) => self.inline.push_dim(h.to_string()),
+            Event::InlineHtml(h) => match think_tags(&h) {
+                Some(tl) => self.think_tag(tl.opens, tl.closes),
+                None => self.inline.push_dim(h.to_string()),
+            },
+            Event::FootnoteReference(label) => self.inline.push_dim(format!("[^{label}]")),
             _ => {}
         }
     }
@@ -481,24 +518,76 @@ impl<'a> Renderer<'a> {
     fn html_block(&mut self, html: &str) {
         self.flush_inline();
         let dim = Style::default().fg(DIM);
+        let think_style = Style::default().fg(QUOTE).add_modifier(Modifier::ITALIC);
         let avail = self.content_width();
         let mut bodies: Vec<Vec<Span<'static>>> = Vec::new();
-        for l in html.lines() {
-            for chunk in split_by_width(&[(l.to_string(), dim)], avail) {
+        let text = |s: String, st: Style, bodies: &mut Vec<Vec<Span<'static>>>| {
+            for chunk in split_by_width(&[(s, st)], avail) {
                 bodies.push(chunk.into_iter().map(|(t, st)| Span::styled(t, st)).collect());
+            }
+        };
+        for l in html.lines() {
+            let t = l.trim();
+            if t.starts_with("<details") || t == "</details>" {
+                continue;
+            }
+            if let Some(s) = summary_text(t) {
+                text(format!("▸ {s}"), Style::default().fg(H2).add_modifier(Modifier::BOLD), &mut bodies);
+            } else if let Some(tl) = think_tags(t) {
+                if tl.opens {
+                    text("💭 raciocínio".to_string(), dim.add_modifier(Modifier::ITALIC), &mut bodies);
+                }
+                if !tl.rest.is_empty() {
+                    text(tl.rest, think_style, &mut bodies);
+                }
+                self.think_tag(tl.opens, tl.closes);
+            } else {
+                text(l.to_string(), dim, &mut bodies);
             }
         }
         self.push_prefixed(bodies);
     }
 
+    /// Abre/fecha o estilo de "raciocínio" (itálico apagado) conforme as tags `<think>`.
+    fn think_tag(&mut self, opens: bool, closes: bool) {
+        if opens && !closes {
+            self.think += 1;
+            self.inline
+                .push_style(Style::default().fg(QUOTE).add_modifier(Modifier::ITALIC));
+        } else if closes && !opens && self.think > 0 {
+            self.think -= 1;
+            self.inline.pop_style();
+        }
+    }
+
     fn start(&mut self, tag: Tag<'_>) {
         match tag {
             Tag::Heading { level, .. } => self.start_heading(level),
-            Tag::BlockQuote(_) => {
+            Tag::BlockQuote(kind) => {
                 self.flush_inline();
                 self.quote_depth += 1;
                 self.inline
                     .push_style(Style::default().fg(QUOTE).add_modifier(Modifier::ITALIC));
+                if let Some(kind) = kind {
+                    let (label, color) = match kind {
+                        BlockQuoteKind::Note => ("ℹ Nota", H2),
+                        BlockQuoteKind::Tip => ("💡 Dica", H3),
+                        BlockQuoteKind::Important => ("❗ Importante", H1),
+                        BlockQuoteKind::Warning => ("⚠ Aviso", Color::Rgb(240, 192, 64)),
+                        BlockQuoteKind::Caution => ("⛔ Cuidado", Color::Rgb(248, 81, 73)),
+                    };
+                    let mut line = self.quote_prefix();
+                    line.push(Span::styled(label, Style::default().fg(color).add_modifier(Modifier::BOLD)));
+                    self.out.lines.push(Line::from(line));
+                }
+            }
+            Tag::MetadataBlock(_) => {
+                self.flush_inline();
+                self.code = Some(CodeBlock::new(CodeBlockKind::Fenced("yaml".into())));
+            }
+            Tag::FootnoteDefinition(label) => {
+                self.flush_inline();
+                self.inline.push_dim(format!("[^{label}]: "));
             }
             Tag::CodeBlock(kind) => {
                 self.flush_inline();
@@ -567,7 +656,8 @@ impl<'a> Renderer<'a> {
             TagEnd::Paragraph => self.end_paragraph(),
             TagEnd::Heading(level) => self.finish_heading(level),
             TagEnd::BlockQuote(_) => self.end_blockquote(),
-            TagEnd::CodeBlock => {
+            TagEnd::FootnoteDefinition => self.flush_inline(),
+            TagEnd::CodeBlock | TagEnd::MetadataBlock(_) => {
                 if let Some(code) = self.code.take() {
                     self.render_code(&code);
                 }
@@ -1610,6 +1700,63 @@ mod tests {
         let r = render_with("```mermaid\ngraph TD; A-->B\n```", &RenderOpts { width: 60, images: Some(&store) });
         let t = joined_text(&r);
         assert!(t.contains("A-->B") && t.contains("erro"), "{t}");
+    }
+
+    fn t60(md: &str) -> String {
+        joined_text(&render(md, 60))
+    }
+
+    #[test]
+    fn front_matter_vira_bloco_yaml() {
+        let t = t60("---\ntitle: Plano\ntags: [a]\n---\n\n# Título");
+        assert!(t.contains("yaml") && t.contains("title: Plano"), "{t}");
+        assert!(!t.contains("---"), "{t}");
+    }
+
+    #[test]
+    fn alerta_gfm_mostra_rotulo_em_portugues() {
+        let t = t60("> [!WARNING]\n> cuidado aqui");
+        assert!(t.contains("Aviso") && t.contains("cuidado aqui"), "{t}");
+        assert!(!t.contains("[!WARNING]"), "{t}");
+    }
+
+    #[test]
+    fn nota_de_rodape_aparece_no_texto_e_na_definicao() {
+        let t = t60("Fato[^1].\n\n[^1]: Fonte aqui.");
+        assert!(t.contains("[^1]") && t.contains("Fonte aqui"), "{t}");
+    }
+
+    #[test]
+    fn details_e_summary_viram_titulo() {
+        let t = t60("<details>\n<summary>Ver mais</summary>\n\nconteúdo\n\n</details>");
+        assert!(t.contains("▸ Ver mais") && t.contains("conteúdo"), "{t}");
+        assert!(!t.contains("<details>") && !t.contains("<summary>"), "{t}");
+    }
+
+    #[test]
+    fn think_vira_bloco_rotulado() {
+        let t = t60("<think>\n\nplano interno\n\n</think>\n\nresposta final");
+        assert!(t.contains("raciocínio") && t.contains("plano interno") && t.contains("resposta final"), "{t}");
+        assert!(!t.contains("<think>"), "{t}");
+    }
+
+    #[test]
+    fn think_na_mesma_linha() {
+        let t = t60("<think>só isto</think>\n\nok");
+        assert!(t.contains("só isto") && !t.contains("</think>"), "{t}");
+    }
+
+    #[test]
+    fn think_tags_parse() {
+        let l = think_tags("<thinking>abc").unwrap();
+        assert!(l.opens && !l.closes && l.rest == "abc");
+        assert!(think_tags("<div>x</div>").is_none());
+    }
+
+    #[test]
+    fn cerca_sem_fechar_nao_quebra() {
+        let t = joined_text(&render("```rust\nfn main() {", 40));
+        assert!(t.contains("fn main"), "{t}");
     }
 
     #[test]
