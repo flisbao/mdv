@@ -44,6 +44,7 @@ USO:
 OPÇÕES:
     -p, --plain        imprime no terminal (sem TUI), como `cat` com cores
     -w, --width <N>    largura máxima do texto (padrão: 100)
+        --toc          imprime só o índice de títulos
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
@@ -55,6 +56,7 @@ TECLAS (modo interativo):
     ] / [              próximo / título anterior
     /                  buscar (Enter confirma, Esc cancela)
     n / N              próxima / anterior ocorrência
+    m                  alterna entre renderizado e fonte crua
     r                  recarrega o arquivo
     q, Esc             sai
 ";
@@ -103,6 +105,10 @@ fn run_cli() -> Result<(), Failure> {
         cli::Parsed::Run(cli) => cli,
     };
     let (source, md) = load_source(cli.path.as_deref())?;
+    if cli.toc && cli.mode == cli::Mode::Markdown {
+        let width = cli.width.unwrap_or(DEFAULT_WIDTH);
+        return write_stdout(&render::toc(&render::render(&md, width)));
+    }
     let stdout_tty = io::stdout().is_terminal();
     if cli.plain || !stdout_tty {
         run_plain(&md, &source, cli.width, stdout_tty, &cli)
@@ -311,6 +317,7 @@ struct App {
     source: Source,
     images: image::ImageStore,
     seen_images_version: u64,
+    raw: bool,
     name: String,
     md: String,
     mtime: Option<SystemTime>,
@@ -335,6 +342,7 @@ impl App {
         App {
             images: image_store(&source, cli, false),
             seen_images_version: 0,
+            raw: false,
             source,
             name,
             md,
@@ -361,8 +369,11 @@ impl App {
     }
 
     fn rerender(&mut self, w: usize) {
-        self.rendered =
-            render::render_with(&self.md, &render::RenderOpts { width: w, images: Some(&self.images) });
+        self.rendered = if self.raw {
+            render::render_code_only(&self.md, "md", w)
+        } else {
+            render::render_with(&self.md, &render::RenderOpts { width: w, images: Some(&self.images) })
+        };
         self.render_width = w;
         self.dirty = false;
         self.search.refresh(&self.rendered.lines);
@@ -456,6 +467,10 @@ impl App {
             KeyCode::Char('n') => self.step_match(true),
             KeyCode::Char('N') => self.step_match(false),
             KeyCode::Char('r') => self.reload(),
+            KeyCode::Char('m') => {
+                self.raw = !self.raw;
+                self.dirty = true;
+            }
             _ => {}
         }
         false
@@ -523,7 +538,7 @@ impl App {
             Some(buf) => format!(" /{buf}█"),
             None => self.status_left(),
         };
-        let right = "j/k rolar  [ ] títulos  / buscar  q sair ";
+        let right = "j/k rolar  [ ] títulos  / buscar  m fonte  q sair ";
         let (lw, rw) = (left.width(), right.width());
         let text = if lw + rw < width {
             format!("{left}{}{right}", " ".repeat(width - lw - rw))
@@ -542,7 +557,7 @@ impl App {
             .saturating_mul(100)
             .checked_div(self.view.max_scroll(total))
             .unwrap_or(100);
-        let mut s = format!(" {}  {pct}%", self.name);
+        let mut s = format!(" {}  {pct}%{}", self.name, if self.raw { "  [fonte]" } else { "" });
         let search = &self.search;
         if !search.query.is_empty() {
             if search.matches.is_empty() {

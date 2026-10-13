@@ -79,6 +79,40 @@ pub struct Rendered {
     pub lines: Vec<Line<'static>>,
     /// Índices (em `lines`) onde cada título começa.
     pub headings: Vec<usize>,
+    /// Títulos com nível e texto, para o `--toc`.
+    pub outline: Vec<OutlineEntry>,
+}
+
+#[allow(dead_code)] // `line` será usado pela navegação do sumário
+pub struct OutlineEntry {
+    pub line: usize,
+    pub level: u8,
+    pub title: String,
+}
+
+/// Índice dos títulos, um por linha, indentado conforme o nível.
+pub fn toc(r: &Rendered) -> String {
+    r.outline
+        .iter()
+        .map(|e| format!("{}{}\n", "  ".repeat(usize::from(e.level.saturating_sub(1))), e.title))
+        .collect()
+}
+
+/// Mostra `code` como um bloco de código com a linguagem `lang` (usado para a fonte crua).
+pub fn render_code_only(code: &str, lang: &str, width: usize) -> Rendered {
+    let mut r = Renderer::new(width, None);
+    r.render_code(&CodeBlock { lang: lang.to_string(), buf: sanitize(code).into_owned() });
+    r.out
+}
+
+/// Uma linha vermelha com a mensagem de erro (saneada).
+#[allow(dead_code)] // usado pelos visualizadores de dados (Tasks 8 e 9)
+pub fn error_rendered(msg: &str) -> Rendered {
+    let st = Style::default().fg(Color::Rgb(248, 81, 73)).add_modifier(Modifier::BOLD);
+    Rendered {
+        lines: vec![Line::from(Span::styled(sanitize(msg).into_owned(), st))],
+        ..Rendered::default()
+    }
 }
 
 pub fn clamp_width(width: usize) -> usize {
@@ -843,6 +877,11 @@ impl<'a> Renderer<'a> {
         let toks = self.inline.take();
         self.inline.pop_style();
         self.out.headings.push(self.out.lines.len());
+        self.out.outline.push(OutlineEntry {
+            line: self.out.lines.len(),
+            level: level as u8,
+            title: toks.iter().map(|p| p.as_text().0).collect(),
+        });
         let (marker, color) = match level {
             HeadingLevel::H2 => ("▌ ", H2),
             HeadingLevel::H3 => (QUOTE_BAR, H3),
@@ -1757,6 +1796,36 @@ mod tests {
     fn cerca_sem_fechar_nao_quebra() {
         let t = joined_text(&render("```rust\nfn main() {", 40));
         assert!(t.contains("fn main"), "{t}");
+    }
+
+    #[test]
+    fn fonte_crua_mostra_markdown_literal() {
+        let t = joined_text(&render_code_only("# a\n**b**\n", "md", 40));
+        assert!(t.contains("# a") && t.contains("**b**") && t.contains("md"), "{t}");
+    }
+
+    #[test]
+    fn toc_indenta_por_nivel() {
+        let r = render("# A\n\n## B\n\n### C\n\n## D", 40);
+        assert_eq!(toc(&r), "A\n  B\n    C\n  D\n");
+    }
+
+    #[test]
+    fn toc_sem_titulos_e_vazio() {
+        assert_eq!(toc(&render("só texto", 40)), "");
+    }
+
+    #[test]
+    fn toc_usa_texto_sem_formatacao_e_posicao_da_linha() {
+        let r = render("texto\n\n## Um **forte** título", 40);
+        assert_eq!(toc(&r), "  Um forte título\n");
+        assert_eq!(r.outline[0].line, r.headings[0]);
+    }
+
+    #[test]
+    fn erro_renderizado_tem_uma_linha_e_sanitiza() {
+        assert_eq!(error_rendered("falhou").lines.len(), 1);
+        assert!(!joined_text(&error_rendered("a\x1b[31mb")).contains('\x1b'));
     }
 
     #[test]

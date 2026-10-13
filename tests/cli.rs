@@ -46,6 +46,13 @@ fn imagem_remota_em_rede_privada_e_bloqueada() {
     assert!(!text.contains("use --remote"), "{text}");
 }
 
+#[test]
+fn toc_imprime_indice_de_titulos() {
+    let out = mdv(&["--toc", "-"], "# A\n\ntexto\n\n## B\n");
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "A\n  B\n");
+}
+
 const MERMAID_MD: &str = "```mermaid\ngraph TD; A-->B\n```\n";
 
 #[test]
