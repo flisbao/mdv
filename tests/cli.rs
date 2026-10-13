@@ -30,6 +30,7 @@ fn largura_gigante_e_limitada() {
     assert!(widest <= 1000, "linha com {widest} colunas");
 }
 
+#[cfg(unix)]
 #[test]
 fn arquivo_nao_regular_e_rejeitado() {
     let out = mdv(&["-p", "/dev/zero"], "");
