@@ -53,6 +53,38 @@ fn toc_imprime_indice_de_titulos() {
     assert_eq!(String::from_utf8_lossy(&out.stdout), "A\n  B\n");
 }
 
+#[test]
+fn latest_mostra_o_md_mais_novo_da_pasta() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.md"), "# antigo\n").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(dir.path().join("a.md"))
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(60))
+        .unwrap();
+    std::fs::write(dir.path().join("b.md"), "# novo\n").unwrap();
+    let out = mdv(&["-p", "--latest", dir.path().to_str().unwrap()], "");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("novo") && !text.contains("antigo"), "{text}");
+}
+
+#[test]
+fn latest_em_pasta_sem_md_e_erro_claro() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = mdv(&["-p", "--latest", dir.path().to_str().unwrap()], "");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains(".md"));
+}
+
+#[test]
+fn latest_exige_uma_pasta() {
+    let out = mdv(&["-p", "--latest"], "");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--latest"));
+}
+
 const MERMAID_MD: &str = "```mermaid\ngraph TD; A-->B\n```\n";
 
 #[test]

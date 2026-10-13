@@ -2,6 +2,7 @@ mod cli;
 mod image;
 mod mermaid;
 mod net;
+mod stream;
 mod render;
 
 use std::fmt::Write as _;
@@ -9,6 +10,7 @@ use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::mpsc::Receiver;
 use std::time::{Duration, SystemTime};
 
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -33,6 +35,8 @@ const TUI_MARGIN: usize = 4;
 const MIN_TUI_WIDTH: usize = 10;
 /// Intervalo entre verificações de alteração do arquivo (live reload).
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
+/// Intervalo entre verificações com texto chegando por stdin (`--follow`).
+const STREAM_POLL_INTERVAL: Duration = Duration::from_millis(80);
 
 const HELP: &str = "\
 mdv - visualizador de Markdown no terminal
@@ -104,17 +108,60 @@ fn run_cli() -> Result<(), Failure> {
         }
         cli::Parsed::Run(cli) => cli,
     };
-    let (source, md) = load_source(cli.path.as_deref())?;
+    let latest_dir = if cli.latest {
+        let dir = cli
+            .path
+            .as_deref()
+            .ok_or_else(|| Failure::Usage("a opção --latest precisa de uma pasta".to_string()))?;
+        Some(PathBuf::from(dir))
+    } else {
+        None
+    };
+    let stdout_tty = io::stdout().is_terminal();
+    let interactive = !cli.plain && stdout_tty;
+    let width = cli.width.unwrap_or(DEFAULT_WIDTH);
+
+    // `--follow` com stdin: a TUI abre na hora e o texto vai chegando aos poucos.
+    if cli.follow && interactive && !cli.toc && latest_dir.is_none() && reads_stdin(cli.path.as_deref()) {
+        let rx = stream::spawn_stdin_reader(usize::try_from(MAX_INPUT_BYTES).unwrap_or(usize::MAX));
+        return run_tui(App::new(Source::Stdin, String::new(), width, &cli).with_stream(rx));
+    }
+
+    let (source, md) = match &latest_dir {
+        Some(dir) => load_latest(dir)?,
+        None => load_source(cli.path.as_deref())?,
+    };
     if cli.toc && cli.mode == cli::Mode::Markdown {
-        let width = cli.width.unwrap_or(DEFAULT_WIDTH);
         return write_stdout(&render::toc(&render::render(&md, width)));
     }
-    let stdout_tty = io::stdout().is_terminal();
-    if cli.plain || !stdout_tty {
-        run_plain(&md, &source, cli.width, stdout_tty, &cli)
+    if interactive {
+        let mut app = App::new(source, md, width, &cli);
+        if let Some(dir) = latest_dir {
+            app = app.with_latest(dir);
+        }
+        run_tui(app)
     } else {
-        run_tui(source, md, cli.width.unwrap_or(DEFAULT_WIDTH), &cli)
+        run_plain(&md, &source, cli.width, stdout_tty, &cli)
     }
+}
+
+/// O documento vem de stdin (`-` ou entrada redirecionada sem arquivo)?
+fn reads_stdin(path: Option<&str>) -> bool {
+    match path {
+        Some(p) => p == "-",
+        None => !io::stdin().is_terminal(),
+    }
+}
+
+/// Abre o `.md` mais recente de `dir` (`--latest`).
+fn load_latest(dir: &Path) -> Result<(Source, String), Failure> {
+    if !dir.is_dir() {
+        return Err(Failure::Runtime(format!("{} não é uma pasta", dir.display())));
+    }
+    let newest = stream::newest_md(dir)
+        .ok_or_else(|| Failure::Runtime(format!("nenhum arquivo .md em {}", dir.display())))?;
+    let md = read_markdown_file(&newest).map_err(read_failure(&newest.display().to_string()))?;
+    Ok((Source::File(newest), md))
 }
 
 /// Lê o documento do arquivo informado, de stdin (`-` ou entrada redirecionada).
@@ -164,8 +211,7 @@ fn run_plain(md: &str, source: &Source, width: Option<usize>, color: bool, cli: 
     write_stdout(&render::to_ansi(&out.lines, color))
 }
 
-fn run_tui(source: Source, md: String, width: usize, cli: &cli::Cli) -> Result<(), Failure> {
-    let mut app = App::new(source, md, width, cli);
+fn run_tui(mut app: App) -> Result<(), Failure> {
     let mut term = ratatui::init();
     let res = event_loop(&mut term, &mut app);
     ratatui::restore();
@@ -223,13 +269,15 @@ fn file_mtime(p: &Path) -> Option<SystemTime> {
 fn event_loop(term: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     loop {
         term.draw(|f| app.draw(f))?;
-        if event::poll(POLL_INTERVAL)? {
+        let interval = if app.stream.is_some() { STREAM_POLL_INTERVAL } else { POLL_INTERVAL };
+        if event::poll(interval)? {
             if let Event::Key(k) = event::read()? {
                 if k.kind == KeyEventKind::Press && app.on_key(k) {
                     return Ok(());
                 }
             }
         } else {
+            app.drain_stream();
             app.check_reload();
         }
     }
@@ -318,6 +366,9 @@ struct App {
     images: image::ImageStore,
     seen_images_version: u64,
     raw: bool,
+    stream: Option<Receiver<String>>,
+    stick_bottom: bool,
+    latest_dir: Option<PathBuf>,
     name: String,
     md: String,
     mtime: Option<SystemTime>,
@@ -343,6 +394,9 @@ impl App {
             images: image_store(&source, cli, false),
             seen_images_version: 0,
             raw: false,
+            stream: None,
+            stick_bottom: false,
+            latest_dir: None,
             source,
             name,
             md,
@@ -354,6 +408,59 @@ impl App {
             view: Viewport::default(),
             search: SearchState::default(),
         }
+    }
+
+    /// Passa a receber o texto aos poucos (`--follow`).
+    fn with_stream(mut self, rx: Receiver<String>) -> Self {
+        self.stream = Some(rx);
+        self
+    }
+
+    /// Passa a seguir o `.md` mais novo de `dir` (`--latest`).
+    fn with_latest(mut self, dir: PathBuf) -> Self {
+        self.latest_dir = Some(dir);
+        self
+    }
+
+    /// Acrescenta o que chegou do stdin; só passa a acompanhar o fim se o leitor já estava nele.
+    fn drain_stream(&mut self) {
+        let Some(rx) = &self.stream else { return };
+        let was_at_bottom = self.view.scroll >= self.view.max_scroll(self.rendered.lines.len());
+        let mut got = false;
+        while let Ok(chunk) = rx.try_recv() {
+            self.md.push_str(&chunk);
+            got = true;
+        }
+        if got {
+            self.stick_bottom |= was_at_bottom;
+            self.dirty = true;
+        }
+    }
+
+    /// Depois de redesenhar, leva a tela ao fim se o leitor estava acompanhando o fim.
+    fn apply_stick_bottom(&mut self) {
+        if self.stick_bottom {
+            self.view.scroll = self.view.max_scroll(self.total_lines());
+            self.stick_bottom = false;
+        }
+    }
+
+    /// Se há um `.md` mais novo na pasta acompanhada, troca para ele.
+    fn follow_latest(&mut self) {
+        let Some(dir) = &self.latest_dir else { return };
+        let Some(newest) = stream::newest_md(dir) else { return };
+        if matches!(&self.source, Source::File(p) if *p == newest) {
+            return;
+        }
+        let Ok(md) = read_markdown_file(&newest) else { return };
+        self.name = newest
+            .file_name()
+            .map_or_else(|| newest.display().to_string(), |n| n.to_string_lossy().into_owned());
+        self.mtime = file_mtime(&newest);
+        self.source = Source::File(newest);
+        self.md = md;
+        self.dirty = true;
+        self.view.scroll = 0;
     }
 
     fn total_lines(&self) -> usize {
@@ -387,6 +494,7 @@ impl App {
             self.seen_images_version = version;
             self.dirty = true;
         }
+        self.follow_latest();
         let Source::File(p) = &self.source else { return };
         let mtime = file_mtime(p);
         if mtime.is_some() && mtime != self.mtime {
@@ -507,6 +615,7 @@ impl App {
         }
         self.view.height = usize::from(content.height);
         self.view.scroll = self.view.scroll.min(self.view.max_scroll(self.total_lines()));
+        self.apply_stick_bottom();
 
         let pad = usize::from(content.width).saturating_sub(w) / 2;
         let inner = Rect {
@@ -704,5 +813,86 @@ mod tests {
             .collect();
         assert_eq!(marked, ["a", "a"]);
         assert_eq!(line_text(&out), "a-b-a");
+    }
+
+    fn test_app(source: Source, md: &str) -> App {
+        let cli = match cli::parse(["x.md".to_string()]) {
+            Ok(cli::Parsed::Run(c)) => c,
+            _ => panic!("cli de teste"),
+        };
+        App::new(source, md.to_string(), 80, &cli)
+    }
+
+    #[test]
+    fn stream_acumula_pedacos_e_marca_para_redesenhar() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut app = test_app(Source::Stdin, "").with_stream(rx);
+        app.dirty = false;
+        tx.send("# um\n".to_string()).unwrap();
+        tx.send("dois".to_string()).unwrap();
+        app.drain_stream();
+        assert_eq!(app.md, "# um\ndois");
+        assert!(app.dirty);
+    }
+
+    #[test]
+    fn stream_sem_novidade_nao_redesenha() {
+        let (_tx, rx) = std::sync::mpsc::channel::<String>();
+        let mut app = test_app(Source::Stdin, "").with_stream(rx);
+        app.dirty = false;
+        app.drain_stream();
+        assert!(!app.dirty);
+    }
+
+    #[test]
+    fn stream_acompanha_o_fim_so_se_ja_estava_no_fim() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let long: String = (0..30).map(|i| format!("linha {i}\n\n")).collect();
+        let mut app = test_app(Source::Stdin, &long).with_stream(rx);
+        app.rerender(40);
+        app.view.height = 5;
+
+        app.view.scroll = 0;
+        tx.send("mais\n".to_string()).unwrap();
+        app.drain_stream();
+        assert!(!app.stick_bottom, "leitor no meio do texto não deve ser arrastado");
+
+        app.view.scroll = app.view.max_scroll(app.total_lines());
+        tx.send("fim\n".to_string()).unwrap();
+        app.drain_stream();
+        assert!(app.stick_bottom);
+        app.rerender(40);
+        app.apply_stick_bottom();
+        assert_eq!(app.view.scroll, app.view.max_scroll(app.total_lines()));
+        assert!(!app.stick_bottom);
+    }
+
+    #[test]
+    fn latest_troca_para_o_arquivo_mais_novo() {
+        use std::time::{Duration, SystemTime};
+        let dir = tempfile::tempdir().unwrap();
+        let (a, b) = (dir.path().join("a.md"), dir.path().join("b.md"));
+        fs::write(&a, "# a").unwrap();
+        let now = SystemTime::now();
+        fs::File::options().write(true).open(&a).unwrap().set_modified(now - Duration::from_secs(60)).unwrap();
+        let mut app = test_app(Source::File(a), "# a").with_latest(dir.path().to_path_buf());
+        fs::write(&b, "# b").unwrap();
+        app.check_reload();
+        assert_eq!(app.md, "# b");
+        assert_eq!(app.name, "b.md");
+        assert!(matches!(&app.source, Source::File(p) if *p == b));
+        assert!(app.dirty);
+    }
+
+    #[test]
+    fn latest_sem_novidade_mantem_o_arquivo() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.md");
+        fs::write(&a, "# a").unwrap();
+        let mut app = test_app(Source::File(a), "# a").with_latest(dir.path().to_path_buf());
+        app.dirty = false;
+        app.check_reload();
+        assert_eq!(app.name, "a.md");
+        assert!(!app.dirty);
     }
 }

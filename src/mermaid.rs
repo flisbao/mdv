@@ -23,6 +23,27 @@ pub fn args(input: &Path, output: &Path) -> Vec<OsString> {
     ]
 }
 
+/// Inicia o `mmdc`. `ETXTBSY` (executável ainda aberto para escrita por outro processo, comum
+/// logo após instalar/gerar o binário) é transitório: tenta de novo por um instante.
+fn spawn_mmdc(bin: &str, input: &Path, output: &Path) -> std::io::Result<std::process::Child> {
+    let mut attempts = 0;
+    loop {
+        let res = Command::new(bin)
+            .args(args(input, output))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn();
+        match res {
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && attempts < 20 => {
+                attempts += 1;
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            other => return other,
+        }
+    }
+}
+
 pub fn render_png(source: &str, bin: &str, timeout: Duration) -> Result<Vec<u8>, String> {
     if source.len() > MAX_MERMAID_BYTES {
         return Err("diagrama grande demais".into());
@@ -31,12 +52,7 @@ pub fn render_png(source: &str, bin: &str, timeout: Duration) -> Result<Vec<u8>,
     let (input, output) = (dir.path().join("in.mmd"), dir.path().join("out.png"));
     std::fs::write(&input, source).map_err(|e| e.to_string())?;
 
-    let mut child = Command::new(bin)
-        .args(args(&input, &output))
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
+    let mut child = spawn_mmdc(bin, &input, &output)
         .map_err(|e| format!("não consegui executar mmdc ({bin}): {e}"))?;
 
     let start = Instant::now();
