@@ -30,6 +30,22 @@ fn largura_gigante_e_limitada() {
     assert!(widest <= 1000, "linha com {widest} colunas");
 }
 
+#[test]
+fn imagem_remota_exige_flag() {
+    let out = mdv(&["-p", "-"], "![x](https://example.com/a.png)\n");
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains("use --remote"));
+}
+
+#[test]
+fn imagem_remota_em_rede_privada_e_bloqueada() {
+    let out = mdv(&["-p", "--remote", "-"], "![x](http://127.0.0.1:9/a.png)\n");
+    assert!(out.status.success());
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("[imagem: x —"), "{text}");
+    assert!(!text.contains("use --remote"), "{text}");
+}
+
 #[cfg(unix)]
 #[test]
 fn arquivo_nao_regular_e_rejeitado() {

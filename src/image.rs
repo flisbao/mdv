@@ -3,13 +3,17 @@
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use image::imageops::FilterType;
 use image::{DynamicImage, ImageReader, Limits};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 
+use crate::net::{self, FetchPolicy};
+
+pub const MAX_REMOTE_IMAGES: usize = 32;
 pub const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
 pub const MAX_IMAGE_COLS: usize = 80;
 pub const MAX_IMAGE_ROWS: usize = 24;
@@ -19,7 +23,6 @@ const MAX_ALLOC: u64 = 256 * 1024 * 1024;
 #[derive(Clone)]
 pub enum ImageState {
     Ready(Arc<DynamicImage>),
-    #[allow(dead_code)] // usado pelo download em segundo plano (--remote)
     Loading,
     Failed(String),
 }
@@ -92,33 +95,85 @@ pub fn is_remote(src: &str) -> bool {
     s.starts_with("http://") || s.starts_with("https://")
 }
 
+
 pub struct ImageStore {
     base_dir: Option<PathBuf>,
     cache: Arc<Mutex<HashMap<String, ImageState>>>,
+    version: Arc<AtomicU64>,
+    remote: Option<(Arc<FetchPolicy>, bool)>, // (política, bloqueante)
 }
 
 impl ImageStore {
     pub fn new(base_dir: Option<PathBuf>) -> Self {
-        ImageStore { base_dir, cache: Arc::new(Mutex::new(HashMap::new())) }
+        ImageStore {
+            base_dir,
+            cache: Arc::new(Mutex::new(HashMap::new())),
+            version: Arc::new(AtomicU64::new(0)),
+            remote: None,
+        }
+    }
+
+    pub fn with_remote(mut self, policy: FetchPolicy, blocking: bool) -> Self {
+        self.remote = Some((Arc::new(policy), blocking));
+        self
+    }
+
+    /// Incrementa a cada download em segundo plano concluído.
+    pub fn version(&self) -> u64 {
+        self.version.load(Ordering::Relaxed)
+    }
+
+    fn lock(&self) -> MutexGuard<'_, HashMap<String, ImageState>> {
+        self.cache.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Executa `job` (agora ou em thread) e guarda o resultado sob `key`.
+    pub fn get_job(
+        &self,
+        key: &str,
+        run_async: bool,
+        job: impl FnOnce() -> Result<DynamicImage, String> + Send + 'static,
+    ) -> ImageState {
+        if let Some(s) = self.lock().get(key) {
+            return s.clone();
+        }
+        let to_state = |r: Result<DynamicImage, String>| match r {
+            Ok(img) => ImageState::Ready(Arc::new(img)),
+            Err(e) => ImageState::Failed(e),
+        };
+        if !run_async {
+            let st = to_state(job());
+            self.lock().insert(key.to_string(), st.clone());
+            return st;
+        }
+        self.lock().insert(key.to_string(), ImageState::Loading);
+        let (cache, version, key) = (Arc::clone(&self.cache), Arc::clone(&self.version), key.to_string());
+        std::thread::spawn(move || {
+            let st = to_state(job());
+            cache.lock().unwrap_or_else(PoisonError::into_inner).insert(key, st);
+            version.fetch_add(1, Ordering::Relaxed);
+        });
+        ImageState::Loading
     }
 
     pub fn get(&self, src: &str) -> ImageState {
-        if let Some(s) = self.cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(src) {
-            return s.clone();
+        if !is_remote(src) {
+            let base = self.base_dir.clone();
+            let s = src.to_string();
+            return self.get_job(src, false, move || load_local(base.as_deref(), &s));
         }
-        let state = if is_remote(src) {
-            ImageState::Failed("imagem remota: use --remote".into())
-        } else {
-            match load_local(self.base_dir.as_deref(), src) {
-                Ok(img) => ImageState::Ready(Arc::new(img)),
-                Err(e) => ImageState::Failed(e),
-            }
+        let Some((policy, blocking)) = &self.remote else {
+            return ImageState::Failed("imagem remota: use --remote".into());
         };
-        self.cache
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(src.to_string(), state.clone());
-        state
+        let over_limit = {
+            let cache = self.lock();
+            !cache.contains_key(src) && cache.keys().filter(|k| is_remote(k)).count() >= MAX_REMOTE_IMAGES
+        };
+        if over_limit {
+            return ImageState::Failed("limite de imagens remotas atingido".into());
+        }
+        let (policy, url) = (Arc::clone(policy), src.to_string());
+        self.get_job(src, !*blocking, move || decode(&net::fetch(&url, &policy)?))
     }
 }
 
@@ -178,6 +233,65 @@ mod tests {
         let store = ImageStore::new(Some(dir.path().to_path_buf()));
         assert!(matches!(store.get("nao-existe.png"), ImageState::Failed(_)));
         assert!(matches!(store.get("."), ImageState::Failed(_)));
+    }
+
+    use crate::net::FetchPolicy;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    fn serve_png() -> String {
+        let body = png_bytes(4, 4);
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for _ in 0..2 {
+                if let Ok((mut s, _)) = l.accept() {
+                    let mut b = [0u8; 1024];
+                    let _ = s.read(&mut b);
+                    let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                    let _ = s.write_all(head.as_bytes());
+                    let _ = s.write_all(&body);
+                }
+            }
+        });
+        format!("http://127.0.0.1:{port}/a.png")
+    }
+
+    fn local_ok() -> FetchPolicy {
+        FetchPolicy { allow_private: true, ..FetchPolicy::default() }
+    }
+
+    #[test]
+    fn remoto_bloqueante_devolve_pronto() {
+        let store = ImageStore::new(None).with_remote(local_ok(), true);
+        assert!(matches!(store.get(&serve_png()), ImageState::Ready(_)));
+    }
+
+    #[test]
+    fn remoto_assincrono_comeca_loading_e_termina_pronto() {
+        let store = ImageStore::new(None).with_remote(local_ok(), false);
+        let url = serve_png();
+        assert!(matches!(store.get(&url), ImageState::Loading));
+        for _ in 0..100 {
+            if matches!(store.get(&url), ImageState::Ready(_)) {
+                assert!(store.version() > 0);
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        panic!("download não terminou");
+    }
+
+    #[test]
+    fn limite_de_imagens_remotas() {
+        let store = ImageStore::new(None).with_remote(local_ok(), false);
+        for i in 0..MAX_REMOTE_IMAGES {
+            store.get(&format!("http://127.0.0.1:1/{i}.png"));
+        }
+        match store.get("http://127.0.0.1:1/extra.png") {
+            ImageState::Failed(m) => assert!(m.contains("limite")),
+            _ => panic!("deveria estourar o limite"),
+        }
     }
 
     #[test]
