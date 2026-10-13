@@ -9,12 +9,8 @@ fn mdv(args: &[&str], stdin: &str) -> Output {
         .stderr(Stdio::piped())
         .spawn()
         .expect("mdv deve iniciar");
-    child
-        .stdin
-        .take()
-        .expect("stdin")
-        .write_all(stdin.as_bytes())
-        .expect("escrever stdin");
+    // O mdv pode sair sem ler stdin (erro de uso): `BrokenPipe` aqui é esperado.
+    let _ = child.stdin.take().expect("stdin").write_all(stdin.as_bytes());
     child.wait_with_output().expect("mdv deve terminar")
 }
 
