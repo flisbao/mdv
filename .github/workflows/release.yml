@@ -3,6 +3,8 @@ name: release
 on:
   push:
     tags: ["v*"]
+  # Ensaio manual: roda os builds e deixa os artefatos na execução, sem publicar release.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,13 +30,32 @@ jobs:
             runner: ubuntu-22.04
             musl: true
             pkg: false
+          # macos-latest é arm64 (Apple Silicon).
+          - name: macos-aarch64
+            runner: macos-latest
+            musl: false
+            pkg: false
+          # Cruzamento a partir do runner arm64; o binário roda via Rosetta.
+          - name: macos-x86_64
+            runner: macos-latest
+            musl: false
+            pkg: false
+            target: x86_64-apple-darwin
+          - name: windows-x86_64
+            runner: windows-latest
+            musl: false
+            pkg: false
+            windows: true
     runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.musl && 'x86_64-unknown-linux-musl' || '' }}
+          targets: ${{ matrix.musl && 'x86_64-unknown-linux-musl' || matrix.target || '' }}
 
       - name: Instalar musl-tools
         if: matrix.musl
@@ -46,11 +67,21 @@ jobs:
           cargo build --release --target x86_64-unknown-linux-musl
           echo "BIN=target/x86_64-unknown-linux-musl/release/mdv" >> "$GITHUB_ENV"
 
+      - name: Build (cruzado)
+        if: ${{ matrix.target }}
+        run: |
+          cargo build --release --target "${{ matrix.target }}"
+          echo "BIN=target/${{ matrix.target }}/release/mdv" >> "$GITHUB_ENV"
+
       - name: Build
-        if: ${{ !matrix.musl }}
+        if: ${{ !matrix.musl && !matrix.target }}
         run: |
           cargo build --release
-          echo "BIN=target/release/mdv" >> "$GITHUB_ENV"
+          if [ "${{ matrix.windows }}" = "true" ]; then
+            echo "BIN=target/release/mdv.exe" >> "$GITHUB_ENV"
+          else
+            echo "BIN=target/release/mdv" >> "$GITHUB_ENV"
+          fi
 
       - name: Instalar cargo-deb e cargo-generate-rpm
         if: matrix.pkg
@@ -64,7 +95,8 @@ jobs:
           cargo deb --no-build
           cargo generate-rpm
 
-      - name: Empacotar
+      - name: Empacotar (tar.gz)
+        if: ${{ !matrix.windows }}
         run: |
           mkdir -p dist
           stage="mdv-${GITHUB_REF_NAME}-${{ matrix.name }}"
@@ -75,6 +107,29 @@ jobs:
             cp target/debian/*.deb target/generate-rpm/*.rpm dist/
           fi
 
+      - name: Empacotar (zip)
+        if: ${{ matrix.windows }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $stage = "mdv-$env:GITHUB_REF_NAME-${{ matrix.name }}"
+          New-Item -ItemType Directory $stage | Out-Null
+          Copy-Item $env:BIN, README.md $stage
+          Compress-Archive -Path $stage -DestinationPath "dist/$stage.zip"
+
+      # Prova que o arquivo publicado extrai e executa, não só que o build terminou.
+      - name: Testar binário empacotado
+        run: |
+          mkdir smoke
+          if [ "${{ matrix.windows }}" = "true" ]; then
+            7z x dist/*.zip -osmoke > /dev/null
+            exe=$(ls smoke/mdv-*/mdv.exe)
+          else
+            tar -xzf dist/*.tar.gz -C smoke
+            exe=$(ls smoke/mdv-*/mdv)
+          fi
+          printf '# Olá\n\n- item\n' | "$exe" -p - | grep -q "Olá"
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
@@ -84,6 +139,7 @@ jobs:
   release:
     name: publicar release
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     permissions:
       contents: write
