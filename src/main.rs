@@ -1,5 +1,6 @@
 mod cli;
 mod image;
+mod mermaid;
 mod net;
 mod render;
 
@@ -104,9 +105,9 @@ fn run_cli() -> Result<(), Failure> {
     let (source, md) = load_source(cli.path.as_deref())?;
     let stdout_tty = io::stdout().is_terminal();
     if cli.plain || !stdout_tty {
-        run_plain(&md, &source, cli.width, stdout_tty, cli.remote)
+        run_plain(&md, &source, cli.width, stdout_tty, &cli)
     } else {
-        run_tui(source, md, cli.width.unwrap_or(DEFAULT_WIDTH), cli.remote)
+        run_tui(source, md, cli.width.unwrap_or(DEFAULT_WIDTH), &cli)
     }
 }
 
@@ -126,36 +127,39 @@ fn load_source(path: Option<&str>) -> Result<(Source, String), Failure> {
 }
 
 /// Imagens relativas são resolvidas a partir da pasta do arquivo (ou do diretório atual, com stdin).
-/// Com `remote`, também baixa imagens de URLs (`blocking`: espera o download, como no `--plain`).
-fn image_store(source: &Source, remote: bool, blocking: bool) -> image::ImageStore {
+/// `--remote` baixa imagens de URLs e `--mermaid` renderiza diagramas (`blocking`: espera, como no `--plain`).
+fn image_store(source: &Source, cli: &cli::Cli, blocking: bool) -> image::ImageStore {
     let base = match source {
         Source::File(p) => p
             .parent()
             .map(|d| if d.as_os_str().is_empty() { PathBuf::from(".") } else { d.to_path_buf() }),
         Source::Stdin => None,
     };
-    let store = image::ImageStore::new(base);
-    if remote {
-        store.with_remote(net::FetchPolicy::default(), blocking)
-    } else {
-        store
+    let mut store = image::ImageStore::new(base);
+    if cli.remote {
+        store = store.with_remote(net::FetchPolicy::default(), blocking);
     }
+    if cli.mermaid {
+        let bin = std::env::var("MDV_MMDC").unwrap_or_else(|_| "mmdc".to_string());
+        store = store.with_mermaid(bin, blocking);
+    }
+    store
 }
 
 /// Imprime o documento renderizado (com cores só se a saída for um terminal).
-fn run_plain(md: &str, source: &Source, width: Option<usize>, color: bool, remote: bool) -> Result<(), Failure> {
+fn run_plain(md: &str, source: &Source, width: Option<usize>, color: bool, cli: &cli::Cli) -> Result<(), Failure> {
     let width = width.unwrap_or_else(|| {
         terminal::size()
             .map_or(FALLBACK_TERMINAL_WIDTH, |(cols, _)| usize::from(cols))
             .min(DEFAULT_WIDTH)
     });
-    let images = image_store(source, remote, true);
+    let images = image_store(source, cli, true);
     let out = render::render_with(md, &render::RenderOpts { width, images: Some(&images) });
     write_stdout(&render::to_ansi(&out.lines, color))
 }
 
-fn run_tui(source: Source, md: String, width: usize, remote: bool) -> Result<(), Failure> {
-    let mut app = App::new(source, md, width, remote);
+fn run_tui(source: Source, md: String, width: usize, cli: &cli::Cli) -> Result<(), Failure> {
+    let mut app = App::new(source, md, width, cli);
     let mut term = ratatui::init();
     let res = event_loop(&mut term, &mut app);
     ratatui::restore();
@@ -319,7 +323,7 @@ struct App {
 }
 
 impl App {
-    fn new(source: Source, md: String, max_width: usize, remote: bool) -> Self {
+    fn new(source: Source, md: String, max_width: usize, cli: &cli::Cli) -> Self {
         let (name, mtime) = match &source {
             Source::File(p) => (
                 p.file_name()
@@ -329,7 +333,7 @@ impl App {
             Source::Stdin => ("stdin".to_string(), None),
         };
         App {
-            images: image_store(&source, remote, false),
+            images: image_store(&source, cli, false),
             seen_images_version: 0,
             source,
             name,

@@ -46,6 +46,30 @@ fn imagem_remota_em_rede_privada_e_bloqueada() {
     assert!(!text.contains("use --remote"), "{text}");
 }
 
+const MERMAID_MD: &str = "```mermaid\ngraph TD; A-->B\n```\n";
+
+#[test]
+fn mermaid_sem_flag_mostra_codigo() {
+    let out = mdv(&["-p", "-"], MERMAID_MD);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("╭─ mermaid") && text.contains("A-->B"), "{text}");
+}
+
+#[test]
+fn mermaid_sem_mmdc_mostra_codigo_e_erro() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mdv"))
+        .args(["-p", "--mermaid", "-"])
+        .env("MDV_MMDC", "/nao/existe/mmdc")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("mdv deve iniciar");
+    child.stdin.take().expect("stdin").write_all(MERMAID_MD.as_bytes()).expect("escrever stdin");
+    let out = child.wait_with_output().expect("mdv deve terminar");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("mermaid (erro:") && text.contains("A-->B"), "{text}");
+}
+
 #[cfg(unix)]
 #[test]
 fn arquivo_nao_regular_e_rejeitado() {

@@ -782,6 +782,19 @@ impl<'a> Renderer<'a> {
     }
 
     fn render_code(&mut self, block: &CodeBlock) {
+        let mut label = block.lang.clone();
+        if block.lang == "mermaid" {
+            if let Some(store) = self.images.filter(|s| s.mermaid_enabled()) {
+                match store.get_mermaid(&block.buf) {
+                    ImageState::Ready(img) => {
+                        self.push_image(&img);
+                        return;
+                    }
+                    ImageState::Loading => label = "mermaid (renderizando…)".into(),
+                    ImageState::Failed(e) => label = format!("mermaid (erro: {})", sanitize(&e)),
+                }
+            }
+        }
         let (ss, theme) = hl();
         let syntax = if block.lang.is_empty() || block.buf.len() > self.highlight_left {
             ss.find_syntax_plain_text()
@@ -796,7 +809,7 @@ impl<'a> Renderer<'a> {
         let avail = self.width.saturating_sub(spans_width(&cont) + 2).max(MIN_BODY_WIDTH);
         let dim = Style::default().fg(DIM);
 
-        let header = if block.lang.is_empty() { "╭─".to_string() } else { format!("╭─ {}", block.lang) };
+        let header = if label.is_empty() { "╭─".to_string() } else { format!("╭─ {label}") };
         let mut v = first;
         v.push(Span::styled(header, dim));
         self.out.lines.push(Line::from(v));
@@ -1566,6 +1579,37 @@ mod tests {
         let t = joined_text(&r);
         assert!(!t.contains('▀'), "{t}");
         assert!(t.contains("[imagem: x]"), "{t}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bloco_mermaid_vira_imagem_quando_habilitado() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("f.png");
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(4, 4, image::Rgba([1, 2, 3, 255])));
+        img.save(&png).unwrap();
+        let bin = dir.path().join("mmdc");
+        std::fs::write(&bin, format!("#!/bin/sh\ncp {} \"$4\"\n", png.display())).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let store = ImageStore::new(None).with_mermaid(bin.to_string_lossy().into_owned(), true);
+        let r = render_with("```mermaid\ngraph TD; A-->B\n```", &RenderOpts { width: 40, images: Some(&store) });
+        assert!(joined_text(&r).contains('▀'));
+    }
+
+    #[test]
+    fn mermaid_sem_flag_mostra_codigo() {
+        let t = joined_text(&render("```mermaid\ngraph TD; A-->B\n```", 40));
+        assert!(t.contains("mermaid") && t.contains("A-->B"), "{t}");
+    }
+
+    #[test]
+    fn mermaid_com_falha_mostra_codigo_e_motivo() {
+        let store = ImageStore::new(None).with_mermaid("/nao/existe/mmdc".into(), true);
+        let r = render_with("```mermaid\ngraph TD; A-->B\n```", &RenderOpts { width: 60, images: Some(&store) });
+        let t = joined_text(&r);
+        assert!(t.contains("A-->B") && t.contains("erro"), "{t}");
     }
 
     #[test]

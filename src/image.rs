@@ -101,6 +101,7 @@ pub struct ImageStore {
     cache: Arc<Mutex<HashMap<String, ImageState>>>,
     version: Arc<AtomicU64>,
     remote: Option<(Arc<FetchPolicy>, bool)>, // (política, bloqueante)
+    mermaid: Option<(String, bool)>,          // (binário mmdc, bloqueante)
 }
 
 impl ImageStore {
@@ -110,7 +111,31 @@ impl ImageStore {
             cache: Arc::new(Mutex::new(HashMap::new())),
             version: Arc::new(AtomicU64::new(0)),
             remote: None,
+            mermaid: None,
         }
+    }
+
+    pub fn with_mermaid(mut self, bin: String, blocking: bool) -> Self {
+        self.mermaid = Some((bin, blocking));
+        self
+    }
+
+    pub fn mermaid_enabled(&self) -> bool {
+        self.mermaid.is_some()
+    }
+
+    pub fn get_mermaid(&self, source: &str) -> ImageState {
+        use std::hash::{Hash, Hasher};
+        let Some((bin, blocking)) = &self.mermaid else {
+            return ImageState::Failed("mermaid desativado: use --mermaid".into());
+        };
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        source.hash(&mut h);
+        let key = format!("mermaid:{:016x}", h.finish());
+        let (bin, src) = (bin.clone(), source.to_string());
+        self.get_job(&key, !*blocking, move || {
+            decode(&crate::mermaid::render_png(&src, &bin, crate::mermaid::MMDC_TIMEOUT)?)
+        })
     }
 
     pub fn with_remote(mut self, policy: FetchPolicy, blocking: bool) -> Self {
