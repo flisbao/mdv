@@ -157,3 +157,41 @@ jobs:
 
       - name: Criar release
         run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
+
+  # Regenera os blocos gerados do README (links da versão e `mdv --help`) e commita no main.
+  readme:
+    name: atualizar README
+    needs: release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-x86_64
+          path: dist
+
+      - name: Extrair binário publicado
+        run: |
+          mkdir bin
+          tar -xzf dist/*.tar.gz -C bin
+          echo "MDV=$(ls "$PWD"/bin/mdv-*/mdv)" >> "$GITHUB_ENV"
+
+      - name: Atualizar README
+        run: scripts/update-readme.sh "$GITHUB_REF_NAME" "$MDV"
+
+      - name: Commitar
+        run: |
+          if git diff --quiet README.md; then
+            echo "README já está atualizado"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs(readme): atualizar para $GITHUB_REF_NAME"
+          git push origin HEAD:main
