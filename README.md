@@ -44,6 +44,11 @@ Baixe o binário da última release, extraia e coloque `mdv` no seu `PATH`:
 Versão atual: **v0.1.1**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
 <!-- mdv:install:end -->
 
+Os binários de macOS e Windows **não são assinados**, então o sistema pode avisar na primeira execução:
+
+- **macOS (Gatekeeper):** se o binário baixado pelo navegador for bloqueado, remova a quarentena com `xattr -d com.apple.quarantine mdv`.
+- **Windows (SmartScreen):** se aparecer o aviso de aplicativo desconhecido, escolha "Mais informações" e depois "Executar assim mesmo". Use o Windows Terminal para ver cores e a TUI corretamente.
+
 Ou compile do código-fonte (Rust estável):
 
 ```bash
