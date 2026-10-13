@@ -669,6 +669,7 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     }
 
+    #[cfg(unix)]
     #[test]
     fn read_markdown_file_rejeita_dispositivo() {
         let err = read_markdown_file(Path::new("/dev/zero")).unwrap_err();
