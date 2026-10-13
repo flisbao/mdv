@@ -1,3 +1,4 @@
+mod cli;
 mod render;
 
 use std::fmt::Write as _;
@@ -60,57 +61,6 @@ enum Source {
     Stdin,
 }
 
-/// Opções da linha de comando para exibir um documento.
-#[derive(Debug, PartialEq)]
-struct Cli {
-    plain: bool,
-    width: Option<usize>,
-    path: Option<String>,
-}
-
-#[derive(Debug, PartialEq)]
-enum Command {
-    Help,
-    Version,
-    Run(Cli),
-}
-
-impl Cli {
-    /// Interpreta os argumentos (sem o nome do programa). `--` encerra as opções.
-    fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
-        let mut cli = Cli { plain: false, width: None, path: None };
-        let mut args = args.into_iter();
-        let mut only_paths = false;
-        while let Some(a) = args.next() {
-            if only_paths || a == "-" || !a.starts_with('-') {
-                cli.set_path(a)?;
-                continue;
-            }
-            match a.as_str() {
-                "--" => only_paths = true,
-                "-p" | "--plain" => cli.plain = true,
-                "-w" | "--width" => {
-                    let value = args
-                        .next()
-                        .ok_or_else(|| format!("a opção {a} precisa de uma largura"))?;
-                    cli.width = Some(parse_width(&value)?);
-                }
-                "-h" | "--help" => return Ok(Command::Help),
-                "-V" | "--version" => return Ok(Command::Version),
-                _ => return Err(format!("opção desconhecida: {a}")),
-            }
-        }
-        Ok(Command::Run(cli))
-    }
-
-    fn set_path(&mut self, path: String) -> Result<(), String> {
-        if self.path.replace(path).is_some() {
-            return Err("informe um único arquivo".to_string());
-        }
-        Ok(())
-    }
-}
-
 /// Falha que encerra o programa; o código de saída depende do tipo.
 enum Failure {
     /// Uso incorreto da linha de comando (código 2).
@@ -142,10 +92,12 @@ fn main() -> ExitCode {
 }
 
 fn run_cli() -> Result<(), Failure> {
-    let cli = match Cli::parse(std::env::args().skip(1)).map_err(Failure::Usage)? {
-        Command::Help => return write_stdout(HELP),
-        Command::Version => return write_stdout(&format!("mdv {}\n", env!("CARGO_PKG_VERSION"))),
-        Command::Run(cli) => cli,
+    let cli = match cli::parse(std::env::args().skip(1)).map_err(Failure::Usage)? {
+        cli::Parsed::Help => return write_stdout(HELP),
+        cli::Parsed::Version => {
+            return write_stdout(&format!("mdv {}\n", env!("CARGO_PKG_VERSION")));
+        }
+        cli::Parsed::Run(cli) => cli,
     };
     let (source, md) = load_source(cli.path.as_deref())?;
     let stdout_tty = io::stdout().is_terminal();
@@ -206,14 +158,6 @@ fn write_tolerating_closed_pipe(mut out: impl Write, bytes: &[u8]) -> io::Result
 
 fn read_failure(what: &str) -> impl FnOnce(io::Error) -> Failure + '_ {
     move |e| Failure::Runtime(format!("não consegui ler {what}: {e}"))
-}
-
-/// Interpreta o valor de `-w`, limitando-o ao intervalo suportado pelo renderizador.
-fn parse_width(value: &str) -> Result<usize, String> {
-    value
-        .parse()
-        .map(render::clamp_width)
-        .map_err(|_| format!("largura inválida: {value} (esperado um número inteiro positivo)"))
 }
 
 fn read_stdin() -> io::Result<String> {
@@ -632,12 +576,6 @@ fn highlight_line(line: &Line<'static>, q: &str) -> Line<'static> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn parse_width_limita_aos_extremos() {
-        assert_eq!(parse_width("5"), Ok(render::MIN_WIDTH));
-        assert_eq!(parse_width("80"), Ok(80));
-        assert_eq!(parse_width("18446744073709551615"), Ok(render::MAX_WIDTH));
-    }
 
     #[test]
     fn read_limited_aceita_exatamente_o_teto() {
@@ -716,47 +654,5 @@ mod tests {
             .collect();
         assert_eq!(marked, ["a", "a"]);
         assert_eq!(line_text(&out), "a-b-a");
-    }
-
-    #[test]
-    fn parse_width_rejeita_nao_numero() {
-        assert!(parse_width("abc").unwrap_err().contains("abc"));
-        assert!(parse_width("-3").is_err());
-        assert!(parse_width("").is_err());
-    }
-
-    fn args(list: &[&str]) -> Result<Command, String> {
-        Cli::parse(list.iter().map(|s| s.to_string()))
-    }
-
-    fn run_opts(plain: bool, width: Option<usize>, path: Option<&str>) -> Result<Command, String> {
-        Ok(Command::Run(Cli { plain, width, path: path.map(String::from) }))
-    }
-
-    #[test]
-    fn parse_args_aceita_opcoes_e_arquivo() {
-        assert_eq!(args(&["-p", "-w", "60", "a.md"]), run_opts(true, Some(60), Some("a.md")));
-        assert_eq!(args(&["--width", "5", "-"]), run_opts(false, Some(render::MIN_WIDTH), Some("-")));
-        assert_eq!(args(&[]), run_opts(false, None, None));
-    }
-
-    #[test]
-    fn parse_args_rejeita_opcao_desconhecida_e_largura_ruim() {
-        assert!(args(&["--zzz"]).unwrap_err().contains("--zzz"));
-        assert!(args(&["-w"]).is_err());
-        assert!(args(&["-w", "x"]).is_err());
-        assert!(args(&["a.md", "b.md"]).is_err());
-    }
-
-    #[test]
-    fn parse_args_duplo_hifen_trata_o_resto_como_caminho() {
-        assert_eq!(args(&["--", "-p"]), run_opts(false, None, Some("-p")));
-        assert!(args(&["--", "a", "b"]).is_err());
-    }
-
-    #[test]
-    fn parse_args_ajuda_e_versao() {
-        assert_eq!(args(&["-h"]), Ok(Command::Help));
-        assert_eq!(args(&["a.md", "-V"]), Ok(Command::Version));
     }
 }
