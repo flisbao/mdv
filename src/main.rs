@@ -11,7 +11,7 @@ use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, SystemTime};
 
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -482,6 +482,8 @@ impl App {
     /// Passa a receber o texto aos poucos (`--follow`).
     fn with_stream(mut self, rx: Receiver<String>) -> Self {
         self.stream = Some(rx);
+        // Com o texto ainda chegando, um bloco mermaid pode estar incompleto: só gera no fim.
+        self.images.set_mermaid_hold(true);
         self
     }
 
@@ -496,8 +498,23 @@ impl App {
         let Some(rx) = &self.stream else { return };
         let was_at_bottom = self.view.scroll >= self.view.max_scroll(self.rendered.lines.len());
         let mut got = false;
-        while let Ok(chunk) = rx.try_recv() {
-            self.md.push_str(&chunk);
+        let mut finished = false;
+        loop {
+            match rx.try_recv() {
+                Ok(chunk) => {
+                    self.md.push_str(&chunk);
+                    got = true;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    finished = true;
+                    break;
+                }
+            }
+        }
+        if finished {
+            self.stream = None;
+            self.images.set_mermaid_hold(false);
             got = true;
         }
         if got {
@@ -902,6 +919,21 @@ mod tests {
         app.drain_stream();
         assert_eq!(app.md, "# um\ndois");
         assert!(app.dirty);
+    }
+
+    #[test]
+    fn diagramas_esperam_o_fim_do_stdin_em_streaming() {
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        let mut app = test_app(Source::Stdin, "").with_stream(rx);
+        assert!(app.images.mermaid_held(), "enquanto o texto chega, não dispara o mmdc");
+        tx.send("# x\n".to_string()).unwrap();
+        app.drain_stream();
+        assert!(app.images.mermaid_held());
+        drop(tx);
+        app.dirty = false;
+        app.drain_stream();
+        assert!(!app.images.mermaid_held(), "entrada terminou: libera os diagramas");
+        assert!(app.dirty, "redesenha para os diagramas aparecerem");
     }
 
     #[test]

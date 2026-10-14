@@ -1,9 +1,9 @@
 //! Decodificação de imagens e conversão para linhas de meio-bloco.
 
 use std::collections::HashMap;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use image::imageops::FilterType;
@@ -14,6 +14,10 @@ use ratatui::text::{Line, Span};
 use crate::net::{self, FetchPolicy};
 
 pub const MAX_REMOTE_IMAGES: usize = 32;
+pub const MAX_LOCAL_IMAGES: usize = 64;
+pub const MAX_MERMAID_DIAGRAMS: usize = 16;
+const MERMAID_PREFIX: &str = "mermaid:";
+const LOCAL_PREFIX: &str = "file:";
 pub const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
 pub const MAX_IMAGE_COLS: usize = 80;
 pub const MAX_IMAGE_ROWS: usize = 24;
@@ -80,14 +84,48 @@ fn load_local(base: Option<&Path>, src: &str) -> Result<DynamicImage, String> {
         Some(b) => b.join(src),
         None => PathBuf::from(src),
     };
-    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    // Um único `open`: metadados e leitura vêm do mesmo arquivo (sem janela entre os dois).
+    let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+    let meta = file.metadata().map_err(|e| e.to_string())?;
     if !meta.is_file() {
         return Err("não é um arquivo regular".into());
     }
     if meta.len() > MAX_IMAGE_BYTES {
         return Err("imagem grande demais".into());
     }
-    decode(&std::fs::read(&path).map_err(|e| e.to_string())?)
+    decode(&read_capped(file, MAX_IMAGE_BYTES)?)
+}
+
+/// Lê até `max` bytes; passar disso é erro. O tamanho dos metadados não basta: arquivos de
+/// procfs/sysfs dizem ter 0 bytes e não terminam.
+fn read_capped(reader: impl Read, max: u64) -> Result<Vec<u8>, String> {
+    let mut buf = Vec::new();
+    reader.take(max + 1).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+    if buf.len() as u64 > max {
+        return Err("imagem grande demais".into());
+    }
+    Ok(buf)
+}
+
+/// Guarda no cache só o que cabe na tela (no máximo `MAX_IMAGE_COLS` × `MAX_IMAGE_ROWS*2` px):
+/// uma imagem de 8192×8192 ocuparia 256 MiB e seria reduzida de novo a cada redesenho.
+fn to_state(r: Result<DynamicImage, String>) -> ImageState {
+    match r {
+        Ok(img) => {
+            let (w, h) = (img.width() as usize, img.height() as usize);
+            let img = if w > MAX_IMAGE_COLS || h > MAX_IMAGE_ROWS * 2 {
+                img.resize(
+                    MAX_IMAGE_COLS as u32,
+                    (MAX_IMAGE_ROWS * 2) as u32,
+                    FilterType::Triangle,
+                )
+            } else {
+                img
+            };
+            ImageState::Ready(Arc::new(img))
+        }
+        Err(e) => ImageState::Failed(e),
+    }
 }
 
 pub fn is_remote(src: &str) -> bool {
@@ -102,6 +140,7 @@ pub struct ImageStore {
     version: Arc<AtomicU64>,
     remote: Option<(Arc<FetchPolicy>, bool)>, // (política, bloqueante)
     mermaid: Option<(String, bool)>,          // (binário mmdc, bloqueante)
+    mermaid_hold: AtomicBool,
 }
 
 impl ImageStore {
@@ -112,6 +151,7 @@ impl ImageStore {
             version: Arc::new(AtomicU64::new(0)),
             remote: None,
             mermaid: None,
+            mermaid_hold: AtomicBool::new(false),
         }
     }
 
@@ -124,14 +164,35 @@ impl ImageStore {
         self.mermaid.is_some()
     }
 
+    /// Enquanto `hold`, `get_mermaid` não dispara o `mmdc` (usado com `--follow`).
+    pub fn set_mermaid_hold(&self, hold: bool) {
+        self.mermaid_hold.store(hold, Ordering::Relaxed);
+    }
+
+    pub fn mermaid_held(&self) -> bool {
+        self.mermaid_hold.load(Ordering::Relaxed)
+    }
+
     pub fn get_mermaid(&self, source: &str) -> ImageState {
         use std::hash::{Hash, Hasher};
         let Some((bin, blocking)) = &self.mermaid else {
             return ImageState::Failed("mermaid desativado: use --mermaid".into());
         };
+        if self.mermaid_hold.load(Ordering::Relaxed) {
+            // Entrada ainda chegando: o bloco pode estar incompleto, então nada é disparado.
+            return ImageState::Loading;
+        }
         let mut h = std::collections::hash_map::DefaultHasher::new();
         source.hash(&mut h);
-        let key = format!("mermaid:{:016x}", h.finish());
+        let key = format!("{MERMAID_PREFIX}{:016x}", h.finish());
+        let over_limit = {
+            let cache = self.lock();
+            !cache.contains_key(&key)
+                && cache.keys().filter(|k| k.starts_with(MERMAID_PREFIX)).count() >= MAX_MERMAID_DIAGRAMS
+        };
+        if over_limit {
+            return ImageState::Failed("limite de diagramas por documento atingido".into());
+        }
         let (bin, src) = (bin.clone(), source.to_string());
         self.get_job(&key, !*blocking, move || {
             decode(&crate::mermaid::render_png(&src, &bin, crate::mermaid::MMDC_TIMEOUT)?)
@@ -162,10 +223,6 @@ impl ImageStore {
         if let Some(s) = self.lock().get(key) {
             return s.clone();
         }
-        let to_state = |r: Result<DynamicImage, String>| match r {
-            Ok(img) => ImageState::Ready(Arc::new(img)),
-            Err(e) => ImageState::Failed(e),
-        };
         if !run_async {
             let st = to_state(job());
             self.lock().insert(key.to_string(), st.clone());
@@ -183,9 +240,26 @@ impl ImageStore {
 
     pub fn get(&self, src: &str) -> ImageState {
         if !is_remote(src) {
+            // A chave é o caminho canônico: `a.png`, `./a.png` e `x/../a.png` são um só arquivo.
+            let path = match &self.base_dir {
+                Some(b) => b.join(src),
+                None => PathBuf::from(src),
+            };
+            let key = format!(
+                "{LOCAL_PREFIX}{}",
+                std::fs::canonicalize(&path).unwrap_or(path).to_string_lossy()
+            );
+            let over_limit = {
+                let cache = self.lock();
+                !cache.contains_key(&key)
+                    && cache.keys().filter(|k| k.starts_with(LOCAL_PREFIX)).count() >= MAX_LOCAL_IMAGES
+            };
+            if over_limit {
+                return ImageState::Failed("limite de imagens locais atingido".into());
+            }
             let base = self.base_dir.clone();
             let s = src.to_string();
-            return self.get_job(src, false, move || load_local(base.as_deref(), &s));
+            return self.get_job(&key, false, move || load_local(base.as_deref(), &s));
         }
         let Some((policy, blocking)) = &self.remote else {
             return ImageState::Failed("imagem remota: use --remote".into());
@@ -237,6 +311,77 @@ mod tests {
         let l = halfblock(&img, 10, 4);
         assert!(l.len() <= 4);
         assert!(l.iter().all(|x| x.spans.len() <= 10));
+    }
+
+    #[test]
+    fn leitura_limitada_recusa_fonte_infinita() {
+        // arquivos de procfs/sysfs informam tamanho 0 mas não têm fim
+        let e = read_capped(std::io::repeat(0), 1024).unwrap_err();
+        assert!(e.contains("grande"), "{e}");
+        assert_eq!(read_capped(&b"abc"[..], 1024).unwrap(), b"abc");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn arquivo_de_procfs_sem_tamanho_nao_estoura_memoria() {
+        let store = ImageStore::new(None);
+        // /proc/self/maps: metadata().len() == 0, conteúdo não é imagem
+        assert!(matches!(store.get("/proc/self/maps"), ImageState::Failed(_)));
+    }
+
+    #[test]
+    fn cache_guarda_a_imagem_ja_reduzida() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("grande.png"), png_bytes(400, 300)).unwrap();
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        let ImageState::Ready(img) = store.get("grande.png") else { panic!("deveria carregar") };
+        assert!(img.width() as usize <= MAX_IMAGE_COLS && img.height() as usize <= MAX_IMAGE_ROWS * 2);
+    }
+
+    #[test]
+    fn grafias_diferentes_do_mesmo_arquivo_compartilham_o_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.png"), png_bytes(4, 4)).unwrap();
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        let (ImageState::Ready(x), ImageState::Ready(y)) = (store.get("a.png"), store.get("./a.png")) else {
+            panic!("deveria carregar")
+        };
+        assert!(Arc::ptr_eq(&x, &y));
+    }
+
+    #[test]
+    fn limite_de_imagens_locais_distintas() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        for i in 0..MAX_LOCAL_IMAGES {
+            store.get(&format!("{i}.png"));
+        }
+        match store.get("extra.png") {
+            ImageState::Failed(m) => assert!(m.contains("limite"), "{m}"),
+            _ => panic!("deveria estourar o limite"),
+        }
+    }
+
+    #[test]
+    fn limite_de_diagramas_mermaid_distintos() {
+        let store = ImageStore::new(None).with_mermaid("/nao/existe/mmdc".into(), true);
+        for i in 0..MAX_MERMAID_DIAGRAMS {
+            store.get_mermaid(&format!("graph TD; A{i}-->B"));
+        }
+        match store.get_mermaid("graph TD; extra-->B") {
+            ImageState::Failed(m) => assert!(m.contains("limite"), "{m}"),
+            _ => panic!("deveria estourar o limite"),
+        }
+    }
+
+    #[test]
+    fn mermaid_em_espera_nao_dispara_o_mmdc() {
+        let store = ImageStore::new(None).with_mermaid("/nao/existe/mmdc".into(), true);
+        store.set_mermaid_hold(true);
+        assert!(matches!(store.get_mermaid("graph TD; A-->B"), ImageState::Loading));
+        // nada foi registrado: ao liberar, o job roda (e falha, pois o binário não existe)
+        store.set_mermaid_hold(false);
+        assert!(matches!(store.get_mermaid("graph TD; A-->B"), ImageState::Failed(_)));
     }
 
     #[test]

@@ -4,6 +4,7 @@ use std::ffi::OsString;
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::{Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 pub const MAX_MERMAID_BYTES: usize = 64 * 1024;
@@ -21,6 +22,26 @@ pub fn args(input: &Path, output: &Path) -> Vec<OsString> {
         "1200".into(),
         "-q".into(),
     ]
+}
+
+/// Quantos `mmdc` (cada um abre um Chromium) podem rodar ao mesmo tempo.
+pub const MAX_CONCURRENT_MMDC: usize = 2;
+
+static RUNNING: Mutex<usize> = Mutex::new(0);
+static SLOT_FREED: Condvar = Condvar::new();
+
+/// Executa `f` quando houver uma vaga; o resto espera na fila.
+pub fn with_slot<T>(f: impl FnOnce() -> T) -> T {
+    let mut running = RUNNING.lock().unwrap_or_else(PoisonError::into_inner);
+    while *running >= MAX_CONCURRENT_MMDC {
+        running = SLOT_FREED.wait(running).unwrap_or_else(PoisonError::into_inner);
+    }
+    *running += 1;
+    drop(running);
+    let out = f();
+    *RUNNING.lock().unwrap_or_else(PoisonError::into_inner) -= 1;
+    SLOT_FREED.notify_one();
+    out
 }
 
 /// Inicia o `mmdc`. `ETXTBSY` (executável ainda aberto para escrita por outro processo, comum
@@ -48,6 +69,10 @@ pub fn render_png(source: &str, bin: &str, timeout: Duration) -> Result<Vec<u8>,
     if source.len() > MAX_MERMAID_BYTES {
         return Err("diagrama grande demais".into());
     }
+    with_slot(|| run_mmdc(source, bin, timeout))
+}
+
+fn run_mmdc(source: &str, bin: &str, timeout: Duration) -> Result<Vec<u8>, String> {
     let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
     let (input, output) = (dir.path().join("in.mmd"), dir.path().join("out.png"));
     std::fs::write(&input, source).map_err(|e| e.to_string())?;
@@ -88,6 +113,31 @@ mod tests {
         let a = args(Path::new("/t/in.mmd"), Path::new("/t/out.png"));
         let a: Vec<String> = a.iter().map(|s| s.to_string_lossy().into_owned()).collect();
         assert_eq!(a, ["-i", "/t/in.mmd", "-o", "/t/out.png", "-b", "transparent", "-w", "1200", "-q"]);
+    }
+
+    #[test]
+    fn no_maximo_n_mmdc_ao_mesmo_tempo() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let (cur, peak) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let (cur, peak) = (Arc::clone(&cur), Arc::clone(&peak));
+                std::thread::spawn(move || {
+                    with_slot(|| {
+                        let now = cur.fetch_add(1, Ordering::SeqCst) + 1;
+                        peak.fetch_max(now, Ordering::SeqCst);
+                        std::thread::sleep(Duration::from_millis(40));
+                        cur.fetch_sub(1, Ordering::SeqCst);
+                    });
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        let peak = peak.load(Ordering::SeqCst);
+        assert!((1..=MAX_CONCURRENT_MMDC).contains(&peak), "pico de {peak}");
     }
 
     #[test]

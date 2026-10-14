@@ -232,6 +232,16 @@ fn sanitize_event(ev: Event<'_>) -> Event<'_> {
             title,
             id,
         }),
+        Event::FootnoteReference(label) => Event::FootnoteReference(sanitize_cow(label)),
+        Event::Start(Tag::FootnoteDefinition(label)) => {
+            Event::Start(Tag::FootnoteDefinition(sanitize_cow(label)))
+        }
+        Event::Start(Tag::Image { link_type, dest_url, title, id }) => Event::Start(Tag::Image {
+            link_type,
+            dest_url: sanitize_cow(dest_url),
+            title: sanitize_cow(title),
+            id: sanitize_cow(id),
+        }),
         Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(lang))) => {
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(sanitize_cow(lang))))
         }
@@ -812,7 +822,7 @@ impl<'a> Renderer<'a> {
                 self.push_image(&img);
             }
             Some((_, ImageState::Loading)) => self.inline.push_dim(" … carregando]"),
-            Some((_, ImageState::Failed(e))) => self.inline.push_dim(format!(" — {e}]")),
+            Some((_, ImageState::Failed(e))) => self.inline.push_dim(format!(" — {}]", sanitize(&e))),
             None => self.inline.push_dim("]"),
         }
     }
@@ -1850,6 +1860,22 @@ mod tests {
     fn erro_renderizado_tem_uma_linha_e_sanitiza() {
         assert_eq!(error_rendered("falhou").lines.len(), 1);
         assert!(!joined_text(&error_rendered("a\x1b[31mb")).contains('\x1b'));
+    }
+
+    #[test]
+    fn escape_em_rotulo_de_nota_de_rodape_nao_vaza() {
+        let r = render("Texto[^a\x1bcb].\n\n[^a\x1bcb]: nota\n", 60);
+        assert!(!to_ansi(&r.lines, false).contains('\x1b'));
+    }
+
+    #[test]
+    fn escape_em_motivo_de_falha_de_imagem_nao_vaza() {
+        let url = "https://exemplo.invalido/k.png";
+        let store = ImageStore::new(None).with_remote(crate::net::FetchPolicy::default(), true);
+        store.get_job(url, false, || Err("falha\x1bc\x07".to_string()));
+        let r = render_with(&format!("![x]({url})"), &RenderOpts { width: 60, images: Some(&store) });
+        let ansi = to_ansi(&r.lines, false);
+        assert!(ansi.contains("falha") && !ansi.contains('\x1b') && !ansi.contains('\x07'), "{ansi:?}");
     }
 
     #[test]
