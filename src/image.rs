@@ -84,7 +84,12 @@ fn load_local(base: Option<&Path>, src: &str) -> Result<DynamicImage, String> {
         Some(b) => b.join(src),
         None => PathBuf::from(src),
     };
-    // Um único `open`: metadados e leitura vêm do mesmo arquivo (sem janela entre os dois).
+    // Só abre arquivo regular: abrir uma FIFO ou um dispositivo pode bloquear para sempre.
+    if !std::fs::metadata(&path).map_err(|e| e.to_string())?.is_file() {
+        return Err("não é um arquivo regular".into());
+    }
+    // Confere de novo no arquivo aberto (o caminho pode ter sido trocado entre as duas checagens)
+    // e usa o tamanho e a leitura desse mesmo arquivo.
     let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
     let meta = file.metadata().map_err(|e| e.to_string())?;
     if !meta.is_file() {
@@ -316,6 +321,21 @@ mod tests {
         let e = read_capped(std::io::repeat(0), 1024).unwrap_err();
         assert!(e.contains("grande"), "{e}");
         assert_eq!(read_capped(&b"abc"[..], 1024).unwrap(), b"abc");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fifo_nao_trava_a_leitura() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("pipe.png");
+        // abrir uma FIFO para leitura bloqueia até aparecer um escritor
+        assert!(std::process::Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let base = dir.path().to_path_buf();
+        std::thread::spawn(move || {
+            let _ = tx.send(matches!(ImageStore::new(Some(base)).get("pipe.png"), ImageState::Failed(_)));
+        });
+        assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(3)), Ok(true), "get() travou na FIFO");
     }
 
     #[cfg(target_os = "linux")]

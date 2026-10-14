@@ -64,6 +64,32 @@ pub fn describe(v: &Value) -> String {
     }
 }
 
+/// Teto do JSON já indentado: a indentação multiplica uma entrada pequena e muito aninhada.
+const MAX_PRETTY_BYTES: usize = 8 * 1024 * 1024;
+
+/// Escreve só até `MAX_PRETTY_BYTES`; passar disso é erro (o valor nunca é montado inteiro).
+struct BoundedBuf(Vec<u8>);
+
+impl std::io::Write for BoundedBuf {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.0.len() + buf.len() > MAX_PRETTY_BYTES {
+            return Err(std::io::Error::new(std::io::ErrorKind::OutOfMemory, "saída grande demais"));
+        }
+        self.0.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn pretty_bounded(v: &Value) -> Option<String> {
+    let mut out = BoundedBuf(Vec::new());
+    serde_json::to_writer_pretty(&mut out, v).ok()?;
+    String::from_utf8(out.0).ok()
+}
+
 pub fn render_json(text: &str, path: Option<&str>, width: usize) -> Rendered {
     if text.len() > MAX_DATA_BYTES {
         return error_rendered("entrada grande demais para o modo JSON (limite de 5 MiB)");
@@ -76,7 +102,9 @@ pub fn render_json(text: &str, path: Option<&str>, width: usize) -> Rendered {
         Ok(v) => v,
         Err(e) => return error_rendered(&e),
     };
-    let pretty = serde_json::to_string_pretty(sel).unwrap_or_default();
+    let Some(pretty) = pretty_bounded(sel) else {
+        return error_rendered("JSON grande demais depois de indentado (limite de 8 MiB de saída)");
+    };
     let mut r = render_code_only(&pretty, "json", width);
     let head = Line::from(Span::styled(
         describe(sel),
@@ -323,6 +351,17 @@ mod tests {
         let t0 = std::time::Instant::now();
         let _ = render_table_data(&csv, &opts(), 100);
         assert!(t0.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    fn json_aninhado_nao_explode_na_saida_indentada() {
+        // entrada pequena, mas cada item ganha ~120 bytes de indentação ao ser formatado
+        let json = format!("{}{}{}", "[".repeat(60), "1,".repeat(100_000) + "1", "]".repeat(60));
+        assert!(json.len() < MAX_DATA_BYTES);
+        let t0 = std::time::Instant::now();
+        let t = text(&render_json(&json, None, 60));
+        assert!(t.contains("grande"), "{}", &t[..t.len().min(200)]);
+        assert!(t0.elapsed() < std::time::Duration::from_secs(5));
     }
 
     #[test]
