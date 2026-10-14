@@ -7,10 +7,15 @@
 [![release](https://img.shields.io/github/v/release/flisbao/mdv)](https://github.com/flisbao/mdv/releases/latest)
 [![ci](https://github.com/flisbao/mdv/actions/workflows/ci.yml/badge.svg)](https://github.com/flisbao/mdv/actions/workflows/ci.yml)
 
+Além de Markdown, abre **JSON, CSV e TSV** como dados formatados, desenha **imagens e diagramas Mermaid** no próprio terminal e acompanha a saída de **agentes e LLMs** em tempo real.
+
 ```bash
 mdv README.md                 # leitor interativo
 mdv -p README.md              # só imprime, como um `cat` colorido
 curl -s https://exemplo/doc.md | mdv    # lê da entrada padrão
+agente | mdv --follow         # acompanha um texto que ainda está chegando
+mdv csv vendas.csv --cols produto,total   # CSV como tabela
+mdv json dados.json --path .itens[0]      # só um trecho do JSON
 ```
 
 ## Por que usar
@@ -20,10 +25,14 @@ curl -s https://exemplo/doc.md | mdv    # lê da entrada padrão
 - **Tabelas que cabem na tela.** Colunas se ajustam à largura disponível; células largas são truncadas com `…` em vez de quebrar o layout.
 - **Quebra de linha correta.** O texto é quebrado na largura do terminal respeitando caracteres largos: acentos, emojis e CJK (日本語) não desalinham nada.
 - **Leitor interativo.** Rolagem, página, meia página, busca com `/`, `n`/`N` entre ocorrências e `]`/`[` para pular de título em título.
+- **Imagens no terminal.** `![alt](arquivo.png)` e, com `--remote`, imagens por URL, desenhadas em meio-bloco, sem protocolo gráfico. [Detalhes](#imagens).
+- **Diagramas Mermaid.** Com `--mermaid`, blocos <code>```mermaid</code> viram imagem via `mmdc`. [Detalhes](#mermaid).
+- **Feito para saída de agentes e LLMs.** Front matter YAML, alertas GFM, notas de rodapé, `<details>` e `<think>` aparecem formatados; `--follow`, `--latest <pasta>` e `--toc` acompanham e resumem. Na TUI, `m` alterna para a fonte crua. [Detalhes](#markdown-de-agentes-e-llms).
+- **JSON, CSV e TSV.** `mdv json|csv|tsv` com `--path`, `--head`, `--cols`, `--no-header` e `--delimiter`. [Detalhes](#json-csv-e-tsv).
 - **Live reload.** Edite o arquivo no seu editor e veja o resultado atualizar sozinho no `mdv` ao lado. Ótimo para escrever README.
 - **Funciona em pipe.** Com `-p` ou quando a saída não é um terminal, imprime texto com ANSI. Serve em scripts, `less -R` e CI.
 - **Responsivo.** Redesenha ao redimensionar a janela; `-w` fixa a largura máxima.
-- **Seguro com entrada não confiável.** Caracteres de controle e sequências de escape do documento são neutralizados, então um `.md` malicioso não consegue mexer no seu terminal. Tamanho de entrada é limitado.
+- **Seguro com entrada não confiável.** Caracteres de controle e sequências de escape do documento são neutralizados, então um `.md` malicioso não consegue mexer no seu terminal. Tamanho de entrada é limitado, e rede e subprocessos só entram com `--remote` e `--mermaid`. Veja as [pendências conhecidas](docs/pendencias.md).
 - **Rápido e portátil.** Binário único em Rust para Linux (glibc e estático musl), macOS e Windows.
 
 ## Instalação
@@ -147,7 +156,7 @@ cargo run --release -- -p -w 60 sample.md   # saída plain
 cargo test
 ```
 
-O pipeline é um só: Markdown → linhas do `ratatui` → TUI ou ANSI (`src/render.rs` renderiza, `src/main.rs` cuida de CLI, TUI, busca e live reload).
+O pipeline é um só: entrada (Markdown, JSON, CSV/TSV) → linhas do `ratatui` → TUI ou ANSI. `src/render.rs` renderiza; `src/main.rs` cuida da TUI, busca e live reload; `src/cli.rs` interpreta os argumentos; `src/image.rs`, `src/net.rs` e `src/mermaid.rs` fazem o I/O de imagens e diagramas (nunca dentro de `render.rs`); `src/stream.rs` trata `--follow` e `--latest`; `src/data.rs` trata JSON e CSV/TSV.
 
 Os blocos de **instalação** e **uso** acima são gerados pela CI a cada release (`scripts/update-readme.sh`), a partir dos arquivos publicados e da saída real de `mdv --help`; não edite o que está entre os marcadores `<!-- mdv:… -->`.
 
