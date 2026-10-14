@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::sync::OnceLock;
 
-use pulldown_cmark::{Alignment, CodeBlockKind, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, BlockQuoteKind, CodeBlockKind, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use syntect::easy::HighlightLines;
@@ -16,11 +16,13 @@ use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+use crate::image::{halfblock, ImageState, ImageStore, MAX_IMAGE_COLS, MAX_IMAGE_ROWS};
+
 const H1: Color = Color::Rgb(210, 168, 255);
 const H2: Color = Color::Rgb(121, 192, 255);
 const H3: Color = Color::Rgb(126, 231, 135);
 const H4: Color = Color::Rgb(230, 237, 243);
-const DIM: Color = Color::Rgb(110, 118, 129);
+pub(crate) const DIM: Color = Color::Rgb(110, 118, 129);
 const LINK: Color = Color::Rgb(88, 166, 255);
 const INLINE_CODE_FG: Color = Color::Rgb(255, 166, 87);
 const INLINE_CODE_BG: Color = Color::Rgb(47, 52, 60);
@@ -77,16 +79,117 @@ pub struct Rendered {
     pub lines: Vec<Line<'static>>,
     /// Índices (em `lines`) onde cada título começa.
     pub headings: Vec<usize>,
+    /// Títulos com nível e texto, para o `--toc`.
+    pub outline: Vec<OutlineEntry>,
+}
+
+#[allow(dead_code)] // `line` será usado pela navegação do sumário
+pub struct OutlineEntry {
+    pub line: usize,
+    pub level: u8,
+    pub title: String,
+}
+
+/// Índice dos títulos, um por linha, indentado conforme o nível.
+pub fn toc(r: &Rendered) -> String {
+    let mut out = String::new();
+    for e in &r.outline {
+        let _ = writeln!(out, "{}{}", "  ".repeat(usize::from(e.level.saturating_sub(1))), e.title);
+    }
+    out
+}
+
+/// Mostra `code` como um bloco de código com a linguagem `lang` (usado para a fonte crua).
+pub fn render_code_only(code: &str, lang: &str, width: usize) -> Rendered {
+    let mut r = Renderer::new(width, None);
+    r.render_code(&CodeBlock { lang: lang.to_string(), buf: sanitize(code).into_owned() });
+    r.out
+}
+
+/// Desenha só uma tabela já em células de texto (CSV/TSV); `header` estiliza a primeira linha.
+pub fn render_table_only(
+    rows: Vec<Vec<String>>,
+    header: bool,
+    aligns: Vec<Alignment>,
+    width: usize,
+) -> Rendered {
+    let head_style = Style::default().fg(H2).add_modifier(Modifier::BOLD);
+    let rows: Vec<Vec<Vec<Piece>>> = rows
+        .into_iter()
+        .enumerate()
+        .map(|(ri, row)| {
+            row.into_iter()
+                .map(|cell| {
+                    let st = if header && ri == 0 { head_style } else { Style::default() };
+                    vec![Piece::Text(sanitize(&cell).into_owned(), st)]
+                })
+                .collect()
+        })
+        .collect();
+    let mut r = Renderer::new(width, None);
+    r.render_table(&TableBuilder { aligns, rows, cur: Vec::new(), has_header: header, in_head: false });
+    r.out
+}
+
+/// Uma linha vermelha com a mensagem de erro (saneada).
+pub fn error_rendered(msg: &str) -> Rendered {
+    let st = Style::default().fg(Color::Rgb(248, 81, 73)).add_modifier(Modifier::BOLD);
+    Rendered {
+        lines: vec![Line::from(Span::styled(sanitize(msg).into_owned(), st))],
+        ..Rendered::default()
+    }
 }
 
 pub fn clamp_width(width: usize) -> usize {
     width.clamp(MIN_WIDTH, MAX_WIDTH)
 }
 
+struct ThinkLine {
+    opens: bool,
+    closes: bool,
+    rest: String,
+}
+
+fn think_tags(line: &str) -> Option<ThinkLine> {
+    const OPEN: [&str; 2] = ["<think>", "<thinking>"];
+    const CLOSE: [&str; 2] = ["</think>", "</thinking>"];
+    let opens = OPEN.iter().any(|t| line.contains(t));
+    let closes = CLOSE.iter().any(|t| line.contains(t));
+    if !opens && !closes {
+        return None;
+    }
+    let mut rest = line.to_string();
+    for t in OPEN.iter().chain(CLOSE.iter()) {
+        rest = rest.replace(t, "");
+    }
+    Some(ThinkLine { opens, closes, rest: rest.trim().to_string() })
+}
+
+fn summary_text(line: &str) -> Option<&str> {
+    line.trim().strip_prefix("<summary>")?.strip_suffix("</summary>").map(str::trim)
+}
+
+/// Opções de renderização: largura e, se houver, onde buscar imagens.
+pub struct RenderOpts<'a> {
+    pub width: usize,
+    pub images: Option<&'a ImageStore>,
+}
+
+#[allow(dead_code)] // atalho usado pelos testes
 pub fn render(md: &str, width: usize) -> Rendered {
-    let opts = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
-    let mut r = Renderer::new(width);
-    for ev in Parser::new_ext(md, opts) {
+    render_with(md, &RenderOpts { width, images: None })
+}
+
+pub fn render_with(md: &str, opts: &RenderOpts) -> Rendered {
+    // `ENABLE_MATH` fica de fora de propósito: textos de LLM com `$5 e $10` seriam lidos como fórmula.
+    let parse_opts = Options::ENABLE_TABLES
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_FOOTNOTES
+        | Options::ENABLE_GFM
+        | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS;
+    let mut r = Renderer::new(opts.width, opts.images);
+    for ev in Parser::new_ext(md, parse_opts) {
         r.handle(sanitize_event(ev));
     }
     r.finish()
@@ -128,6 +231,16 @@ fn sanitize_event(ev: Event<'_>) -> Event<'_> {
             dest_url: sanitize_cow(dest_url),
             title,
             id,
+        }),
+        Event::FootnoteReference(label) => Event::FootnoteReference(sanitize_cow(label)),
+        Event::Start(Tag::FootnoteDefinition(label)) => {
+            Event::Start(Tag::FootnoteDefinition(sanitize_cow(label)))
+        }
+        Event::Start(Tag::Image { link_type, dest_url, title, id }) => Event::Start(Tag::Image {
+            link_type,
+            dest_url: sanitize_cow(dest_url),
+            title: sanitize_cow(title),
+            id: sanitize_cow(id),
         }),
         Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(lang))) => {
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(sanitize_cow(lang))))
@@ -389,7 +502,13 @@ impl TableBuilder {
     }
 }
 
-struct Renderer {
+/// Imagem Markdown em andamento: destino e posição em `inline` do "[imagem: " de fallback.
+struct ImageCtx {
+    url: String,
+    mark: usize,
+}
+
+struct Renderer<'a> {
     width: usize,
     out: Rendered,
     inline: InlineBuffer,
@@ -398,11 +517,17 @@ struct Renderer {
     code: Option<CodeBlock>,
     table: Option<TableBuilder>,
     highlight_left: usize,
+    images: Option<&'a ImageStore>,
+    image: Option<ImageCtx>,
+    think: usize,
 }
 
-impl Renderer {
-    fn new(width: usize) -> Self {
+impl<'a> Renderer<'a> {
+    fn new(width: usize, images: Option<&'a ImageStore>) -> Self {
         Renderer {
+            images,
+            image: None,
+            think: 0,
             width: clamp_width(width),
             out: Rendered::default(),
             inline: InlineBuffer::default(),
@@ -442,7 +567,11 @@ impl Renderer {
             Event::Rule => self.rule(),
             Event::TaskListMarker(done) => self.lists.set_task_marker(done),
             Event::Html(h) => self.html_block(&h),
-            Event::InlineHtml(h) => self.inline.push_dim(h.to_string()),
+            Event::InlineHtml(h) => match think_tags(&h) {
+                Some(tl) => self.think_tag(tl.opens, tl.closes),
+                None => self.inline.push_dim(h.to_string()),
+            },
+            Event::FootnoteReference(label) => self.inline.push_dim(format!("[^{label}]")),
             _ => {}
         }
     }
@@ -458,24 +587,76 @@ impl Renderer {
     fn html_block(&mut self, html: &str) {
         self.flush_inline();
         let dim = Style::default().fg(DIM);
+        let think_style = Style::default().fg(QUOTE).add_modifier(Modifier::ITALIC);
         let avail = self.content_width();
         let mut bodies: Vec<Vec<Span<'static>>> = Vec::new();
-        for l in html.lines() {
-            for chunk in split_by_width(&[(l.to_string(), dim)], avail) {
+        let text = |s: String, st: Style, bodies: &mut Vec<Vec<Span<'static>>>| {
+            for chunk in split_by_width(&[(s, st)], avail) {
                 bodies.push(chunk.into_iter().map(|(t, st)| Span::styled(t, st)).collect());
+            }
+        };
+        for l in html.lines() {
+            let t = l.trim();
+            if t.starts_with("<details") || t == "</details>" {
+                continue;
+            }
+            if let Some(s) = summary_text(t) {
+                text(format!("▸ {s}"), Style::default().fg(H2).add_modifier(Modifier::BOLD), &mut bodies);
+            } else if let Some(tl) = think_tags(t) {
+                if tl.opens {
+                    text("💭 raciocínio".to_string(), dim.add_modifier(Modifier::ITALIC), &mut bodies);
+                }
+                if !tl.rest.is_empty() {
+                    text(tl.rest, think_style, &mut bodies);
+                }
+                self.think_tag(tl.opens, tl.closes);
+            } else {
+                text(l.to_string(), dim, &mut bodies);
             }
         }
         self.push_prefixed(bodies);
     }
 
+    /// Abre/fecha o estilo de "raciocínio" (itálico apagado) conforme as tags `<think>`.
+    fn think_tag(&mut self, opens: bool, closes: bool) {
+        if opens && !closes {
+            self.think += 1;
+            self.inline
+                .push_style(Style::default().fg(QUOTE).add_modifier(Modifier::ITALIC));
+        } else if closes && !opens && self.think > 0 {
+            self.think -= 1;
+            self.inline.pop_style();
+        }
+    }
+
     fn start(&mut self, tag: Tag<'_>) {
         match tag {
             Tag::Heading { level, .. } => self.start_heading(level),
-            Tag::BlockQuote(_) => {
+            Tag::BlockQuote(kind) => {
                 self.flush_inline();
                 self.quote_depth += 1;
                 self.inline
                     .push_style(Style::default().fg(QUOTE).add_modifier(Modifier::ITALIC));
+                if let Some(kind) = kind {
+                    let (label, color) = match kind {
+                        BlockQuoteKind::Note => ("ℹ Nota", H2),
+                        BlockQuoteKind::Tip => ("💡 Dica", H3),
+                        BlockQuoteKind::Important => ("❗ Importante", H1),
+                        BlockQuoteKind::Warning => ("⚠ Aviso", Color::Rgb(240, 192, 64)),
+                        BlockQuoteKind::Caution => ("⛔ Cuidado", Color::Rgb(248, 81, 73)),
+                    };
+                    let mut line = self.quote_prefix();
+                    line.push(Span::styled(label, Style::default().fg(color).add_modifier(Modifier::BOLD)));
+                    self.out.lines.push(Line::from(line));
+                }
+            }
+            Tag::MetadataBlock(_) => {
+                self.flush_inline();
+                self.code = Some(CodeBlock::new(CodeBlockKind::Fenced("yaml".into())));
+            }
+            Tag::FootnoteDefinition(label) => {
+                self.flush_inline();
+                self.inline.push_dim(format!("[^{label}]: "));
             }
             Tag::CodeBlock(kind) => {
                 self.flush_inline();
@@ -499,8 +680,9 @@ impl Renderer {
                 self.inline
                     .push_style(Style::default().fg(LINK).add_modifier(Modifier::UNDERLINED));
             }
-            Tag::Image { .. } => {
+            Tag::Image { dest_url, .. } => {
                 self.inline.push_style(Style::default().add_modifier(Modifier::ITALIC));
+                self.image = Some(ImageCtx { url: dest_url.to_string(), mark: self.inline.pieces.len() });
                 self.inline.push_dim("[imagem: ");
             }
             Tag::Table(aligns) => {
@@ -543,7 +725,7 @@ impl Renderer {
             TagEnd::Paragraph => self.end_paragraph(),
             TagEnd::Heading(level) => self.finish_heading(level),
             TagEnd::BlockQuote(_) => self.end_blockquote(),
-            TagEnd::CodeBlock => {
+            TagEnd::CodeBlock | TagEnd::MetadataBlock(_) => {
                 if let Some(code) = self.code.take() {
                     self.render_code(&code);
                 }
@@ -558,13 +740,10 @@ impl Renderer {
                     self.push_blank();
                 }
             }
-            TagEnd::Item => self.flush_inline(),
+            TagEnd::Item | TagEnd::FootnoteDefinition => self.flush_inline(),
             TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough => self.inline.pop_style(),
             TagEnd::Link => self.end_link(),
-            TagEnd::Image => {
-                self.inline.push_dim("]");
-                self.inline.pop_style();
-            }
+            TagEnd::Image => self.end_image(),
             TagEnd::TableCell => self.end_table_cell(),
             TagEnd::TableHead => {
                 if let Some(t) = &mut self.table {
@@ -624,6 +803,38 @@ impl Renderer {
             if !url.is_empty() && !url.starts_with('#') {
                 self.inline.push_dim(format!(" ({url})"));
             }
+        }
+    }
+
+    fn end_image(&mut self) {
+        self.inline.pop_style();
+        // Em célula de tabela não há como intercalar linhas de imagem: fica o texto alternativo.
+        let store = if self.table.is_some() { None } else { self.images };
+        let state = self
+            .image
+            .take()
+            .zip(store)
+            .map(|(ctx, store)| (ctx.mark, store.get(&ctx.url)));
+        match state {
+            Some((mark, ImageState::Ready(img))) => {
+                self.inline.pieces.truncate(mark);
+                self.flush_inline();
+                self.push_image(&img);
+            }
+            Some((_, ImageState::Loading)) => self.inline.push_dim(" … carregando]"),
+            Some((_, ImageState::Failed(e))) => self.inline.push_dim(format!(" — {}]", sanitize(&e))),
+            None => self.inline.push_dim("]"),
+        }
+    }
+
+    fn push_image(&mut self, img: &image::DynamicImage) {
+        let (first, cont) = self.prefixes();
+        self.take_marker();
+        let cols = self.width.saturating_sub(spans_width(&first)).clamp(1, MAX_IMAGE_COLS);
+        for (i, line) in halfblock(img, cols, MAX_IMAGE_ROWS).into_iter().enumerate() {
+            let mut v = if i == 0 { first.clone() } else { cont.clone() };
+            v.extend(line.spans);
+            self.out.lines.push(Line::from(v));
         }
     }
 
@@ -700,6 +911,11 @@ impl Renderer {
         let toks = self.inline.take();
         self.inline.pop_style();
         self.out.headings.push(self.out.lines.len());
+        self.out.outline.push(OutlineEntry {
+            line: self.out.lines.len(),
+            level: level as u8,
+            title: toks.iter().map(|p| p.as_text().0).collect(),
+        });
         let (marker, color) = match level {
             HeadingLevel::H2 => ("▌ ", H2),
             HeadingLevel::H3 => (QUOTE_BAR, H3),
@@ -729,6 +945,19 @@ impl Renderer {
     }
 
     fn render_code(&mut self, block: &CodeBlock) {
+        let mut label = block.lang.clone();
+        if block.lang == "mermaid" {
+            if let Some(store) = self.images.filter(|s| s.mermaid_enabled()) {
+                match store.get_mermaid(&block.buf) {
+                    ImageState::Ready(img) => {
+                        self.push_image(&img);
+                        return;
+                    }
+                    ImageState::Loading => label = "mermaid (renderizando…)".into(),
+                    ImageState::Failed(e) => label = format!("mermaid (erro: {})", sanitize(&e)),
+                }
+            }
+        }
         let (ss, theme) = hl();
         let syntax = if block.lang.is_empty() || block.buf.len() > self.highlight_left {
             ss.find_syntax_plain_text()
@@ -743,7 +972,7 @@ impl Renderer {
         let avail = self.width.saturating_sub(spans_width(&cont) + 2).max(MIN_BODY_WIDTH);
         let dim = Style::default().fg(DIM);
 
-        let header = if block.lang.is_empty() { "╭─".to_string() } else { format!("╭─ {}", block.lang) };
+        let header = if label.is_empty() { "╭─".to_string() } else { format!("╭─ {label}") };
         let mut v = first;
         v.push(Span::styled(header, dim));
         self.out.lines.push(Line::from(v));
@@ -1466,5 +1695,192 @@ mod tests {
         assert_eq!(colors_per_block.len(), blocks);
         assert!(colors_per_block[0].len() > 1, "primeiro bloco cabe no orçamento");
         assert_eq!(colors_per_block[blocks - 1].len(), 1, "último bloco estoura o orçamento");
+    }
+
+    fn joined_text(r: &Rendered) -> String {
+        r.lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn imagem_local_vira_meio_bloco() {
+        let dir = tempfile::tempdir().unwrap();
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(4, 4, image::Rgba([200, 10, 10, 255])));
+        let mut png = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut png, image::ImageFormat::Png).unwrap();
+        std::fs::write(dir.path().join("a.png"), png.into_inner()).unwrap();
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        let r = render_with("antes\n\n![logo](a.png)\n\ndepois", &RenderOpts { width: 40, images: Some(&store) });
+        let t = joined_text(&r);
+        assert!(t.contains('▀'), "{t}");
+        assert!(!t.contains("[imagem"), "{t}");
+        assert!(t.contains("antes") && t.contains("depois"));
+    }
+
+    #[test]
+    fn imagem_quebrada_mostra_alt_e_motivo() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        let r = render_with("![logo](nao.png)", &RenderOpts { width: 40, images: Some(&store) });
+        let t = joined_text(&r);
+        assert!(t.contains("[imagem: logo"), "{t}");
+        assert!(t.contains('—'), "{t}");
+    }
+
+    #[test]
+    fn imagem_em_celula_de_tabela_continua_texto() {
+        let dir = tempfile::tempdir().unwrap();
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(4, 4, image::Rgba([1, 2, 3, 255])));
+        let mut png = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut png, image::ImageFormat::Png).unwrap();
+        std::fs::write(dir.path().join("a.png"), png.into_inner()).unwrap();
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        let r = render_with("| a |\n|---|\n| ![x](a.png) |\n", &RenderOpts { width: 40, images: Some(&store) });
+        let t = joined_text(&r);
+        assert!(!t.contains('▀'), "{t}");
+        assert!(t.contains("[imagem: x]"), "{t}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bloco_mermaid_vira_imagem_quando_habilitado() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("f.png");
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(4, 4, image::Rgba([1, 2, 3, 255])));
+        img.save(&png).unwrap();
+        let bin = dir.path().join("mmdc");
+        std::fs::write(&bin, format!("#!/bin/sh\ncp {} \"$4\"\n", png.display())).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let store = ImageStore::new(None).with_mermaid(bin.to_string_lossy().into_owned(), true);
+        let r = render_with("```mermaid\ngraph TD; A-->B\n```", &RenderOpts { width: 40, images: Some(&store) });
+        assert!(joined_text(&r).contains('▀'));
+    }
+
+    #[test]
+    fn mermaid_sem_flag_mostra_codigo() {
+        let t = joined_text(&render("```mermaid\ngraph TD; A-->B\n```", 40));
+        assert!(t.contains("mermaid") && t.contains("A-->B"), "{t}");
+    }
+
+    #[test]
+    fn mermaid_com_falha_mostra_codigo_e_motivo() {
+        let store = ImageStore::new(None).with_mermaid("/nao/existe/mmdc".into(), true);
+        let r = render_with("```mermaid\ngraph TD; A-->B\n```", &RenderOpts { width: 60, images: Some(&store) });
+        let t = joined_text(&r);
+        assert!(t.contains("A-->B") && t.contains("erro"), "{t}");
+    }
+
+    fn t60(md: &str) -> String {
+        joined_text(&render(md, 60))
+    }
+
+    #[test]
+    fn front_matter_vira_bloco_yaml() {
+        let t = t60("---\ntitle: Plano\ntags: [a]\n---\n\n# Título");
+        assert!(t.contains("yaml") && t.contains("title: Plano"), "{t}");
+        assert!(!t.contains("---"), "{t}");
+    }
+
+    #[test]
+    fn alerta_gfm_mostra_rotulo_em_portugues() {
+        let t = t60("> [!WARNING]\n> cuidado aqui");
+        assert!(t.contains("Aviso") && t.contains("cuidado aqui"), "{t}");
+        assert!(!t.contains("[!WARNING]"), "{t}");
+    }
+
+    #[test]
+    fn nota_de_rodape_aparece_no_texto_e_na_definicao() {
+        let t = t60("Fato[^1].\n\n[^1]: Fonte aqui.");
+        assert!(t.contains("[^1]") && t.contains("Fonte aqui"), "{t}");
+    }
+
+    #[test]
+    fn details_e_summary_viram_titulo() {
+        let t = t60("<details>\n<summary>Ver mais</summary>\n\nconteúdo\n\n</details>");
+        assert!(t.contains("▸ Ver mais") && t.contains("conteúdo"), "{t}");
+        assert!(!t.contains("<details>") && !t.contains("<summary>"), "{t}");
+    }
+
+    #[test]
+    fn think_vira_bloco_rotulado() {
+        let t = t60("<think>\n\nplano interno\n\n</think>\n\nresposta final");
+        assert!(t.contains("raciocínio") && t.contains("plano interno") && t.contains("resposta final"), "{t}");
+        assert!(!t.contains("<think>"), "{t}");
+    }
+
+    #[test]
+    fn think_na_mesma_linha() {
+        let t = t60("<think>só isto</think>\n\nok");
+        assert!(t.contains("só isto") && !t.contains("</think>"), "{t}");
+    }
+
+    #[test]
+    fn think_tags_parse() {
+        let l = think_tags("<thinking>abc").unwrap();
+        assert!(l.opens && !l.closes && l.rest == "abc");
+        assert!(think_tags("<div>x</div>").is_none());
+    }
+
+    #[test]
+    fn cerca_sem_fechar_nao_quebra() {
+        let t = joined_text(&render("```rust\nfn main() {", 40));
+        assert!(t.contains("fn main"), "{t}");
+    }
+
+    #[test]
+    fn fonte_crua_mostra_markdown_literal() {
+        let t = joined_text(&render_code_only("# a\n**b**\n", "md", 40));
+        assert!(t.contains("# a") && t.contains("**b**") && t.contains("md"), "{t}");
+    }
+
+    #[test]
+    fn toc_indenta_por_nivel() {
+        let r = render("# A\n\n## B\n\n### C\n\n## D", 40);
+        assert_eq!(toc(&r), "A\n  B\n    C\n  D\n");
+    }
+
+    #[test]
+    fn toc_sem_titulos_e_vazio() {
+        assert_eq!(toc(&render("só texto", 40)), "");
+    }
+
+    #[test]
+    fn toc_usa_texto_sem_formatacao_e_posicao_da_linha() {
+        let r = render("texto\n\n## Um **forte** título", 40);
+        assert_eq!(toc(&r), "  Um forte título\n");
+        assert_eq!(r.outline[0].line, r.headings[0]);
+    }
+
+    #[test]
+    fn erro_renderizado_tem_uma_linha_e_sanitiza() {
+        assert_eq!(error_rendered("falhou").lines.len(), 1);
+        assert!(!joined_text(&error_rendered("a\x1b[31mb")).contains('\x1b'));
+    }
+
+    #[test]
+    fn escape_em_rotulo_de_nota_de_rodape_nao_vaza() {
+        let r = render("Texto[^a\x1bcb].\n\n[^a\x1bcb]: nota\n", 60);
+        assert!(!to_ansi(&r.lines, false).contains('\x1b'));
+    }
+
+    #[test]
+    fn escape_em_motivo_de_falha_de_imagem_nao_vaza() {
+        let url = "https://exemplo.invalido/k.png";
+        let store = ImageStore::new(None).with_remote(crate::net::FetchPolicy::default(), true);
+        store.get_job(url, false, || Err("falha\x1bc\x07".to_string()));
+        let r = render_with(&format!("![x]({url})"), &RenderOpts { width: 60, images: Some(&store) });
+        let ansi = to_ansi(&r.lines, false);
+        assert!(ansi.contains("falha") && !ansi.contains('\x1b') && !ansi.contains('\x07'), "{ansi:?}");
+    }
+
+    #[test]
+    fn sem_store_mantem_comportamento_antigo() {
+        let t = joined_text(&render("![logo](a.png)", 40));
+        assert_eq!(t.trim(), "[imagem: logo]");
     }
 }

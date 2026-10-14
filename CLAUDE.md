@@ -10,20 +10,31 @@ cargo run --release -- sample.md     # TUI interativa
 cargo run --release -- -p sample.md  # modo --plain (imprime ANSI, sem TUI)
 cargo run --release -- -p -w 60 sample.md  # largura fixa
 cat README.md | cargo run --release  # stdin
+cargo run --release -- -p samples/llm.md       # front matter, alertas, <think>...
+cargo run --release -- -p samples/img.md       # imagem local em meio-bloco
+cargo run --release -- -p csv samples/dados.csv   # também: json, tsv
 cargo clippy
 ```
 
-`cargo test` roda os testes unitários (`render.rs`, `main.rs`) e `tests/cli.rs`. Para validar mudanças de renderização, também use `-p` com `sample.md` — funciona sem terminal interativo.
+`cargo test` roda os testes unitários (`render.rs`, `main.rs`, `cli.rs`, `image.rs`, `net.rs`, `mermaid.rs`, `stream.rs`, `data.rs`) e `tests/cli.rs` (executa o binário). Para validar mudanças de renderização, também use `-p` com `sample.md` ou com `samples/` — funciona sem terminal interativo.
 
 O projeto, README e mensagens de erro/ajuda são em português.
 
 ## Arquitetura
 
-Dois arquivos, um único pipeline: Markdown → `Vec<Line>` do ratatui → (TUI | ANSI).
+Um único pipeline: entrada (Markdown, JSON, CSV/TSV) → `Vec<Line>` do ratatui → (TUI | ANSI).
 
-- `src/render.rs`: `render(md, width) -> Rendered { lines, headings }`. Máquina de estados sobre eventos do `pulldown-cmark` (`Renderer::handle/start/end`), com o estado dividido em `InlineBuffer` (texto em linha, estilos, links), `ListStack`, `CodeBlock` e `TableBuilder`. As linhas saem **já quebradas na largura pedida** (quebra com `unicode-width`, em `wrap`/`fit`/`split_by_width`), então quem consome não faz wrap. `headings` guarda o índice em `lines` de cada título (usado na navegação `]`/`[`). Blocos de código usam `syntect` (`default-fancy`, sem onig; syntax/theme em `OnceLock` via `hl()`). `to_ansi` converte as mesmas linhas para SGR no modo `--plain`.
-- `src/main.rs`: parsing manual de argumentos, escolha de modo e TUI. Modo plain é usado se `-p` ou se stdout não é TTY. `App` guarda o markdown, o `Rendered`, um `Viewport` (scroll) e um `SearchState` (busca); re-renderiza (`rerender`) quando a largura da tela muda (`dirty`/`render_width`) ou o arquivo muda. Live reload é por polling de `mtime` no timeout de 250 ms do `event::poll` (`check_reload`), não por inotify. Busca (`/`, `n`/`N`) opera sobre o texto das linhas já renderizadas (`line_text`, `highlight_line`), por isso só acha ocorrências dentro de um mesmo trecho estilizado.
+- `src/render.rs`: `render_with(md, &RenderOpts { width, images }) -> Rendered { lines, headings, outline }` (`render(md, width)` é o atalho sem imagens). Máquina de estados sobre eventos do `pulldown-cmark` (`Renderer::handle/start/end`), com o estado dividido em `InlineBuffer` (texto em linha, estilos, links), `ListStack`, `CodeBlock` e `TableBuilder`. As linhas saem **já quebradas na largura pedida** (quebra com `unicode-width`, em `wrap`/`fit`/`split_by_width`), então quem consome não faz wrap. `headings` guarda o índice em `lines` de cada título (navegação `]`/`[`); `outline` guarda nível e texto (`--toc`). Blocos de código usam `syntect` (sem onig; syntax/theme em `OnceLock` via `hl()`). `to_ansi` converte as mesmas linhas para SGR no modo `--plain`. Também entende front matter YAML, alertas GFM, notas de rodapé, `<details>`/`<summary>` e `<think>`. Pontos de entrada extras: `render_code_only` (fonte crua, tecla `m`), `render_table_only` (CSV/TSV) e `error_rendered`. Todo texto vindo do documento passa por `sanitize` (caracteres de controle viram U+FFFD).
+- `src/cli.rs`: parsing manual de argumentos → `Cli`/`Mode` (`Markdown`, `Json`, `Table { delimiter }`), subcomandos `json|csv|tsv`, modo deduzido da extensão, validação das flags.
+- `src/main.rs`: escolha de modo e TUI. Modo plain é usado se `-p` ou se stdout não é TTY. `App` guarda o texto, o `Rendered`, um `Viewport` (scroll) e um `SearchState` (busca); re-renderiza (`rerender` → `render_doc`, o único ponto que escolhe Markdown/JSON/tabela) quando a largura da tela muda (`dirty`/`render_width`), o arquivo muda ou termina um download de imagem. Live reload é por polling de `mtime` no timeout do `event::poll` (`check_reload`), não por inotify; o mesmo tick drena o stdin em streaming (`--follow`, `drain_stream`) e troca para o `.md` mais novo da pasta (`--latest`, `follow_latest`). Busca (`/`, `n`/`N`) opera sobre o texto das linhas já renderizadas (`line_text`, `highlight_line`), por isso só acha ocorrências dentro de um mesmo trecho estilizado.
+- `src/image.rs`: decodificação com limites (10 MiB, 8192 px), `halfblock` (imagem → linhas de `▀`) e `ImageStore`, o cache compartilhado de imagens locais, remotas e diagramas Mermaid (`get`, `get_mermaid`, `get_job`; jobs remotos rodam em thread e incrementam `version`).
+- `src/net.rs`: download HTTP(S) restrito (`--remote`): resolvedor que recusa rede privada/loopback, teto de bytes, redirecionamento manual.
+- `src/mermaid.rs`: executa o `mmdc` (`--mermaid`, binário configurável por `MDV_MMDC`) com timeout.
+- `src/stream.rs`: leitor de stdin em thread (`Utf8Accum`) e `newest_md`.
+- `src/data.rs`: visualizadores de JSON/JSONL (`render_json`, `--path`) e CSV/TSV (`render_table_data`), reaproveitando `render_code_only` e `render_table_only`.
+
+**Regra: I/O fica fora de `render.rs`.** Disco, rede e subprocesso vivem em `ImageStore`/`net`/`mermaid`; `render` só consulta o cache. Rede e subprocesso são opt-in (`--remote`, `--mermaid`).
 
 Qualquer recurso novo de formatação entra em `render.rs` e vale automaticamente para TUI e `--plain`.
 
-Limitações conhecidas (do README): código largo é quebrado (sem scroll horizontal), células de tabela largas são truncadas com `…`, imagens viram `[imagem: alt]`.
+Limitações conhecidas (do README): código largo é quebrado (sem scroll horizontal), células de tabela largas são truncadas com `…`, imagens usam meio-bloco (baixa resolução; SVG e `data:` URIs não são suportados), imagem dentro de célula de tabela fica como texto alternativo.

@@ -9,12 +9,8 @@ fn mdv(args: &[&str], stdin: &str) -> Output {
         .stderr(Stdio::piped())
         .spawn()
         .expect("mdv deve iniciar");
-    child
-        .stdin
-        .take()
-        .expect("stdin")
-        .write_all(stdin.as_bytes())
-        .expect("escrever stdin");
+    // O mdv pode sair sem ler stdin (erro de uso): `BrokenPipe` aqui é esperado.
+    let _ = child.stdin.take().expect("stdin").write_all(stdin.as_bytes());
     child.wait_with_output().expect("mdv deve terminar")
 }
 
@@ -28,6 +24,148 @@ fn largura_gigante_e_limitada() {
         .max()
         .unwrap_or(0);
     assert!(widest <= 1000, "linha com {widest} colunas");
+}
+
+#[test]
+fn imagem_remota_exige_flag() {
+    let out = mdv(&["-p", "-"], "![x](https://example.com/a.png)\n");
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains("use --remote"));
+}
+
+#[test]
+fn imagem_remota_em_rede_privada_e_bloqueada() {
+    let out = mdv(&["-p", "--remote", "-"], "![x](http://127.0.0.1:9/a.png)\n");
+    assert!(out.status.success());
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("[imagem: x —"), "{text}");
+    assert!(!text.contains("use --remote"), "{text}");
+}
+
+#[test]
+fn toc_imprime_indice_de_titulos() {
+    let out = mdv(&["--toc", "-"], "# A\n\ntexto\n\n## B\n");
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "A\n  B\n");
+}
+
+#[test]
+fn latest_mostra_o_md_mais_novo_da_pasta() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.md"), "# antigo\n").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(dir.path().join("a.md"))
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(60))
+        .unwrap();
+    std::fs::write(dir.path().join("b.md"), "# novo\n").unwrap();
+    let out = mdv(&["-p", "--latest", dir.path().to_str().unwrap()], "");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("novo") && !text.contains("antigo"), "{text}");
+}
+
+#[test]
+fn latest_em_pasta_sem_md_e_erro_claro() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = mdv(&["-p", "--latest", dir.path().to_str().unwrap()], "");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains(".md"));
+}
+
+#[test]
+fn latest_exige_uma_pasta() {
+    let out = mdv(&["-p", "--latest"], "");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--latest"));
+}
+
+#[test]
+fn ajuda_documenta_subcomandos_e_opcoes() {
+    let out = mdv(&["--help"], "");
+    let text = String::from_utf8_lossy(&out.stdout);
+    for item in [
+        "mdv json", "mdv csv|tsv", "--remote", "--mermaid", "--follow", "--latest", "--toc",
+        "--path", "--head", "--cols", "--no-header", "--delimiter", "MDV_MMDC",
+    ] {
+        assert!(text.contains(item), "a ajuda não menciona {item}:\n{text}");
+    }
+}
+
+#[test]
+fn json_subcomando_com_path_mostra_so_o_trecho() {
+    let out = mdv(
+        &["json", "-p", "-", "--path", ".a.b"],
+        "{\"a\":{\"b\":[1,2,{\"c\":\"x\"}]},\"z\":null}",
+    );
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("lista · 3 itens") && text.contains("\"c\": \"x\""), "{text}");
+    assert!(!text.contains("\"z\""), "{text}");
+}
+
+#[test]
+fn json_por_extensao_do_arquivo() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("d.json");
+    std::fs::write(&f, "{\"nome\":\"mdv\"}").unwrap();
+    let out = mdv(&["-p", f.to_str().unwrap()], "");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("objeto · 1 chaves") && text.contains("\"nome\": \"mdv\""), "{text}");
+}
+
+#[test]
+fn json_invalido_mostra_erro_na_saida() {
+    let out = mdv(&["json", "-p", "-"], "{");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("JSON inválido"), "{text}");
+}
+
+#[test]
+fn csv_subcomando_mostra_tabela_com_rodape() {
+    let out = mdv(&["csv", "-p", "-"], "id,nome,nota\n1,Ana,9.5\n2,Bia,10\n");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("Ana") && text.contains("2 de 2 linhas · 3 colunas"), "{text}");
+}
+
+#[test]
+fn tsv_com_cols_mostra_so_a_coluna() {
+    let out = mdv(&["tsv", "-p", "--cols", "b", "-"], "a\tb\n1\t2\n");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("│ 2 │") && !text.contains("│ 1") && !text.contains("│ a"), "{text}");
+}
+
+#[test]
+fn csv_com_head_e_delimiter() {
+    let out = mdv(&["csv", "-p", "--delimiter", ";", "--head", "1", "-"], "n;m\n1;x\n2;y\n");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("1 de 2 linhas") && !text.contains('y'), "{text}");
+}
+
+const MERMAID_MD: &str = "```mermaid\ngraph TD; A-->B\n```\n";
+
+#[test]
+fn mermaid_sem_flag_mostra_codigo() {
+    let out = mdv(&["-p", "-"], MERMAID_MD);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("╭─ mermaid") && text.contains("A-->B"), "{text}");
+}
+
+#[test]
+fn mermaid_sem_mmdc_mostra_codigo_e_erro() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mdv"))
+        .args(["-p", "--mermaid", "-"])
+        .env("MDV_MMDC", "/nao/existe/mmdc")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("mdv deve iniciar");
+    child.stdin.take().expect("stdin").write_all(MERMAID_MD.as_bytes()).expect("escrever stdin");
+    let out = child.wait_with_output().expect("mdv deve terminar");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("mermaid (erro:") && text.contains("A-->B"), "{text}");
 }
 
 #[cfg(unix)]
