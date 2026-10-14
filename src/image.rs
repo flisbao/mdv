@@ -112,13 +112,9 @@ fn read_capped(reader: impl Read, max: u64) -> Result<Vec<u8>, String> {
 fn to_state(r: Result<DynamicImage, String>) -> ImageState {
     match r {
         Ok(img) => {
-            let (w, h) = (img.width() as usize, img.height() as usize);
-            let img = if w > MAX_IMAGE_COLS || h > MAX_IMAGE_ROWS * 2 {
-                img.resize(
-                    MAX_IMAGE_COLS as u32,
-                    (MAX_IMAGE_ROWS * 2) as u32,
-                    FilterType::Triangle,
-                )
+            let (max_w, max_h) = (u32::try_from(MAX_IMAGE_COLS).unwrap_or(u32::MAX), u32::try_from(MAX_IMAGE_ROWS * 2).unwrap_or(u32::MAX));
+            let img = if img.width() > max_w || img.height() > max_h {
+                img.resize(max_w, max_h, FilterType::Triangle)
             } else {
                 img
             };
@@ -169,6 +165,7 @@ impl ImageStore {
         self.mermaid_hold.store(hold, Ordering::Relaxed);
     }
 
+    #[cfg(test)]
     pub fn mermaid_held(&self) -> bool {
         self.mermaid_hold.load(Ordering::Relaxed)
     }
