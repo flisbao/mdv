@@ -82,6 +82,18 @@ fn latest_exige_uma_pasta() {
 }
 
 #[test]
+fn ajuda_documenta_subcomandos_e_opcoes() {
+    let out = mdv(&["--help"], "");
+    let text = String::from_utf8_lossy(&out.stdout);
+    for item in [
+        "mdv json", "mdv csv|tsv", "--remote", "--mermaid", "--follow", "--latest", "--toc",
+        "--path", "--head", "--cols", "--no-header", "--delimiter", "MDV_MMDC",
+    ] {
+        assert!(text.contains(item), "a ajuda não menciona {item}:\n{text}");
+    }
+}
+
+#[test]
 fn json_subcomando_com_path_mostra_so_o_trecho() {
     let out = mdv(
         &["json", "-p", "-", "--path", ".a.b"],

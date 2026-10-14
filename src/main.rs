@@ -45,13 +45,29 @@ mdv - visualizador de Markdown no terminal
 USO:
     mdv [opções] <arquivo.md>
     cat arquivo.md | mdv
+    mdv json [opções] <arquivo|->
+    mdv csv|tsv [opções] <arquivo|->
+    (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
 
 OPÇÕES:
     -p, --plain        imprime no terminal (sem TUI), como `cat` com cores
     -w, --width <N>    largura máxima do texto (padrão: 100)
+        --remote       baixa imagens de http(s):// (nunca de rede privada)
+        --mermaid      renderiza blocos ```mermaid via `mmdc` (ou $MDV_MMDC)
         --toc          imprime só o índice de títulos
+        --follow       com stdin: acompanha o texto conforme chega
+        --latest       o argumento é uma pasta: abre e segue o .md mais novo
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
+
+OPÇÕES DE JSON:
+        --path <p>     mostra só um trecho, ex.: .itens[0].nome
+
+OPÇÕES DE CSV/TSV:
+        --head <N>     mostra só as N primeiras linhas (padrão: 1000)
+        --cols <a,b>   mostra só estas colunas, pelo nome do cabeçalho
+        --no-header    a primeira linha é dado, não cabeçalho
+        --delimiter <c>  separador de um caractere (ou `tab`)
 
 TECLAS (modo interativo):
     j / k, ↓ / ↑       rola uma linha

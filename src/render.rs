@@ -92,10 +92,11 @@ pub struct OutlineEntry {
 
 /// Índice dos títulos, um por linha, indentado conforme o nível.
 pub fn toc(r: &Rendered) -> String {
-    r.outline
-        .iter()
-        .map(|e| format!("{}{}\n", "  ".repeat(usize::from(e.level.saturating_sub(1))), e.title))
-        .collect()
+    let mut out = String::new();
+    for e in &r.outline {
+        let _ = writeln!(out, "{}{}", "  ".repeat(usize::from(e.level.saturating_sub(1))), e.title);
+    }
+    out
 }
 
 /// Mostra `code` como um bloco de código com a linguagem `lang` (usado para a fonte crua).
@@ -714,7 +715,6 @@ impl<'a> Renderer<'a> {
             TagEnd::Paragraph => self.end_paragraph(),
             TagEnd::Heading(level) => self.finish_heading(level),
             TagEnd::BlockQuote(_) => self.end_blockquote(),
-            TagEnd::FootnoteDefinition => self.flush_inline(),
             TagEnd::CodeBlock | TagEnd::MetadataBlock(_) => {
                 if let Some(code) = self.code.take() {
                     self.render_code(&code);
@@ -730,7 +730,7 @@ impl<'a> Renderer<'a> {
                     self.push_blank();
                 }
             }
-            TagEnd::Item => self.flush_inline(),
+            TagEnd::Item | TagEnd::FootnoteDefinition => self.flush_inline(),
             TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough => self.inline.pop_style(),
             TagEnd::Link => self.end_link(),
             TagEnd::Image => self.end_image(),
