@@ -42,15 +42,15 @@ Baixe o binário da última release, extraia e coloque `mdv` no seu `PATH`:
 <!-- mdv:install:start -->
 | Plataforma | Download |
 |------------|----------|
-| Linux x86_64 (glibc 2.35+) | [`mdv-v0.1.1-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.1.1/mdv-v0.1.1-linux-x86_64.tar.gz) |
-| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.1.1-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.1.1/mdv-v0.1.1-linux-x86_64-musl.tar.gz) |
-| Linux aarch64 | [`mdv-v0.1.1-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.1.1/mdv-v0.1.1-linux-aarch64.tar.gz) |
-| macOS Apple Silicon | [`mdv-v0.1.1-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.1.1/mdv-v0.1.1-macos-aarch64.tar.gz) |
-| macOS Intel | [`mdv-v0.1.1-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.1.1/mdv-v0.1.1-macos-x86_64.tar.gz) |
-| Windows x86_64 | [`mdv-v0.1.1-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.1.1/mdv-v0.1.1-windows-x86_64.zip) |
-| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.1.1) |
+| Linux x86_64 (glibc 2.35+) | [`mdv-v0.2.0-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.2.0/mdv-v0.2.0-linux-x86_64.tar.gz) |
+| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.2.0-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.2.0/mdv-v0.2.0-linux-x86_64-musl.tar.gz) |
+| Linux aarch64 | [`mdv-v0.2.0-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.2.0/mdv-v0.2.0-linux-aarch64.tar.gz) |
+| macOS Apple Silicon | [`mdv-v0.2.0-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.2.0/mdv-v0.2.0-macos-aarch64.tar.gz) |
+| macOS Intel | [`mdv-v0.2.0-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.2.0/mdv-v0.2.0-macos-x86_64.tar.gz) |
+| Windows x86_64 | [`mdv-v0.2.0-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.2.0/mdv-v0.2.0-windows-x86_64.zip) |
+| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.2.0) |
 
-Versão atual: **v0.1.1**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
+Versão atual: **v0.2.0**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
 <!-- mdv:install:end -->
 
 Os binários de macOS e Windows **não são assinados**, então o sistema pode avisar na primeira execução:
@@ -73,12 +73,29 @@ mdv - visualizador de Markdown no terminal
 USO:
     mdv [opções] <arquivo.md>
     cat arquivo.md | mdv
+    mdv json [opções] <arquivo|->
+    mdv csv|tsv [opções] <arquivo|->
+    (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
 
 OPÇÕES:
     -p, --plain        imprime no terminal (sem TUI), como `cat` com cores
     -w, --width <N>    largura máxima do texto (padrão: 100)
+        --remote       baixa imagens de http(s):// (nunca de rede privada)
+        --mermaid      renderiza blocos ```mermaid via `mmdc` (ou $MDV_MMDC)
+        --toc          imprime só o índice de títulos
+        --follow       com stdin: acompanha o texto conforme chega
+        --latest       o argumento é uma pasta: abre e segue o .md mais novo
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
+
+OPÇÕES DE JSON:
+        --path <p>     mostra só um trecho, ex.: .itens[0].nome
+
+OPÇÕES DE CSV/TSV:
+        --head <N>     mostra só as N primeiras linhas (padrão: 1000)
+        --cols <a,b>   mostra só estas colunas, pelo nome do cabeçalho
+        --no-header    a primeira linha é dado, não cabeçalho
+        --delimiter <c>  separador de um caractere (ou `tab`)
 
 TECLAS (modo interativo):
     j / k, ↓ / ↑       rola uma linha
@@ -88,6 +105,7 @@ TECLAS (modo interativo):
     ] / [              próximo / título anterior
     /                  buscar (Enter confirma, Esc cancela)
     n / N              próxima / anterior ocorrência
+    m                  alterna entre renderizado e fonte crua
     r                  recarrega o arquivo
     q, Esc             sai
 ```
@@ -140,6 +158,27 @@ O formato também é deduzido da extensão (`.json`, `.jsonl`, `.csv`, `.tsv`) e
 ## Changelog
 
 <!-- mdv:changelog:start -->
+### v0.2.0
+
+_2026-10-13_
+
+- test(net): fixar que grafias alternativas de loopback são bloqueadas
+- fix(seguranca): teto na saída do JSON indentado e não abrir FIFOs/dispositivos como imagem
+- fix(seguranca): prazo de conexão no download e filtro SSRF para NAT64, 6to4 e faixas reservadas
+- fix(seguranca): sanitizar rótulos de nota e erros de imagem, limitar leitura/cache de imagens e mmdc
+- docs: imagens, mermaid, markdown de LLMs e modos JSON/CSV/TSV
+- feat(dados): mdv csv/tsv com --head, --cols, --no-header e alinhamento numérico
+- feat(dados): mdv json com --path, suporte a JSONL e saneamento
+- test(cli): ignorar BrokenPipe ao escrever stdin quando o mdv sai antes de ler
+- feat: --follow para stdin em streaming e --latest para acompanhar a pasta
+- feat: tecla m (fonte crua) e --toc
+- feat(render): front matter, alertas GFM, notas de rodapé, details e think de LLMs
+- feat(mermaid): renderiza blocos mermaid via mmdc com --mermaid
+- feat(imagens): imagens por URL com --remote, política anti-SSRF e download em segundo plano
+- feat(imagens): renderização de imagens locais em meio-bloco
+- feat(cli): subcomandos json/csv/tsv e flags novas com validação
+- feat(release): acrescentar changelog ao README a cada release
+
 ### v0.1.1
 
 _2026-10-13_
