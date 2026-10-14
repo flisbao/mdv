@@ -210,6 +210,28 @@ mod tests {
     }
 
     #[test]
+    fn grafias_alternativas_de_loopback_sao_bloqueadas() {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        let served = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = std::sync::Arc::clone(&served);
+        std::thread::spawn(move || {
+            while l.accept().is_ok() {
+                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        });
+        for host in [
+            "2130706433", "0x7f.1", "127.1", "0177.0.0.1", "127.0.0.1.", "[::1]", "[::ffff:7f00:1]",
+            "[0:0:0:0:0:ffff:127.0.0.1]", "localhost", "localhost.",
+        ] {
+            let e = fetch(&format!("http://{host}:{port}/a.png"), &FetchPolicy::default())
+                .expect_err(host);
+            assert!(!served.load(std::sync::atomic::Ordering::SeqCst), "{host} chegou ao servidor local");
+            assert!(e.contains("bloqueado") || e.contains("resolve") || e.contains("Failed"), "{host}: {e}");
+        }
+    }
+
+    #[test]
     fn timeout_cobre_a_conexao() {
         // 192.0.2.0/24 (TEST-NET-1) não responde: sem prazo de conexão, o ureq espera ~30 s.
         let p = FetchPolicy { timeout: Duration::from_millis(300), ..FetchPolicy::default() };
