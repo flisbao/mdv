@@ -131,6 +131,9 @@ mod tests {
         );
         assert!(matches!(resolve("/etc/a.md", Some(base)), Target::Unsupported(_)));
         assert!(matches!(resolve("%2Fetc%2Fa.md", Some(base)), Target::Unsupported(_)));
+        assert!(matches!(resolve("../a.md", Some(base)), Target::Unsupported(_)));
+        assert!(matches!(resolve("%2e%2e/a.md", Some(base)), Target::Unsupported(_)));
+        assert!(matches!(resolve("sub/../../a.md", Some(base)), Target::Unsupported(_)));
         assert!(matches!(resolve("a.png", Some(base)), Target::Unsupported(_)));
         assert!(matches!(resolve("a.md", None), Target::Unsupported(_)));
     }

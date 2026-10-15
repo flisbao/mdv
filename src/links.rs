@@ -94,15 +94,18 @@ pub fn is_external(dest: &str) -> bool {
     }
 }
 
-/// O caminho (já decodificado) é relativo e sem unidade/UNC? Só esses são consultados no disco:
-/// um caminho absoluto substituiria a base no `join` (oráculo de existência de qualquer arquivo) e
-/// um `\\\\servidor\\pasta` abriria conexão de rede no Windows (vazaria credenciais).
+/// O caminho (já decodificado) é relativo, sem unidade/UNC e sem `..`? Só esses são consultados no
+/// disco: um caminho absoluto substituiria a base no `join` (oráculo de existência de qualquer
+/// arquivo), um `\\\\servidor\\pasta` abriria conexão de rede no Windows (vazaria credenciais) e
+/// um `..` sairia da pasta do documento. Links simbólicos dentro da pasta continuam sendo seguidos.
 pub fn is_confined(p: &str) -> bool {
     use std::path::Component;
     if p.starts_with(['/', '\\']) || p.contains(':') {
         return false;
     }
-    Path::new(p).components().all(|c| !matches!(c, Component::Prefix(_) | Component::RootDir))
+    Path::new(p)
+        .components()
+        .all(|c| !matches!(c, Component::Prefix(_) | Component::RootDir | Component::ParentDir))
 }
 
 /// Fechamento válido de uma cerca: última linha só com o caractere da abertura, ao menos tantas vezes.
@@ -395,5 +398,22 @@ mod tests {
         let md: String = (0..MAX_PROBLEMS + 50).map(|i| format!("[a](#nao{i})\n")).collect();
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(check(&md, dir.path()).len(), MAX_PROBLEMS);
+    }
+
+    #[test]
+    fn caminho_com_pai_nao_e_confinado() {
+        assert!(is_confined("a.md"));
+        assert!(is_confined("./a.md"));
+        assert!(is_confined("sub/a.md"));
+        assert!(!is_confined("../a.md"));
+        assert!(!is_confined("sub/../a.md"));
+        assert!(!is_confined("a/../../b.md"));
+        assert!(!is_confined(".."));
+    }
+
+    #[test]
+    fn check_nao_consulta_caminho_com_pai() {
+        // Se o `..` fosse consultado, apareceria "arquivo ... não encontrado".
+        assert!(msgs("[x](../fora.md) [y](%2e%2e/fora.md) [z](a/../../fora.md)\n").is_empty());
     }
 }
