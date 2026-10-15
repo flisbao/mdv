@@ -5,7 +5,7 @@
 
 use std::borrow::Cow;
 use std::fmt::Write as _;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use pulldown_cmark::{Alignment, BlockQuoteKind, CodeBlockKind, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use ratatui::style::{Color, Modifier, Style};
@@ -720,6 +720,8 @@ struct Renderer<'a> {
     think: usize,
     src_line: usize,
     code_scroll: Option<usize>,
+    /// Imagens vistas dentro de células (alt, imagem): desenhadas depois da tabela.
+    table_figures: Vec<(String, Arc<image::DynamicImage>)>,
 }
 
 impl<'a> Renderer<'a> {
@@ -729,6 +731,7 @@ impl<'a> Renderer<'a> {
             image: None,
             think: 0,
             src_line: 0,
+            table_figures: Vec::new(),
             width: clamp_width(width),
             out: Rendered::default(),
             inline: InlineBuffer::default(),
@@ -966,6 +969,7 @@ impl<'a> Renderer<'a> {
                 if let Some(t) = self.table.take() {
                     self.render_table(t);
                 }
+                self.flush_table_figures();
                 self.push_blank();
             }
             _ => {}
@@ -1015,14 +1019,22 @@ impl<'a> Renderer<'a> {
 
     fn end_image(&mut self) {
         self.inline.pop_style();
-        // Em célula de tabela não há como intercalar linhas de imagem: fica o texto alternativo.
-        let store = if self.table.is_some() { None } else { self.images };
+        let in_table = self.table.is_some();
         let state = self
             .image
             .take()
-            .zip(store)
+            .zip(self.images)
             .map(|(ctx, store)| (ctx.mark, store.get(&ctx.url)));
         match state {
+            // Em célula não há como intercalar linhas de imagem: a célula ganha `↓n` e a
+            // figura é desenhada depois da tabela (`flush_table_figures`).
+            Some((mark, ImageState::Ready(img))) if in_table => {
+                let from = (mark + 1).min(self.inline.pieces.len());
+                let alt: String = self.inline.pieces[from..].iter().map(|p| p.as_text().0).collect();
+                self.table_figures.push((alt, img));
+                let n = self.table_figures.len();
+                self.inline.push_dim(format!(" ↓{n}]"));
+            }
             Some((mark, ImageState::Ready(img))) => {
                 self.inline.pieces.truncate(mark);
                 self.flush_inline();
@@ -1031,6 +1043,26 @@ impl<'a> Renderer<'a> {
             Some((_, ImageState::Loading)) => self.inline.push_dim(" … carregando]"),
             Some((_, ImageState::Failed(e))) => self.inline.push_dim(format!(" — {}]", sanitize(&e))),
             None => self.inline.push_dim("]"),
+        }
+    }
+
+    /// Imagens que estavam em células: a tabela só tem o `↓n`; aqui vêm elas, numeradas, cada uma
+    /// com uma legenda de uma linha (cortada na largura) e o desenho.
+    fn flush_table_figures(&mut self) {
+        let figures = std::mem::take(&mut self.table_figures);
+        let dim = Style::default().fg(DIM);
+        for (i, (alt, img)) in figures.into_iter().enumerate() {
+            let (_, cont) = self.prefixes();
+            let alt = alt.trim();
+            let caption = if alt.is_empty() { format!("↓{}", i + 1) } else { format!("↓{} {alt}", i + 1) };
+            let first_row = split_by_width(&[(caption, dim)], self.content_width())
+                .into_iter()
+                .next()
+                .unwrap_or_default();
+            let mut v = cont;
+            v.extend(first_row.into_iter().map(|(t, st)| Span::styled(t, st)));
+            self.out.lines.push(Line::from(v));
+            self.push_image(&img);
         }
     }
 
@@ -2221,18 +2253,60 @@ mod tests {
         assert!(t.contains('—'), "{t}");
     }
 
-    #[test]
-    fn imagem_em_celula_de_tabela_continua_texto() {
-        let dir = tempfile::tempdir().unwrap();
+    fn png_no_dir(dir: &std::path::Path, nome: &str) {
         let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(4, 4, image::Rgba([1, 2, 3, 255])));
         let mut png = std::io::Cursor::new(Vec::new());
         img.write_to(&mut png, image::ImageFormat::Png).unwrap();
-        std::fs::write(dir.path().join("a.png"), png.into_inner()).unwrap();
+        std::fs::write(dir.join(nome), png.into_inner()).unwrap();
+    }
+
+    #[test]
+    fn imagem_em_celula_vira_referencia_e_aparece_depois_da_tabela() {
+        let dir = tempfile::tempdir().unwrap();
+        png_no_dir(dir.path(), "a.png");
         let store = ImageStore::new(Some(dir.path().to_path_buf()));
-        let r = render_with("| a |\n|---|\n| ![x](a.png) |\n", &RenderOpts { width: 40, images: Some(&store), ..Default::default() });
+        let r = render_with("| a |\n|---|\n| ![x](a.png) |\n\ndepois", &RenderOpts { width: 40, images: Some(&store), ..Default::default() });
         let t = joined_text(&r);
-        assert!(!t.contains('▀'), "{t}");
-        assert!(t.contains("[imagem: x]"), "{t}");
+        assert!(t.contains("[imagem: x ↓1]"), "{t}");
+        assert!(t.contains("↓1 x"), "{t}");
+        assert!(t.contains('▀'), "{t}");
+        assert!(t.find("[imagem: x ↓1]") < t.find('▀'), "a figura vem depois da tabela\n{t}");
+        assert!(t.find('▀') < t.find("depois"), "{t}");
+    }
+
+    #[test]
+    fn varias_imagens_na_tabela_sao_numeradas_na_ordem() {
+        let dir = tempfile::tempdir().unwrap();
+        png_no_dir(dir.path(), "a.png");
+        png_no_dir(dir.path(), "b.png");
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        let md = "| c1 | c2 |\n|---|---|\n| ![um](a.png) | ![dois](b.png) |\n";
+        let t = joined_text(&render_with(md, &RenderOpts { width: 60, images: Some(&store), ..Default::default() }));
+        assert!(t.contains("↓1 um") && t.contains("↓2 dois"), "{t}");
+        assert!(t.find("↓1 um") < t.find("↓2 dois"), "{t}");
+    }
+
+    #[test]
+    fn imagem_quebrada_na_celula_mostra_o_motivo() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        let t = joined_text(&render_with("| a |\n|---|\n| ![x](nao.png) |\n", &RenderOpts { width: 60, images: Some(&store), ..Default::default() }));
+        assert!(t.contains("[imagem: x") && t.contains('—'), "{t}");
+        assert!(!t.contains("↓1"), "{t}");
+    }
+
+    #[test]
+    fn legenda_longa_da_figura_nao_passa_da_largura() {
+        let dir = tempfile::tempdir().unwrap();
+        png_no_dir(dir.path(), "a.png");
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        let alt = "palavra ".repeat(30);
+        let md = format!("| a |\n|---|\n| ![{alt}](a.png) |\n");
+        let r = render_with(&md, &RenderOpts { width: 30, images: Some(&store), ..Default::default() });
+        for l in &r.lines {
+            let w: usize = l.spans.iter().map(|s| s.content.width()).sum();
+            assert!(w <= 30, "linha com {w} colunas");
+        }
     }
 
     #[cfg(unix)]
