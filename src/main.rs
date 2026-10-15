@@ -13,6 +13,7 @@ mod mermaid;
 mod mermaid_native;
 mod nav;
 mod net;
+mod picker;
 mod stats;
 mod stream;
 mod render;
@@ -63,6 +64,7 @@ USO:
     cat arquivo.md | mdv
     mdv json [opções] <arquivo|->
     mdv csv|tsv [opções] <arquivo|->
+    mdv <pasta>            (seletor: .md da pasta por data, filtro ao digitar)
     git diff | mdv diff    (ou mdv diff <arquivo.diff|.patch>)
     (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
 
@@ -198,6 +200,17 @@ fn run_cli() -> Result<(), Failure> {
         return run_tui(app);
     }
 
+    if interactive && !cli.toc && latest_dir.is_none() && cli.mode == cli::Mode::Markdown {
+        if let Some(dir) = cli.path.as_deref().map(Path::new).filter(|p| p.is_dir()) {
+            let picker = picker::Picker::scan(dir)
+                .map_err(|e| Failure::Runtime(format!("não consegui ler {}: {e}", dir.display())))?;
+            let mut app = App::new(Source::Stdin, String::new(), width, &cli);
+            app.name = dir.display().to_string();
+            app.picker = Some(picker);
+            app.notice = app.notice.or(mem_warning);
+            return run_tui(app);
+        }
+    }
     let (source, md) = match &latest_dir {
         Some(dir) => load_latest(dir)?,
         None => load_source(cli.path.as_deref())?,
@@ -269,6 +282,9 @@ fn load_latest(dir: &Path) -> Result<(Source, String), Failure> {
 fn load_source(path: Option<&str>) -> Result<(Source, String), Failure> {
     match path {
         Some("-") => Ok((Source::Stdin, read_stdin().map_err(read_failure("stdin"))?)),
+        Some(p) if Path::new(p).is_dir() => Err(Failure::Usage(format!(
+            "{p} é uma pasta: abra sem -p num terminal para escolher o arquivo, ou use --latest"
+        ))),
         Some(p) => {
             let md = read_markdown_file(Path::new(p)).map_err(read_failure(p))?;
             Ok((Source::File(PathBuf::from(p)), md))
@@ -665,6 +681,8 @@ struct App {
     /// URL externa esperando confirmação (`y`).
     pending_open: Option<String>,
     back: Vec<browse::Back>,
+    /// Seletor de arquivos aberto (`mdv <pasta>`); enquanto existe, ocupa a tela.
+    picker: Option<picker::Picker>,
     pending_jump: Option<browse::Jump>,
     /// Aviso de fim de atividade (`--idle`).
     idle: Option<IdleWatch>,
@@ -715,6 +733,7 @@ impl App {
             link_at: None,
             pending_open: None,
             back: Vec::new(),
+            picker: None,
             pending_jump: None,
             idle: cli.idle.map(|s| IdleWatch::new(Duration::from_secs(s))),
             sent_graphics: HashSet::new(),
@@ -1254,6 +1273,12 @@ impl App {
 
     /// Retorna `true` quando o usuário pediu para sair.
     fn on_key(&mut self, k: KeyEvent) -> bool {
+        if self.picker.is_some() {
+            if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
+                return true;
+            }
+            return self.on_picker_key(k);
+        }
         if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
             return true;
         }
@@ -1393,6 +1418,10 @@ impl App {
     }
 
     fn draw(&mut self, f: &mut Frame) {
+        if self.picker.is_some() {
+            self.draw_picker(f);
+            return;
+        }
         let area = f.area();
         let [content, status] =
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
@@ -1818,6 +1847,25 @@ mod tests {
         let lines = app.screen_lines();
         assert!(lines.iter().flat_map(|l| &l.spans).all(|s| s.style.underline_color.is_none()));
         assert!(lines.iter().flat_map(|l| &l.spans).any(|s| s.style.add_modifier.contains(ratatui::style::Modifier::REVERSED)));
+    }
+
+    #[test]
+    fn seletor_abre_arquivo_e_backspace_volta_a_ele() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("um.md"), "# Um\n").unwrap();
+        let mut app = test_app(Source::Stdin, "");
+        app.picker = Some(picker::Picker::scan(dir.path()).unwrap());
+        for c in "um".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        assert!(app.picker.is_none());
+        assert_eq!(app.name, "um.md");
+        key(&mut app, KeyCode::Backspace);
+        let p = app.picker.as_ref().expect("voltou ao seletor");
+        assert_eq!(p.query, "um", "a consulta é mantida");
+        assert!(!app.on_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)), "q digita no filtro");
+        assert!(app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
     }
 
     #[test]

@@ -33,6 +33,9 @@ pub fn resolve(dest: &str, base: Option<&Path>) -> Target {
         let ok = matches!(scheme.as_str(), "http" | "https" | "mailto")
             && dest.len() <= MAX_URL_BYTES
             && !dest.chars().any(|c| c.is_control() || c.is_whitespace());
+        // `mailto:` pode carregar `?attach=/caminho` (alguns clientes anexam o arquivo): só os
+        // campos de texto da mensagem passam.
+        let ok = ok && (scheme != "mailto" || mailto_params_ok(dest));
         return if ok {
             Target::External(dest.to_string())
         } else {
@@ -57,6 +60,15 @@ pub fn resolve(dest: &str, base: Option<&Path>) -> Target {
     Target::Local { path: base.join(file), anchor }
 }
 
+/// Os parâmetros da query de um `mailto:` são todos de texto (`subject`, `body`, `cc`, `bcc`, `to`)?
+fn mailto_params_ok(url: &str) -> bool {
+    let Some((_, query)) = url.split_once('?') else { return true };
+    query.split('&').all(|kv| {
+        let key = kv.split('=').next().unwrap_or("").to_ascii_lowercase();
+        matches!(key.as_str(), "subject" | "body" | "cc" | "bcc" | "to")
+    })
+}
+
 /// Índice do título cuja âncora (slug do GitHub, com `-1`, `-2` nos repetidos) é `anchor`.
 pub fn heading_for_anchor(titles: &[&str], anchor: &str) -> Option<usize> {
     let want = links::slugify(anchor);
@@ -75,6 +87,10 @@ pub fn heading_for_anchor(titles: &[&str], anchor: &str) -> Option<usize> {
 
 /// Abre `url` no navegador do sistema, sem esperar nem herdar o terminal. `url` já passou por `resolve`.
 pub fn open_external(url: &str) -> Result<(), String> {
+    // Defesa em profundidade: o programa nunca pode tomar a URL por uma opção.
+    if url.starts_with('-') {
+        return Err("URL recusada".to_string());
+    }
     let program = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
     let mut child = Command::new(program)
         .arg(url)
@@ -101,6 +117,9 @@ mod tests {
         assert!(matches!(resolve("javascript:alert(1)", None), Target::Unsupported(_)));
         assert!(matches!(resolve("file:///etc/passwd", None), Target::Unsupported(_)));
         assert!(matches!(resolve("https://a.b/ c", None), Target::Unsupported(_)));
+        assert!(matches!(resolve("mailto:a@b.c?attach=/etc/passwd", None), Target::Unsupported(_)));
+        assert!(matches!(resolve("mailto:a@b.c?subject=oi&body=x", None), Target::External(_)));
+        assert!(open_external("--help").is_err());
     }
 
     #[test]

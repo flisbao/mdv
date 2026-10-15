@@ -77,6 +77,7 @@ USO:
     cat arquivo.md | mdv
     mdv json [opções] <arquivo|->
     mdv csv|tsv [opções] <arquivo|->
+    mdv <pasta>            (seletor: .md da pasta por data, filtro ao digitar)
     git diff | mdv diff    (ou mdv diff <arquivo.diff|.patch>)
     (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
 

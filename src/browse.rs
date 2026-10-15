@@ -1,16 +1,26 @@
 //! Navegação na TUI: escolher links (`Tab`), seguir (`Enter`), voltar (`Backspace`/`H`) e abrir URLs.
 
 use crate::nav::{self, Target};
+use crate::picker::{self, Picker};
 use crate::render::{self, link_id};
 use crate::{file_mtime, image_store, read_markdown_file, App, Source};
-use ratatui::style::Modifier;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::layout::{Constraint, Layout};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::Paragraph;
+use ratatui::Frame;
 use std::path::PathBuf;
+use std::time::SystemTime;
+use unicode_width::UnicodeWidthStr;
 
 /// Teto da pilha de "voltar".
 const MAX_BACK: usize = 100;
 
 /// Para onde voltar.
 pub enum Back {
+    /// O seletor de arquivos, com a consulta e a seleção de antes.
+    Picker(Box<Picker>),
     /// Um documento, na linha renderizada que estava no topo.
     File { path: PathBuf, line: usize },
 }
@@ -161,6 +171,10 @@ impl App {
     pub fn go_back(&mut self) {
         match self.back.pop() {
             Some(Back::File { path, line }) => self.open_file(path, Some(Jump::Line(line)), false),
+            Some(Back::Picker(p)) => {
+                self.picker = Some(*p);
+                self.link_at = None;
+            }
             None => self.notice = Some("nada para voltar".to_string()),
         }
     }
@@ -183,5 +197,92 @@ impl App {
             }
         }
         render::strip_link_marks(line);
+    }
+}
+
+impl App {
+    /// Teclas no seletor: digitar filtra, ↑/↓ escolhem, Enter abre, Esc sai.
+    pub fn on_picker_key(&mut self, k: KeyEvent) -> bool {
+        let Some(p) = self.picker.as_mut() else { return false };
+        match k.code {
+            KeyCode::Esc => return true,
+            KeyCode::Up => p.step(-1),
+            KeyCode::Down => p.step(1),
+            KeyCode::Char('p') if k.modifiers.contains(KeyModifiers::CONTROL) => p.step(-1),
+            KeyCode::Char('n') if k.modifiers.contains(KeyModifiers::CONTROL) => p.step(1),
+            KeyCode::PageUp => p.step(-10),
+            KeyCode::PageDown => p.step(10),
+            KeyCode::Backspace => p.pop(),
+            KeyCode::Char(c) if !k.modifiers.contains(KeyModifiers::CONTROL) => p.push(c),
+            KeyCode::Enter => {
+                if let Some(path) = p.current().map(|e| e.path.clone()) {
+                    let keep = Box::new(p.clone());
+                    self.picker = None;
+                    self.open_file(path, None, false);
+                    // Só empilha se o arquivo abriu (senão o seletor continua na tela).
+                    if matches!(self.source, Source::File(_)) {
+                        self.back.push(Back::Picker(keep));
+                    } else {
+                        self.picker = Some(*keep);
+                    }
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    pub fn draw_picker(&self, f: &mut Frame) {
+        let Some(p) = &self.picker else { return };
+        let area = f.area();
+        let [body, status] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
+        let rows = usize::from(body.height).saturating_sub(2).max(1);
+        let top = p.selected.saturating_sub(rows - 1);
+        let now = SystemTime::now();
+        let width = usize::from(body.width);
+        let mut lines = vec![
+            Line::from(Span::styled(
+                format!(" {}", p.dir.display()),
+                Style::default().fg(Color::Rgb(121, 192, 255)),
+            )),
+            Line::from(format!(" > {}█", p.query)),
+        ];
+        for (n, &i) in p.filtered.iter().enumerate().skip(top).take(rows) {
+            let e = &p.entries[i];
+            let age = picker::age(e.mtime, now);
+            let name_w = width.saturating_sub(age.width() + 4).max(1);
+            let mut name = e.name.clone();
+            while name.width() > name_w {
+                name.pop();
+            }
+            let pad = width.saturating_sub(name.width() + age.width() + 3);
+            let text = format!(" {name}{}{age} ", " ".repeat(pad));
+            let style = if n == p.selected {
+                Style::default().add_modifier(ratatui::style::Modifier::REVERSED)
+            } else {
+                Style::default()
+            };
+            lines.push(Line::from(Span::styled(text, style)));
+        }
+        if p.filtered.is_empty() {
+            lines.push(Line::from(Span::styled(
+                " nenhum arquivo .md encontrado",
+                Style::default().fg(Color::Rgb(110, 118, 129)),
+            )));
+        }
+        f.render_widget(Paragraph::new(lines), body);
+        let bar = Style::default().bg(Color::Rgb(59, 66, 82)).fg(Color::Rgb(229, 233, 240));
+        let more = if p.truncated { "  (lista cortada)" } else { "" };
+        let text = self.notice.clone().map_or_else(
+            || {
+                format!(
+            " {}/{} arquivos{more}   digite para filtrar  ↑/↓ escolher  Enter abre  Esc sai",
+            p.filtered.len(),
+            p.entries.len()
+                )
+            },
+            |n| format!(" {n}"),
+        );
+        f.render_widget(Paragraph::new(Line::from(text)).style(bar), status);
     }
 }
