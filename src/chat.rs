@@ -65,11 +65,31 @@ fn tool_result_text(v: &Value) -> String {
     }
 }
 
+/// Troca o `<` de `<think`, `<details` e `<summary` (e dos fechamentos) por `&lt;`, sem diferenciar
+/// maiúsculas. Sem isso, uma fala com uma dessas tags abertas engoliria as falas seguintes, pois o
+/// renderizador as trata como estrutura (`<think>`, `<details>`).
+fn neutralize_tags(s: &str) -> String {
+    const TAGS: [&str; 3] = ["think", "details", "summary"];
+    let mut out = String::with_capacity(s.len());
+    for (i, c) in s.char_indices() {
+        if c == '<' {
+            let rest = s[i + 1..].strip_prefix('/').unwrap_or(&s[i + 1..]);
+            let head: String = rest.chars().take(7).flat_map(char::to_lowercase).collect();
+            if TAGS.iter().any(|t| head.starts_with(t)) {
+                out.push_str("&lt;");
+                continue;
+            }
+        }
+        out.push(c);
+    }
+    out
+}
+
 fn block(b: &Value, out: &mut String) {
     match b.get("type").and_then(Value::as_str) {
         Some("text") => {
             if let Some(t) = b.get("text").and_then(Value::as_str) {
-                out.push_str(t);
+                out.push_str(&neutralize_tags(t));
                 out.push_str("\n\n");
             }
         }
@@ -130,7 +150,7 @@ pub fn to_markdown(text: &str) -> String {
         let mut body = String::new();
         match content {
             Value::String(s) => {
-                body.push_str(s);
+                body.push_str(&neutralize_tags(s));
                 body.push_str("\n\n");
             }
             Value::Array(blocks) => blocks.iter().for_each(|b| block(b, &mut body)),
@@ -207,5 +227,36 @@ mod tests {
     #[test]
     fn vazio_avisa() {
         assert!(to_markdown("").contains("Nenhuma mensagem"));
+    }
+
+    #[test]
+    fn tag_solta_na_fala_nao_engole_as_proximas() {
+        let t = concat!(
+            r#"{"role":"assistant","content":[{"type":"text","text":"abri <think> e <DETAILS> sem fechar </summary>"}]}"#, "\n",
+            r#"{"role":"user","content":"segunda fala"}"#, "\n",
+        );
+        let md = to_markdown(t);
+        assert!(!md.contains("<think>") && !md.contains("<DETAILS>") && !md.contains("</summary>"), "{md}");
+        assert!(md.contains("&lt;think>") && md.contains("&lt;DETAILS>") && md.contains("&lt;/summary>"), "{md}");
+        assert!(md.contains("segunda fala"), "{md}");
+    }
+
+    #[test]
+    fn tag_solta_em_conteudo_texto_simples_tambem_e_neutralizada() {
+        let md = to_markdown("{\"role\":\"user\",\"content\":\"oi <think> x\"}\n");
+        assert!(md.contains("&lt;think>") && !md.contains("<think>"), "{md}");
+    }
+
+    #[test]
+    fn bloco_thinking_real_continua_virando_think() {
+        let md = to_markdown(
+            "{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"hmm\"}]}\n",
+        );
+        assert!(md.contains("<think>\n\nhmm"), "{md}");
+    }
+
+    #[test]
+    fn outras_tags_html_ficam_como_estao() {
+        assert_eq!(neutralize_tags("a <b> c < d <thinker"), "a <b> c < d &lt;thinker");
     }
 }
