@@ -192,7 +192,7 @@ Aceita `256M`, `1G`, `512MiB`, `65536K` (múltiplos de 1024); o mínimo é 32 Mi
 
 ## Limitações conhecidas
 
-- Linhas de código largas são quebradas na largura da tela, não rolam na horizontal.
+- Linhas de código largas são quebradas na largura da tela; a tecla `w` desliga a quebra e `h`/`l` rolam na horizontal (a busca, nesse modo, só enxerga o trecho visível).
 - A busca opera nas linhas já renderizadas: acha texto que atravessa trechos estilizados (`foo**bar**`), mas não uma frase que a largura da tela quebrou em duas linhas.
 - Imagens usam meio-bloco (baixa resolução); um protocolo gráfico como Kitty/Sixel seria um refinamento opcional.
 - A memória livre do computador só é informada no Linux.

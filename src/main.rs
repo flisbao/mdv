@@ -94,6 +94,7 @@ TECLAS (modo interativo):
     /                  buscar (Enter confirma, Esc cancela)
     n / N              próxima / anterior ocorrência
     m                  alterna entre renderizado e fonte crua
+    w                  código sem quebra: h/l (ou ←/→) rolam 8 colunas, 0/$ início/fim; w de novo volta a quebrar
     v                  (JSON) alterna tabela / esquema / texto
     t                  zoom da tabela na tela (h/l colunas, Esc volta)
     } / {              próxima / anterior mudança marcada no reload; c limpa as marcas
@@ -270,6 +271,7 @@ struct DocOpts {
     head: usize,
     cols: Vec<String>,
     no_header: bool,
+    code_scroll: Option<usize>,
 }
 
 impl DocOpts {
@@ -281,6 +283,7 @@ impl DocOpts {
             head: cli.head,
             cols: cli.cols.clone(),
             no_header: cli.no_header,
+            code_scroll: None,
         }
     }
 }
@@ -289,7 +292,10 @@ impl DocOpts {
 fn render_doc(doc: &DocOpts, text: &str, width: usize, images: &image::ImageStore) -> render::Rendered {
     match doc.mode {
         cli::Mode::Markdown => {
-            render::render_with(text, &render::RenderOpts { width, images: Some(images) })
+            render::render_with(
+                text,
+                &render::RenderOpts { width, images: Some(images), code_scroll: doc.code_scroll },
+            )
         }
         cli::Mode::Json => {
             let opts = data::JsonOpts {
@@ -947,7 +953,7 @@ impl App {
 
     fn rerender(&mut self, w: usize) {
         self.rendered = if self.raw {
-            render::render_code_only(&self.md, raw_lang(self.doc.mode), w)
+            render::render_code_only_at(&self.md, raw_lang(self.doc.mode), w, self.doc.code_scroll)
         } else {
             render_doc(&self.doc, &self.md, w, &self.images)
         };
@@ -1062,6 +1068,40 @@ impl App {
             }
         }
 
+    /// `w`: alterna entre código quebrado na largura e código sem quebra, rolável com `h`/`l`.
+    fn toggle_code_wrap(&mut self) {
+        self.doc.code_scroll = match self.doc.code_scroll {
+            None => Some(0),
+            Some(_) => None,
+        };
+        self.dirty = true;
+    }
+
+    /// Vai para a coluna `to` do código (limitada ao fim do código mais largo).
+    fn set_code_scroll(&mut self, to: usize) {
+        let Some(cur) = self.doc.code_scroll else {
+            self.notice = Some("w: código sem quebra (h/l rolam)".into());
+            return;
+        };
+        let max = self.rendered.code_overflow;
+        let next = to.min(max);
+        if next != cur {
+            self.doc.code_scroll = Some(next);
+            self.dirty = true;
+        } else if max == 0 {
+            self.notice = Some("nenhum código largo aqui".into());
+        }
+    }
+
+    fn scroll_code(&mut self, step: usize, forward: bool) {
+        let Some(cur) = self.doc.code_scroll else {
+            self.set_code_scroll(0);
+            return;
+        };
+        let to = if forward { cur.saturating_add(step) } else { cur.saturating_sub(step) };
+        self.set_code_scroll(to);
+    }
+
     fn goto_match(&mut self) {
         if let Some(line) = self.search.current_line() {
             self.reveal(line);
@@ -1147,6 +1187,11 @@ impl App {
                         KeyCode::Char('t') => self.open_visible_table(),
                         KeyCode::Char('y') => self.copy_code(),
                         KeyCode::Char('Y') => self.copy_section(),
+            KeyCode::Char('w') => self.toggle_code_wrap(),
+            KeyCode::Char('l') | KeyCode::Right => self.scroll_code(8, true),
+            KeyCode::Char('h') | KeyCode::Left => self.scroll_code(8, false),
+            KeyCode::Char('0') => self.set_code_scroll(0),
+            KeyCode::Char('$') => self.set_code_scroll(usize::MAX),
             KeyCode::Char('m') => {
                 self.raw = !self.raw;
                 self.dirty = true;
@@ -1297,6 +1342,9 @@ impl App {
             self.name,
             if self.raw { "  [fonte]" } else { "" }
         );
+        if let Some(c) = self.doc.code_scroll {
+            let _ = write!(s, "  [código sem quebra, col {c}]");
+        }
         let search = &self.search;
         if !search.query.is_empty() {
             if search.matches.is_empty() {
@@ -1678,6 +1726,57 @@ mod tests {
             app.doc.mode = cli::Mode::Json;
             tecla(&mut app, 'v');
             assert!(app.status_left().contains("[esquema]"), "{}", app.status_left());
+        }
+
+        #[test]
+        fn w_liga_codigo_sem_quebra_e_hl_rolam() {
+            let longa = "x".repeat(200);
+            let mut app = test_app(Source::Stdin, &format!("```\n{longa}\n```"));
+            app.rerender(60); // 58 colunas de código => overflow 142
+            assert_eq!(app.rendered.code_overflow, 142);
+            tecla(&mut app, 'w');
+            assert_eq!(app.doc.code_scroll, Some(0));
+            assert!(app.dirty);
+            app.rerender(60);
+            tecla(&mut app, 'l');
+            assert_eq!(app.doc.code_scroll, Some(8));
+            tecla(&mut app, 'h');
+            tecla(&mut app, 'h');
+            assert_eq!(app.doc.code_scroll, Some(0));
+            tecla(&mut app, '$');
+            assert_eq!(app.doc.code_scroll, Some(142));
+            tecla(&mut app, '0');
+            assert_eq!(app.doc.code_scroll, Some(0));
+            tecla(&mut app, 'w');
+            assert_eq!(app.doc.code_scroll, None);
+        }
+
+        #[test]
+        fn hl_sem_w_avisam_e_nao_mudam_nada() {
+            let mut app = test_app(Source::Stdin, "```\nabc\n```");
+            app.rerender(60);
+            tecla(&mut app, 'l');
+            assert_eq!(app.doc.code_scroll, None);
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains('w')), "{:?}", app.notice);
+        }
+
+        #[test]
+        fn rolagem_nao_passa_do_fim_do_codigo() {
+            let mut app = test_app(Source::Stdin, &format!("```\n{}\n```", "x".repeat(70)));
+            app.rerender(60); // overflow 12
+            tecla(&mut app, 'w');
+            for _ in 0..5 {
+                tecla(&mut app, 'l');
+            }
+            assert_eq!(app.doc.code_scroll, Some(12));
+        }
+
+        #[test]
+        fn barra_de_status_mostra_o_modo_sem_quebra() {
+            let mut app = test_app(Source::Stdin, "```\nabc\n```");
+            app.rerender(60);
+            tecla(&mut app, 'w');
+            assert!(app.status_left().contains("sem quebra"), "{}", app.status_left());
         }
 
         fn app_com_tabela(md: &str) -> App {

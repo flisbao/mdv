@@ -90,6 +90,9 @@ pub struct Rendered {
     pub code_blocks: Vec<CodeSpan>,
     /// Itens de lista de tarefas, em ordem.
     pub tasks: Vec<TaskItem>,
+    /// Maior quanto uma linha de código passa das colunas disponíveis (0 se nenhuma passa).
+    /// Limite do deslocamento horizontal.
+    pub code_overflow: usize,
 }
 
 /// Bloco de código desenhado: linhas renderizadas `[start, end)` e o texto cru (já saneado).
@@ -258,7 +261,13 @@ pub fn toc(r: &Rendered) -> String {
 
 /// Mostra `code` como um bloco de código com a linguagem `lang` (usado para a fonte crua).
 pub fn render_code_only(code: &str, lang: &str, width: usize) -> Rendered {
+    render_code_only_at(code, lang, width, None)
+}
+
+/// Como `render_code_only`; com `scroll` o código não quebra e começa na coluna `scroll`.
+pub fn render_code_only_at(code: &str, lang: &str, width: usize, scroll: Option<usize>) -> Rendered {
     let mut r = Renderer::new(width, None);
+    r.code_scroll = scroll;
     r.render_code(&CodeBlock { lang: lang.to_string(), buf: sanitize(code).into_owned() });
     memory_error().unwrap_or(r.out)
 }
@@ -331,15 +340,18 @@ fn summary_text(line: &str) -> Option<&str> {
     line.trim().strip_prefix("<summary>")?.strip_suffix("</summary>").map(str::trim)
 }
 
-/// Opções de renderização: largura e, se houver, onde buscar imagens.
+/// Opções de renderização: largura, se houver onde buscar imagens e a rolagem do código.
+#[derive(Default)]
 pub struct RenderOpts<'a> {
     pub width: usize,
     pub images: Option<&'a ImageStore>,
+    /// `None`: código quebrado na largura. `Some(n)`: sem quebra, a partir da coluna `n`.
+    pub code_scroll: Option<usize>,
 }
 
 #[allow(dead_code)] // atalho usado pelos testes
 pub fn render(md: &str, width: usize) -> Rendered {
-    render_with(md, &RenderOpts { width, images: None })
+    render_with(md, &RenderOpts { width, images: None, ..Default::default() })
 }
 
 /// Opções do `pulldown-cmark` usadas em todo o programa (renderização e extração veem a mesma estrutura).
@@ -359,6 +371,7 @@ pub fn render_with(md: &str, opts: &RenderOpts) -> Rendered {
         return error_rendered(&e.to_string());
     }
     let mut r = Renderer::new(opts.width, opts.images);
+    r.code_scroll = opts.code_scroll;
     let mut cursor = LineCursor::default();
     for (ev, range) in Parser::new_ext(md, parse_opts).into_offset_iter() {
         // `Rule` e HTML geram linhas no próprio evento; um `Start` só vale para o que vem depois,
@@ -706,6 +719,7 @@ struct Renderer<'a> {
     image: Option<ImageCtx>,
     think: usize,
     src_line: usize,
+    code_scroll: Option<usize>,
 }
 
 impl<'a> Renderer<'a> {
@@ -723,6 +737,7 @@ impl<'a> Renderer<'a> {
             code: None,
             table: None,
             highlight_left: MAX_HIGHLIGHT_BYTES,
+            code_scroll: None,
         }
     }
 
@@ -1185,7 +1200,13 @@ impl<'a> Renderer<'a> {
                     .collect(),
                 Err(_) => vec![(clean_code(line), Style::default().bg(CODE_BG))],
             };
-            for chunk in split_by_width(&pieces, avail) {
+            let line_width: usize = pieces.iter().map(|(t, _)| t.width()).sum();
+            self.out.code_overflow = self.out.code_overflow.max(line_width.saturating_sub(avail));
+            let chunks = match self.code_scroll {
+                Some(skip) => vec![window_by_width(&pieces, skip, avail)],
+                None => split_by_width(&pieces, avail),
+            };
+            for chunk in chunks {
                 let w: usize = chunk.iter().map(|(t, _)| t.width()).sum();
                 let mut spans = cont.clone();
                 spans.push(Span::styled("│ ", dim));
@@ -1497,6 +1518,54 @@ fn fit(cell: &[Piece], w: usize) -> (Vec<Span<'static>>, usize) {
         out.push(Span::styled(buf, st));
     }
     (out, used)
+}
+
+/// Janela de `avail` colunas que começa na coluna `skip` de `pieces`. Marca com `‹`/`›` as
+/// bordas onde há conteúdo cortado. Caractere largo que cruza a borda sai da janela (a linha
+/// fica uma coluna mais curta; quem desenha completa com espaços).
+fn window_by_width(pieces: &[Styled], skip: usize, avail: usize) -> Vec<Styled> {
+    let mut cells: Vec<(char, Style)> = Vec::new();
+    let (mut col, mut used) = (0usize, 0usize);
+    let (mut left, mut right) = (false, false);
+    for (text, style) in pieces {
+        for ch in text.chars() {
+            let cw = ch.width().unwrap_or(0);
+            let start = col;
+            col += cw;
+            if right {
+                continue;
+            }
+            if start < skip {
+                left |= cw > 0;
+                continue;
+            }
+            if used + cw > avail {
+                right = true;
+                continue;
+            }
+            cells.push((ch, *style));
+            used += cw;
+        }
+    }
+    let edge = Style::default().fg(DIM).bg(CODE_BG);
+    if left {
+        if let Some(first) = cells.first_mut() {
+            *first = ('‹', edge);
+        }
+    }
+    if right {
+        if let Some(last) = cells.last_mut() {
+            *last = ('›', edge);
+        }
+    }
+    let mut out: Vec<Styled> = Vec::new();
+    for (ch, st) in cells {
+        match out.last_mut() {
+            Some((s, last)) if *last == st => s.push(ch),
+            _ => out.push((ch.to_string(), st)),
+        }
+    }
+    out
 }
 
 /// Quebra em pedaços de no máximo `avail` colunas, caractere a caractere.
@@ -2124,7 +2193,7 @@ mod tests {
         img.write_to(&mut png, image::ImageFormat::Png).unwrap();
         std::fs::write(dir.path().join("a.png"), png.into_inner()).unwrap();
         let store = ImageStore::new(Some(dir.path().to_path_buf()));
-        let r = render_with("antes\n\n![logo](a.png)\n\ndepois", &RenderOpts { width: 40, images: Some(&store) });
+        let r = render_with("antes\n\n![logo](a.png)\n\ndepois", &RenderOpts { width: 40, images: Some(&store), ..Default::default() });
         let t = joined_text(&r);
         assert!(t.contains('▀'), "{t}");
         assert!(!t.contains("[imagem"), "{t}");
@@ -2135,7 +2204,7 @@ mod tests {
     fn imagem_quebrada_mostra_alt_e_motivo() {
         let dir = tempfile::tempdir().unwrap();
         let store = ImageStore::new(Some(dir.path().to_path_buf()));
-        let r = render_with("![logo](nao.png)", &RenderOpts { width: 40, images: Some(&store) });
+        let r = render_with("![logo](nao.png)", &RenderOpts { width: 40, images: Some(&store), ..Default::default() });
         let t = joined_text(&r);
         assert!(t.contains("[imagem: logo"), "{t}");
         assert!(t.contains('—'), "{t}");
@@ -2149,7 +2218,7 @@ mod tests {
         img.write_to(&mut png, image::ImageFormat::Png).unwrap();
         std::fs::write(dir.path().join("a.png"), png.into_inner()).unwrap();
         let store = ImageStore::new(Some(dir.path().to_path_buf()));
-        let r = render_with("| a |\n|---|\n| ![x](a.png) |\n", &RenderOpts { width: 40, images: Some(&store) });
+        let r = render_with("| a |\n|---|\n| ![x](a.png) |\n", &RenderOpts { width: 40, images: Some(&store), ..Default::default() });
         let t = joined_text(&r);
         assert!(!t.contains('▀'), "{t}");
         assert!(t.contains("[imagem: x]"), "{t}");
@@ -2168,7 +2237,7 @@ mod tests {
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
 
         let store = ImageStore::new(None).with_mermaid(bin.to_string_lossy().into_owned(), true);
-        let r = render_with("```mermaid\ngraph TD; A-->B\n```", &RenderOpts { width: 40, images: Some(&store) });
+        let r = render_with("```mermaid\ngraph TD; A-->B\n```", &RenderOpts { width: 40, images: Some(&store), ..Default::default() });
         assert!(joined_text(&r).contains('▀'));
     }
 
@@ -2181,13 +2250,66 @@ mod tests {
     #[test]
     fn mermaid_com_falha_mostra_codigo_e_motivo() {
         let store = ImageStore::new(None).with_mermaid("/nao/existe/mmdc".into(), true);
-        let r = render_with("```mermaid\ngraph TD; A-->B\n```", &RenderOpts { width: 60, images: Some(&store) });
+        let r = render_with("```mermaid\ngraph TD; A-->B\n```", &RenderOpts { width: 60, images: Some(&store), ..Default::default() });
         let t = joined_text(&r);
         assert!(t.contains("A-->B") && t.contains("erro"), "{t}");
     }
 
     fn t60(md: &str) -> String {
         joined_text(&render(md, 60))
+    }
+
+    #[test]
+    fn codigo_sem_quebra_mantem_uma_linha_por_linha_do_fonte() {
+        let md = format!("```\n{}\n```", "x".repeat(100));
+        let r = render_with(&md, &RenderOpts { width: 40, code_scroll: Some(0), ..Default::default() });
+        let t = joined_text(&r);
+        assert_eq!(r.lines.len(), 3, "{t}"); // cabeçalho, 1 linha, rodapé
+        assert!(t.contains('›') && !t.contains('‹'), "{t}");
+    }
+
+    #[test]
+    fn codigo_com_deslocamento_mostra_o_trecho_e_as_duas_bordas() {
+        // largura 20 => 18 colunas de código
+        let md = "```\n0123456789abcdefghijklmnopqrstuvwxyz0123456789\n```";
+        let r = render_with(md, &RenderOpts { width: 20, code_scroll: Some(10), ..Default::default() });
+        let t = joined_text(&r);
+        assert!(t.contains("‹bcdefghijklmnopq›"), "{t}");
+        assert_eq!(r.code_overflow, 46 - 18);
+    }
+
+    #[test]
+    fn codigo_curto_nao_ganha_marcas_nem_overflow() {
+        let r = render_with("```\nab\n```", &RenderOpts { width: 20, code_scroll: Some(0), ..Default::default() });
+        let t = joined_text(&r);
+        assert!(!t.contains('›') && !t.contains('‹'), "{t}");
+        assert_eq!(r.code_overflow, 0);
+    }
+
+    #[test]
+    fn codigo_sem_opcao_continua_quebrando() {
+        let md = format!("```\n{}\n```", "x".repeat(100));
+        let r = render_with(&md, &RenderOpts { width: 40, ..Default::default() });
+        assert!(r.lines.len() > 3);
+    }
+
+    #[test]
+    fn janela_de_codigo_com_caractere_largo_na_borda_nao_estoura() {
+        // "日" ocupa 2 colunas; a janela de 18 colunas nunca pode passar disso
+        let md = format!("```\n{}\n```", "日".repeat(30));
+        for skip in [0, 1, 5] {
+            let r = render_with(&md, &RenderOpts { width: 20, code_scroll: Some(skip), ..Default::default() });
+            for l in &r.lines {
+                let w: usize = l.spans.iter().map(|s| s.content.width()).sum();
+                assert!(w <= 20, "skip {skip}: linha com {w} colunas");
+            }
+        }
+    }
+
+    #[test]
+    fn fonte_crua_tambem_aceita_deslocamento() {
+        let r = render_code_only_at(&"y".repeat(100), "", 30, Some(0));
+        assert_eq!(r.lines.len(), 3);
     }
 
     #[test]
@@ -2342,7 +2464,7 @@ mod tests {
         let url = "https://exemplo.invalido/k.png";
         let store = ImageStore::new(None).with_remote(crate::net::FetchPolicy::default(), true);
         store.get_job(url, false, || Err("falha\x1bc\x07".to_string()));
-        let r = render_with(&format!("![x]({url})"), &RenderOpts { width: 60, images: Some(&store) });
+        let r = render_with(&format!("![x]({url})"), &RenderOpts { width: 60, images: Some(&store), ..Default::default() });
         let ansi = to_ansi(&r.lines, false);
         assert!(ansi.contains("falha") && !ansi.contains('\x1b') && !ansi.contains('\x07'), "{ansi:?}");
     }
