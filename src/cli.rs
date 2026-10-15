@@ -21,6 +21,14 @@ pub enum JsonView {
     Schema,
 }
 
+/// Protocolo gráfico para imagens (só no modo interativo).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Graphics {
+    Off,
+    Kitty,
+    Auto,
+}
+
 /// Opções da linha de comando para exibir um documento.
 #[derive(Debug)]
 #[allow(clippy::struct_excessive_bools)]
@@ -45,6 +53,7 @@ pub struct Cli {
     pub head: usize,
     pub cols: Vec<String>,
     pub no_header: bool,
+    pub graphics: Graphics,
 }
 
 #[allow(clippy::large_enum_variant)] // um único valor por execução; boxar só espalharia `*` nos testes
@@ -101,6 +110,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         head: DEFAULT_HEAD,
         cols: Vec::new(),
         no_header: false,
+        graphics: Graphics::Off,
     };
     let mut explicit_mode = true;
     match args.peek().map(String::as_str) {
@@ -160,6 +170,15 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
                 let v = value(&mut args, &a)?;
                 cli.memory_buffer =
                     Some(mem::parse_size(&v).map_err(|e| format!("--memory-buffer: {e}"))?);
+            }
+            "--graphics" => {
+                let v = value(&mut args, &a)?;
+                cli.graphics = match v.as_str() {
+                    "off" => Graphics::Off,
+                    "kitty" => Graphics::Kitty,
+                    "auto" => Graphics::Auto,
+                    _ => return Err(format!("--graphics inválido: {v} (use off, kitty ou auto)")),
+                };
             }
             "--as" => {
                 let v = value(&mut args, &a)?;
@@ -236,6 +255,20 @@ mod tests {
             Parsed::Run(c) => Ok(c),
             _ => Err("esperava Run".into()),
         }
+    }
+
+    #[test]
+    fn graphics_tem_padrao_off_e_aceita_kitty_e_auto() {
+        assert_eq!(run(&["a.md"]).unwrap().graphics, Graphics::Off);
+        assert_eq!(run(&["--graphics", "kitty", "a.md"]).unwrap().graphics, Graphics::Kitty);
+        assert_eq!(run(&["--graphics", "auto", "a.md"]).unwrap().graphics, Graphics::Auto);
+        assert_eq!(run(&["--graphics", "off", "a.md"]).unwrap().graphics, Graphics::Off);
+    }
+
+    #[test]
+    fn graphics_invalido_ou_sem_valor_e_erro() {
+        assert!(run(&["--graphics", "sixel", "a.md"]).unwrap_err().contains("sixel"));
+        assert!(run(&["--graphics"]).is_err());
     }
 
     #[test]

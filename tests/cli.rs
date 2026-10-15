@@ -512,3 +512,25 @@ fn section_ambigua_nao_deixa_escape_do_titulo_chegar_ao_stderr() {
     assert_eq!(out.status.code(), Some(1));
     assert!(!stderr(&out).contains('') && !stderr(&out).contains(''), "{:?}", stderr(&out));
 }
+
+#[test]
+fn graphics_kitty_no_modo_plain_continua_em_meio_bloco() {
+    let dir = tempfile::tempdir().unwrap();
+    image::RgbaImage::from_pixel(8, 8, image::Rgba([200, 10, 10, 255]))
+        .save(dir.path().join("a.png"))
+        .unwrap();
+    let md = dir.path().join("a.md");
+    std::fs::write(&md, "![x](a.png)\n").unwrap();
+    let out = mdv(&["-p", "--graphics", "kitty", md.to_str().unwrap()], "");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains('▀'), "{text:?}");
+    assert!(!text.contains('\u{10EEEE}') && !text.contains("\x1b_G"), "{text:?}");
+}
+
+#[test]
+fn graphics_invalido_e_erro_de_uso() {
+    let out = mdv(&["--graphics", "sixel", "-"], "");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--graphics"));
+}

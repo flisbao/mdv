@@ -64,6 +64,7 @@ OPÇÕES:
     -w, --width <N>    largura máxima do texto (padrão: 100)
         --remote       baixa imagens de http(s):// (nunca de rede privada)
         --mermaid      renderiza blocos ```mermaid via `mmdc` (ou $MDV_MMDC)
+        --graphics <G> imagens em alta resolução: off (padrão), kitty ou auto (Kitty/Ghostty; só no modo interativo)
         --toc          imprime só o índice de títulos
         --follow       com stdin: acompanha o texto conforme chega
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
@@ -252,7 +253,14 @@ fn image_store(source: &Source, cli: &cli::Cli, blocking: bool) -> image::ImageS
             .map(|d| if d.as_os_str().is_empty() { PathBuf::from(".") } else { d.to_path_buf() }),
         Source::Stdin => None,
     };
-    let mut store = image::ImageStore::new(base);
+    // Gráficos só no modo interativo (`blocking == false`); `--plain` fica sempre em meio-bloco.
+    let graphics = !blocking
+        && match cli.graphics {
+            cli::Graphics::Off => false,
+            cli::Graphics::Kitty => true,
+            cli::Graphics::Auto => graphics::supports_kitty(|k| std::env::var(k).ok()),
+        };
+    let mut store = image::ImageStore::new(base).with_graphics(graphics);
     if cli.remote {
         store = store.with_remote(net::FetchPolicy::default(), blocking);
     }
@@ -343,6 +351,9 @@ fn run_plain(md: &str, source: &Source, width: Option<usize>, color: bool, cli: 
 fn run_tui(mut app: App) -> Result<(), Failure> {
     let mut term = ratatui::init();
     let res = event_loop(&mut term, &mut app);
+    if !app.sent_graphics.is_empty() {
+        emit_osc(graphics::DELETE_ALL);
+    }
     ratatui::restore();
     res.map_err(|e| Failure::Runtime(format!("erro no terminal: {e}")))
 }
@@ -407,6 +418,10 @@ fn emit_osc(seq: &str) {
 
 fn event_loop(term: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     loop {
+        app.prepare(term.size()?.width);
+        if !app.pending_gfx.is_empty() {
+            emit_osc(&std::mem::take(&mut app.pending_gfx));
+        }
         term.draw(|f| app.draw(f))?;
         let interval = if app.stream.is_some() { STREAM_POLL_INTERVAL } else { POLL_INTERVAL };
         if event::poll(interval)? {
@@ -568,6 +583,10 @@ struct App {
     display: Vec<usize>,
     fold_hidden: HashMap<usize, usize>,
     pending_osc: Option<String>,
+    /// Ids gráficos (Kitty) já enviados ao terminal.
+    sent_graphics: HashSet<u32>,
+    /// Sequências Kitty ainda não escritas no terminal.
+    pending_gfx: String,
 }
 
 impl App {
@@ -607,6 +626,8 @@ impl App {
             notice: None,
             open_table: cli.table.map(|n| n - 1),
             pending_osc: None,
+            sent_graphics: HashSet::new(),
+            pending_gfx: String::new(),
         }
     }
 
@@ -969,6 +990,7 @@ impl App {
         } else if let Some(z) = &mut self.zoom {
             z.drawn = None;
         }
+        self.queue_graphics();
     }
 
     /// Recarrega só se o arquivo mudou desde a última leitura.
@@ -1219,15 +1241,38 @@ impl App {
         }
     }
 
+    /// Largura do texto para uma tela de `screen` colunas.
+    fn text_width(&self, screen: u16) -> usize {
+        usize::from(screen)
+            .saturating_sub(TUI_MARGIN)
+            .min(self.max_width)
+            .max(MIN_TUI_WIDTH)
+    }
+
+    /// Renderiza antes de desenhar, para que as imagens gráficas cheguem ao terminal
+    /// **antes** dos placeholders que as mostram.
+    fn prepare(&mut self, screen_width: u16) {
+        let w = self.text_width(screen_width);
+        if self.dirty || w != self.render_width {
+            self.rerender(w);
+        }
+    }
+
+    /// Enfileira as imagens do documento atual que o terminal ainda não recebeu.
+    fn queue_graphics(&mut self) {
+        for g in &self.rendered.graphics {
+            if self.sent_graphics.insert(g.id) {
+                self.pending_gfx.push_str(&graphics::transmit(g.id, &g.png, g.cols, g.rows));
+            }
+        }
+    }
+
     fn draw(&mut self, f: &mut Frame) {
         let area = f.area();
         let [content, status] =
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
 
-        let w = usize::from(content.width)
-            .saturating_sub(TUI_MARGIN)
-            .min(self.max_width)
-            .max(MIN_TUI_WIDTH);
+        let w = self.text_width(content.width);
         if self.dirty || w != self.render_width {
             self.rerender(w);
         }
@@ -1686,6 +1731,40 @@ mod tests {
         assert_eq!(app.name, "a.md");
         assert!(!app.dirty);
     }
+
+        fn app_kitty(dir: &std::path::Path) -> App {
+            let img = ::image::DynamicImage::ImageRgba8(::image::RgbaImage::from_pixel(8, 8, ::image::Rgba([9, 9, 9, 255])));
+            let mut png = std::io::Cursor::new(Vec::new());
+            img.write_to(&mut png, ::image::ImageFormat::Png).unwrap();
+            std::fs::write(dir.join("a.png"), png.into_inner()).unwrap();
+            let md = dir.join("a.md");
+            std::fs::write(&md, "![x](a.png)\n").unwrap();
+            let cli = match cli::parse(["--graphics", "kitty", "a.md"].map(String::from)) {
+                Ok(cli::Parsed::Run(c)) => c,
+                _ => panic!("cli de teste"),
+            };
+            App::new(Source::File(md), "![x](a.png)\n".to_string(), 80, &cli)
+        }
+
+        #[test]
+        fn prepare_enfileira_a_imagem_uma_vez_so() {
+            let dir = tempfile::tempdir().unwrap();
+            let mut app = app_kitty(dir.path());
+            app.prepare(100);
+            assert!(app.pending_gfx.starts_with("\x1b_Ga=T"), "{:?}", app.pending_gfx);
+            assert_eq!(app.sent_graphics.len(), 1);
+            app.pending_gfx.clear();
+            app.dirty = true;
+            app.prepare(100);
+            assert!(app.pending_gfx.is_empty(), "já foi enviada");
+        }
+
+        #[test]
+        fn sem_graphics_nada_e_enfileirado() {
+            let mut app = test_app(Source::Stdin, "![x](nao.png)");
+            app.prepare(100);
+            assert!(app.pending_gfx.is_empty() && app.sent_graphics.is_empty());
+        }
 
         fn tecla(app: &mut App, c: char) {
             app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));

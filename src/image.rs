@@ -172,6 +172,9 @@ fn decode_data_uri(src: &str) -> Result<DynamicImage, String> {
 }
 
 
+/// Teto de entradas no cache gráfico; além dele o chamador cai para meio-bloco.
+pub const MAX_GRAPHICS: usize = 256;
+
 /// Imagem pronta para o protocolo gráfico: `id` do terminal e os bytes PNG.
 #[derive(Clone)]
 pub struct Graphic {
@@ -241,7 +244,10 @@ impl ImageStore {
         if let Some(g) = map.get(&key) {
             return Some(g.clone());
         }
-        let id = u32::try_from(map.len() + 1).ok()?;
+        if map.len() >= MAX_GRAPHICS {
+            return None;
+        }
+        let id = u32::try_from(map.len() + 1).ok().filter(|&i| i <= 0x00FF_FFFF)?;
         let png = Arc::new(crate::graphics::encode_png(img)?);
         let g = Graphic { id, png };
         map.insert(key, g.clone());
@@ -423,6 +429,20 @@ mod tests {
         assert_eq!(a.id, b.id);
         assert_ne!(a.id, c.id);
         assert_eq!(&a.png[..4], b"\x89PNG");
+    }
+
+    #[test]
+    fn graphic_respeita_o_teto_do_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        grava_png(dir.path(), "a.png", 4, 4);
+        let store = ImageStore::new(Some(dir.path().to_path_buf())).with_graphics(true);
+        let ImageState::Ready(img) = store.get("a.png") else { panic!() };
+        for i in 0..MAX_GRAPHICS {
+            let g = store.graphic(&img, i + 1, 1).expect("abaixo do teto");
+            assert!((1..=0x00FF_FFFF).contains(&g.id));
+        }
+        assert!(store.graphic(&img, MAX_GRAPHICS + 1, 1).is_none());
+        assert!(store.graphic(&img, 1, 1).is_some(), "chave existente continua");
     }
 
     #[test]
