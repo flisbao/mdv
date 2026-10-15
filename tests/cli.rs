@@ -378,6 +378,15 @@ fn arquivo_grande_demais_para_o_limite_e_recusado_antes_de_ler() {
 }
 
 #[test]
+fn json_de_numeros_pequenos_que_expande_para_com_mensagem() {
+    // 3 MiB de `0,` viram ~48 MiB de `Value`: tem que parar antes de montar a árvore.
+    let json = format!("[{}0]", "0,".repeat(3 * 1024 * 1024 / 2));
+    let out = mdv(&["json", "-p", "--memory-buffer", "32M", "-"], &json);
+    assert!(out.status.success(), "não pode abortar: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("limite de memória de 32 MiB atingido"));
+}
+
+#[test]
 fn json_com_chave_gigante_respeita_o_limite_padrao() {
     // ~1 MiB de chave com 100 mil filhos: o flatten antigo copiava a chave para cada filho.
     let filhos: String = (0..100_000).map(|i| format!("\"k{i}\":0")).collect::<Vec<_>>().join(",");

@@ -38,7 +38,7 @@ pub fn decode(bytes: &[u8]) -> Result<DynamicImage, String> {
     let mut limits = Limits::default();
     limits.max_image_width = Some(MAX_DIMENSION);
     limits.max_image_height = Some(MAX_DIMENSION);
-    limits.max_alloc = Some(MAX_ALLOC);
+    limits.max_alloc = Some(crate::mem::image_budget(crate::mem::used(), crate::mem::limit(), MAX_ALLOC));
     reader.limits(limits);
     reader.decode().map_err(|e| e.to_string())
 }

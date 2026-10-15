@@ -142,8 +142,19 @@ pub fn check_input(len: u64) -> Result<(), MemoryLimit> {
 /// Estimativa do pico do `pulldown-cmark`, que monta a árvore do documento inteiro antes de
 /// emitir o primeiro evento (medido: ~24× o texto no pior caso, parágrafos de uma letra).
 /// Barra, antes de analisar, o texto cuja árvore passaria do limite.
+/// Não soma o que já está vivo: num re-render o `Rendered` antigo ainda existe e não é custo novo.
 pub fn check_parse(len: usize) -> Result<(), MemoryLimit> {
-    check_against(used().saturating_add(len.saturating_mul(24)), limit())
+    check_against(len.saturating_mul(24), limit())
+}
+
+/// Estimativa do `serde_json::Value` (~16× o texto de números pequenos como `0,`).
+pub fn check_json(len: usize) -> Result<(), MemoryLimit> {
+    check_against(len.saturating_mul(16), limit())
+}
+
+/// Teto de alocação para decodificar uma imagem: o que resta do limite, no máximo `max`.
+pub fn image_budget(used: usize, limit: usize, max: u64) -> u64 {
+    (limit.saturating_sub(used) as u64).min(max)
 }
 
 /// Interpreta `256M`, `1G`, `512MiB`, `65536K` ou um número de bytes (múltiplos de 1024).
@@ -405,6 +416,28 @@ mod tests {
         assert!(check_parse(1024).is_ok());
         assert!(check_parse(usize::MAX).is_err());
         assert!(check_parse(limit() / 24 + 1).is_err());
+    }
+
+    #[test]
+    fn check_parse_ignora_o_que_ja_esta_vivo() {
+        // Num re-render o `Rendered` antigo ainda está vivo; não pode virar falso estouro.
+        let vivo = vec![1u8; 8 * MI];
+        std::hint::black_box(&vivo);
+        assert!(check_parse(limit() / 24).is_ok());
+    }
+
+    #[test]
+    fn check_json_conta_a_arvore_do_serde() {
+        assert!(check_json(1024).is_ok());
+        assert!(check_json(limit() / 16 + 1).is_err());
+        assert!(check_json(limit() / 16).is_ok());
+    }
+
+    #[test]
+    fn orcamento_de_imagem_segue_o_que_resta_do_limite() {
+        assert_eq!(image_budget(100, 1000, 256), 256);
+        assert_eq!(image_budget(900, 1000, 256), 100);
+        assert_eq!(image_budget(2000, 1000, 256), 0);
     }
 
     #[test]

@@ -402,6 +402,9 @@ pub fn render_json(text: &str, o: &JsonOpts, width: usize) -> Rendered {
     if text.len() > MAX_DATA_BYTES {
         return error_rendered("entrada grande demais para o modo JSON (limite de 5 MiB)");
     }
+    if let Err(e) = mem::check_json(text.len()) {
+        return error_rendered(&e.to_string());
+    }
     let root = match parse_json(text.trim_start_matches('\u{feff}')) {
         Ok(v) => v,
         Err(e) => return error_rendered(&e),
