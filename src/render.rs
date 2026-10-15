@@ -97,6 +97,7 @@ pub struct Rendered {
 pub struct CodeSpan {
     pub start: usize,
     pub end: usize,
+    #[cfg_attr(not(test), allow(dead_code))]
     pub lang: String,
     pub text: String,
 }
@@ -106,16 +107,6 @@ pub struct CodeSpan {
 pub struct TaskItem {
     pub line: usize,
     pub done: bool,
-}
-
-impl Rendered {
-    /// Bloco de código sob a linha `top`; se não houver, o primeiro que cruza a janela `[top, bottom)`.
-    pub fn code_block_at(&self, top: usize, bottom: usize) -> Option<&CodeSpan> {
-        self.code_blocks
-            .iter()
-            .find(|c| c.start <= top && top < c.end)
-            .or_else(|| self.code_blocks.iter().find(|c| c.end > top && c.start < bottom))
-    }
 }
 
 /// Linhas renderizadas `[início, fim)` da seção `idx`: do título até o próximo de nível
@@ -2517,17 +2508,6 @@ mod tests {
         assert!(linha_de(&r, a.end - 1).starts_with("╰─"));
         assert_eq!(b.lang, "");
         assert_eq!(b.text, "sem lang\n");
-    }
-
-    #[test]
-    fn code_block_at_prefere_o_que_contem_a_linha_e_cai_para_o_visivel() {
-        let r = render("```a\n1\n```\n\ntexto\n\n```b\n2\n```\n", 40);
-        let (a, b) = (&r.code_blocks[0], &r.code_blocks[1]);
-        assert_eq!(r.code_block_at(a.start, a.start + 5).map(|c| c.lang.as_str()), Some("a"));
-        // Linha de referência no texto entre os blocos: o primeiro que cruza a janela.
-        let texto = indice_da_linha_com(&r, "texto");
-        assert_eq!(r.code_block_at(texto, b.end).map(|c| c.lang.as_str()), Some("b"));
-        assert!(r.code_block_at(texto, texto + 1).is_none());
     }
 
     #[test]

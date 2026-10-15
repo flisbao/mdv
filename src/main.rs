@@ -10,6 +10,7 @@ mod net;
 mod stream;
 mod render;
 
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
@@ -550,6 +551,9 @@ struct App {
     zoom: Option<Zoom>,
     notice: Option<String>,
     open_table: Option<usize>,
+    folded: HashSet<fold::FoldKey>,
+    display: Vec<usize>,
+    fold_hidden: HashMap<usize, usize>,
     pending_osc: Option<String>,
 }
 
@@ -582,6 +586,9 @@ impl App {
             view: Viewport::default(),
             search: SearchState::default(),
             zoom: None,
+            folded: HashSet::new(),
+            display: Vec::new(),
+            fold_hidden: HashMap::new(),
             notice: None,
             open_table: cli.table.map(|n| n - 1),
             pending_osc: None,
@@ -605,7 +612,7 @@ impl App {
     /// Acrescenta o que chegou do stdin; só passa a acompanhar o fim se o leitor já estava nele.
     fn drain_stream(&mut self) {
         let Some(rx) = &self.stream else { return };
-        let was_at_bottom = self.view.scroll >= self.view.max_scroll(self.rendered.lines.len());
+        let was_at_bottom = self.view.scroll >= self.view.max_scroll(self.total_lines());
         let mut got = false;
         let mut finished = false;
         loop {
@@ -671,36 +678,135 @@ impl App {
     }
 
     fn total_lines(&self) -> usize {
-        self.rendered.lines.len()
+        self.display.len()
+    }
+
+    /// Recalcula quais linhas aparecem (depois de renderizar ou de dobrar).
+    fn recompute_display(&mut self) {
+        let d = fold::compute(&self.rendered, &self.folded);
+        self.display = d.lines;
+        self.fold_hidden = d.hidden;
+        self.view.scroll = self.view.scroll.min(self.view.max_scroll(self.display.len()));
+    }
+
+    /// Posição de `display` → linha renderizada; além do fim, o total de linhas.
+    fn line_at(&self, pos: usize) -> usize {
+        self.display.get(pos).copied().unwrap_or(self.rendered.lines.len())
+    }
+
+    /// Primeira posição de `display` cuja linha é `line` ou vem depois.
+    fn pos_of(&self, line: usize) -> usize {
+        self.display.partition_point(|&l| l < line)
+    }
+
+    fn is_visible(&self, line: usize) -> bool {
+        self.display.binary_search(&line).is_ok()
     }
 
     fn scroll_by(&mut self, delta: isize) {
         self.view.scroll_by(delta, self.total_lines());
     }
 
-    fn scroll_to(&mut self, line: usize) {
-        self.view.scroll_to(line, self.total_lines());
+    fn scroll_to(&mut self, pos: usize) {
+        self.view.scroll_to(pos, self.total_lines());
     }
 
-    /// Linha renderizada de referência para `y`/`Y`/`t`: a primeira visível.
+    /// Linha renderizada de referência para `y`/`Y`/`z`/`t`: a primeira visível.
     fn ref_line(&self) -> usize {
-        self.view.scroll
+        self.line_at(self.view.scroll)
     }
 
-    /// Linhas renderizadas visíveis, `[topo, base)`.
-    fn window_lines(&self) -> (usize, usize) {
-        (self.view.scroll, self.view.scroll + self.view.height)
+    /// Linhas renderizadas que cabem na janela, já sem as dobradas.
+    fn window_display(&self) -> &[usize] {
+        let a = self.view.scroll.min(self.display.len());
+        let b = (self.view.scroll + self.view.height).min(self.display.len());
+        &self.display[a..b]
     }
 
-    /// Rola para que a linha renderizada `line` fique no topo.
+    /// Rola para que a linha renderizada `line` (ou a próxima visível) fique no topo.
     fn scroll_to_line(&mut self, line: usize) {
-        self.scroll_to(line);
+        self.scroll_to(self.pos_of(line));
+    }
+
+    /// Abre as dobras que escondem `line` (busca, saltos).
+    fn reveal(&mut self, line: usize) {
+        let n = self.rendered.lines.len();
+        let keys = fold::fold_keys(&self.rendered.outline);
+        let mut changed = false;
+        for (i, key) in keys.iter().enumerate() {
+            let (start, end) = render::section_range(&self.rendered.outline, i, n);
+            if start < line && line < end {
+                changed |= self.folded.remove(key);
+            }
+        }
+        if changed {
+            self.recompute_display();
+        }
+    }
+
+    /// As linhas da janela como serão desenhadas: destaque da busca e sufixo nos títulos dobrados.
+    fn screen_lines(&self) -> Vec<Line<'static>> {
+        let q = self.search.query.to_lowercase();
+        self.window_display()
+            .iter()
+            .map(|&i| {
+                let l = &self.rendered.lines[i];
+                let mut l = if q.is_empty() { l.clone() } else { highlight_line(l, &q) };
+                if let Some(n) = self.fold_hidden.get(&i) {
+                    l.spans.push(Span::styled(
+                        format!(" ▸ {n} linhas"),
+                        Style::default().fg(Color::Rgb(110, 118, 129)),
+                    ));
+                }
+                l
+            })
+            .collect()
+    }
+
+    /// `z`: dobra ou abre a seção do título mais fundo na linha de referência.
+    fn toggle_fold(&mut self) {
+        let Some(idx) = render::section_at(&self.rendered.outline, self.ref_line()) else {
+            self.notice = Some("nenhum título aqui para dobrar (documento sem títulos?)".to_string());
+            return;
+        };
+        let key = fold::fold_keys(&self.rendered.outline)[idx].clone();
+        if !self.folded.remove(&key) {
+            self.folded.insert(key);
+        }
+        let line = self.rendered.outline[idx].line;
+        self.recompute_display();
+        self.scroll_to_line(line);
+    }
+
+    /// `Z`: dobra todas as seções se alguma está aberta; senão abre todas.
+    fn toggle_fold_all(&mut self) {
+        if self.rendered.outline.is_empty() {
+            self.notice = Some("o documento não tem títulos para dobrar".to_string());
+            return;
+        }
+        let keys = fold::fold_keys(&self.rendered.outline);
+        let anchor = self.ref_line();
+        if keys.iter().all(|k| self.folded.contains(k)) {
+            self.folded.clear();
+        } else {
+            self.folded.extend(keys);
+        }
+        self.recompute_display();
+        self.scroll_to_line(anchor);
     }
 
     /// Copia o bloco de código sob a linha de referência (`y`).
     fn copy_code(&mut self) {
-        let (top, bottom) = (self.ref_line(), self.window_lines().1);
-        let Some(text) = self.rendered.code_block_at(top, bottom).map(|c| c.text.clone()) else {
+        let top = self.ref_line();
+        let janela = self.window_display();
+        let achado = self
+            .rendered
+            .code_blocks
+            .iter()
+            .find(|c| c.start <= top && top < c.end)
+            .or_else(|| self.rendered.code_blocks.iter().find(|c| janela.iter().any(|&l| l >= c.start && l < c.end)))
+            .map(|c| c.text.clone());
+        let Some(text) = achado else {
             self.notice = Some("nenhum bloco de código".to_string());
             return;
         };
@@ -746,6 +852,7 @@ impl App {
         self.render_width = w;
         self.dirty = false;
         self.search.refresh(&self.rendered.lines);
+        self.recompute_display();
         let n = self.rendered.tables.len();
         if self.zoom.as_ref().is_some_and(|z| z.table >= n) {
             self.zoom = None;
@@ -783,7 +890,7 @@ impl App {
     }
 
     fn set_search(&mut self, query: String) {
-        self.search.commit(query, &self.rendered.lines, self.view.scroll);
+        self.search.commit(query, &self.rendered.lines, self.ref_line());
         self.goto_match();
     }
 
@@ -809,8 +916,9 @@ impl App {
 
         /// Abre o zoom da primeira tabela que aparece na tela.
         fn open_visible_table(&mut self) {
-            let (top, bottom) = self.window_lines();
-            match self.rendered.tables.iter().position(|t| t.end > top && t.start < bottom) {
+            let janela = self.window_display();
+            let achada = self.rendered.tables.iter().position(|t| janela.iter().any(|&l| l >= t.start && l < t.end));
+            match achada {
                 Some(i) => self.open_zoom(i),
                 None => self.notice = Some("nenhuma tabela na tela".to_string()),
             }
@@ -854,7 +962,9 @@ impl App {
 
     fn goto_match(&mut self) {
         if let Some(line) = self.search.current_line() {
-            self.scroll_to(line.saturating_sub(self.view.height / 3));
+            self.reveal(line);
+            let pos = self.pos_of(line);
+            self.scroll_to(pos.saturating_sub(self.view.height / 3));
         }
     }
 
@@ -898,17 +1008,21 @@ impl App {
             KeyCode::Char('g') | KeyCode::Home => self.scroll_to(0),
             KeyCode::Char('G') | KeyCode::End => self.scroll_to(usize::MAX),
             KeyCode::Char(']') => {
-                let scroll = self.view.scroll;
-                if let Some(&h) = self.rendered.headings.iter().find(|&&h| h > scroll) {
-                    self.scroll_to(h);
+                let top = self.ref_line();
+                let alvo = self.rendered.headings.iter().copied().find(|&h| h > top && self.is_visible(h));
+                if let Some(h) = alvo {
+                    self.scroll_to_line(h);
                 }
             }
             KeyCode::Char('[') => {
-                let scroll = self.view.scroll;
-                if let Some(&h) = self.rendered.headings.iter().rev().find(|&&h| h < scroll) {
-                    self.scroll_to(h);
+                let top = self.ref_line();
+                let alvo = self.rendered.headings.iter().rev().copied().find(|&h| h < top && self.is_visible(h));
+                if let Some(h) = alvo {
+                    self.scroll_to_line(h);
                 }
             }
+            KeyCode::Char('z') => self.toggle_fold(),
+            KeyCode::Char('Z') => self.toggle_fold_all(),
             KeyCode::Char('/') => self.search.input = Some(String::new()),
             KeyCode::Char('n') => self.step_match(true),
             KeyCode::Char('N') => self.step_match(false),
@@ -979,13 +1093,7 @@ impl App {
             width: u16::try_from(w).unwrap_or(u16::MAX).min(content.width),
             height: content.height,
         };
-        let start = self.view.scroll;
-        let end = (start + self.view.height).min(self.total_lines());
-        let q = self.search.query.to_lowercase();
-        let visible: Vec<Line<'static>> = self.rendered.lines[start..end]
-            .iter()
-            .map(|l| if q.is_empty() { l.clone() } else { highlight_line(l, &q) })
-            .collect();
+        let visible = self.screen_lines();
         f.render_widget(Paragraph::new(visible), inner);
 
         let bar = Style::default()
@@ -1002,7 +1110,7 @@ impl App {
             Some(buf) => format!(" /{buf}█"),
             None => self.status_left(),
         };
-        let right = "j/k rolar  [ ] título  / buscar  t tabela  y/Y copiar  m fonte  q sair ";
+        let right = "j/k rolar  [ ] título  / buscar  z dobrar  t tabela  y/Y copiar  m fonte  q sair ";
         let (lw, rw) = (left.width(), right.width());
         let text = if lw + rw < width {
             format!("{left}{}{right}", " ".repeat(width - lw - rw))
@@ -1406,6 +1514,211 @@ mod tests {
             app
         }
 
+        const DOC_FOLD: &str = "# A\n\ntexto A\n\n## A1\n\ntexto A1\n\n# B\n\ntexto B\n";
+
+        fn dobrar(app: &mut App, titulo: &str) {
+            let keys = fold::fold_keys(&app.rendered.outline);
+            let i = app.rendered.outline.iter().position(|e| e.title == titulo).unwrap();
+            app.folded.insert(keys[i].clone());
+            app.recompute_display();
+        }
+
+        #[test]
+        fn sem_dobras_display_e_identidade_e_nada_muda() {
+            let app = app_com_texto(DOC_FOLD);
+            assert_eq!(app.display, (0..app.rendered.lines.len()).collect::<Vec<_>>());
+            assert_eq!(app.total_lines(), app.rendered.lines.len());
+            assert_eq!(app.line_at(3), 3);
+            assert_eq!(app.pos_of(3), 3);
+        }
+
+        #[test]
+        fn dobra_encurta_o_documento_e_os_mapeamentos_seguem() {
+            let mut app = app_com_texto(DOC_FOLD);
+            let total = app.rendered.lines.len();
+            dobrar(&mut app, "A");
+            assert!(app.total_lines() < total);
+            let b = app.rendered.outline.iter().find(|e| e.title == "B").unwrap().line;
+            assert_eq!(app.line_at(app.pos_of(b)), b, "ida e volta num título visível");
+            assert_eq!(app.line_at(usize::MAX), total, "além do fim: o total de linhas");
+            assert!(app.is_visible(b) && !app.is_visible(b - 1));
+        }
+
+        #[test]
+        fn ref_line_e_window_lines_usam_posicoes_do_display() {
+            let mut app = app_com_texto(DOC_FOLD);
+            dobrar(&mut app, "A");
+            let b = app.rendered.outline.iter().find(|e| e.title == "B").unwrap().line;
+            app.view.scroll = app.pos_of(b);
+            assert_eq!(app.ref_line(), b);
+            app.scroll_to_line(0);
+            assert_eq!(app.view.scroll, 0);
+        }
+
+        #[test]
+        fn tela_mostra_o_sufixo_no_titulo_dobrado() {
+            let mut app = app_com_texto(DOC_FOLD);
+            dobrar(&mut app, "A");
+            let texto: Vec<String> = app.screen_lines().iter().map(line_text).collect();
+            assert!(texto[0].contains("A") && texto[0].contains("▸") && texto[0].contains("linhas"), "{texto:?}");
+            assert!(!texto.iter().any(|l| l.contains("texto A1")));
+            assert!(texto.iter().any(|l| l.contains("texto B")));
+        }
+
+        #[test]
+        fn colchetes_pulam_so_entre_titulos_visiveis() {
+            let mut app = app_com_texto(DOC_FOLD);
+            app.view.height = 2;
+            dobrar(&mut app, "A");
+            app.on_key(ev(KeyCode::Char(']')));
+            let b = app.rendered.outline.iter().find(|e| e.title == "B").unwrap().line;
+            assert_eq!(app.ref_line(), b, "A1 está escondido: o próximo título visível é B");
+            app.on_key(ev(KeyCode::Char('[')));
+            assert_eq!(app.ref_line(), 0);
+        }
+
+        #[test]
+        fn busca_numa_secao_dobrada_abre_a_dobra() {
+            let mut app = app_com_texto(DOC_FOLD);
+            dobrar(&mut app, "A");
+            app.set_search("texto A1".to_string());
+            assert!(app.folded.is_empty(), "a dobra que escondia a ocorrência foi aberta");
+            let linha = app.search.current_line().unwrap();
+            assert!(app.is_visible(linha));
+        }
+
+        #[test]
+        fn busca_so_abre_a_dobra_que_esconde_a_linha() {
+            let mut app = app_com_texto("# A\n\nx\n\n# B\n\ny\n");
+            dobrar(&mut app, "A");
+            dobrar(&mut app, "B");
+            app.set_search("y".to_string());
+            assert_eq!(app.folded.len(), 1, "A continua dobrada");
+        }
+
+        #[test]
+        fn dobras_sobrevivem_a_reload_e_a_nova_largura() {
+            let mut app = app_com_texto(DOC_FOLD);
+            dobrar(&mut app, "A");
+            app.md = format!("{DOC_FOLD}\nmais um parágrafo\n");
+            app.dirty = true;
+            app.rerender(40);
+            assert!(!app.display.iter().any(|&l| linha_contem(&app, l, "texto A1")));
+        }
+
+        #[test]
+        fn dobra_de_titulo_que_sumiu_nao_quebra() {
+            let mut app = app_com_texto(DOC_FOLD);
+            dobrar(&mut app, "A");
+            app.md = "# Outro\n\nx\n".to_string();
+            app.rerender(60);
+            assert_eq!(app.total_lines(), app.rendered.lines.len());
+        }
+
+        fn linha_contem(app: &App, l: usize, trecho: &str) -> bool {
+            line_text(&app.rendered.lines[l]).contains(trecho)
+        }
+
+        #[test]
+        fn t_nao_abre_tabela_escondida_numa_secao_dobrada() {
+            let mut app = app_com_texto(&format!("# A\n\n{TABELA}\n# B\n\ntexto\n"));
+            dobrar(&mut app, "A");
+            app.on_key(ev(KeyCode::Char('t')));
+            assert!(app.zoom.is_none());
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("nenhuma tabela")));
+        }
+
+        #[test]
+        fn y_nao_copia_bloco_de_codigo_escondido() {
+            let mut app = app_com_texto("# A\n\n```\nsegredo\n```\n\n# B\n\ntexto\n");
+            dobrar(&mut app, "A");
+            app.on_key(ev(KeyCode::Char('y')));
+            assert_eq!(app.pending_osc, None);
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("nenhum bloco")));
+        }
+
+        #[test]
+        fn z_dobra_a_secao_da_linha_de_referencia_e_de_novo_abre() {
+            let mut app = app_com_texto("# A\n\na\n\n# B\n\nb\n");
+            let total = app.total_lines();
+            app.on_key(ev(KeyCode::Char('z')));
+            assert!(app.total_lines() < total);
+            assert_eq!(app.ref_line(), 0, "o título dobrado fica no topo");
+            app.on_key(ev(KeyCode::Char('z')));
+            assert_eq!(app.total_lines(), total);
+            assert!(app.folded.is_empty());
+        }
+
+        #[test]
+        fn z_age_no_titulo_mais_fundo_da_linha_de_referencia() {
+            let mut app = app_com_texto(DOC_FOLD);
+            let a1 = app.rendered.outline.iter().find(|e| e.title == "A1").unwrap().line;
+            app.view.scroll = app.pos_of(a1);
+            app.on_key(ev(KeyCode::Char('z')));
+            assert_eq!(app.folded.len(), 1);
+            assert!(app.is_visible(0), "o título A continua aberto");
+            assert!(!app.display.iter().any(|&l| linha_contem(&app, l, "texto A1")));
+            assert!(app.display.iter().any(|&l| linha_contem(&app, l, "texto A")));
+        }
+
+        #[test]
+        fn z_abre_o_pai_e_o_filho_continua_dobrado() {
+            let mut app = app_com_texto(DOC_FOLD);
+            dobrar(&mut app, "A1");
+            dobrar(&mut app, "A");
+            app.view.scroll = 0;
+            app.on_key(ev(KeyCode::Char('z'))); // abre A
+            assert!(app.display.iter().any(|&l| linha_contem(&app, l, "texto A")));
+            assert!(!app.display.iter().any(|&l| linha_contem(&app, l, "texto A1")), "A1 segue dobrado");
+        }
+
+        #[test]
+        fn maiusculo_dobra_tudo_se_alguma_esta_aberta_e_senao_abre_tudo() {
+            let mut app = app_com_texto(DOC_FOLD);
+            let total = app.total_lines();
+            app.on_key(ev(KeyCode::Char('Z')));
+            let dobrado = app.total_lines();
+            assert!(dobrado < total);
+            assert_eq!(app.folded.len(), 3, "A, A1 e B");
+            app.on_key(ev(KeyCode::Char('Z')));
+            assert_eq!(app.total_lines(), total);
+            assert!(app.folded.is_empty());
+        }
+
+        #[test]
+        fn maiusculo_com_uma_dobrada_dobra_o_resto() {
+            let mut app = app_com_texto(DOC_FOLD);
+            dobrar(&mut app, "B");
+            app.on_key(ev(KeyCode::Char('Z')));
+            assert_eq!(app.folded.len(), 3);
+        }
+
+        #[test]
+        fn z_sem_titulos_avisa_sem_quebrar() {
+            for md in ["só texto\n", ""] {
+                let mut app = app_com_texto(md);
+                app.on_key(ev(KeyCode::Char('z')));
+                app.on_key(ev(KeyCode::Char('Z')));
+                assert!(app.folded.is_empty());
+                assert!(app.notice.as_deref().is_some_and(|n| n.contains("títulos")), "{:?}", app.notice);
+            }
+        }
+
+        #[test]
+        fn z_no_modo_fonte_e_em_json_avisa_sem_quebrar() {
+            let mut app = app_com_texto("# A\n\nx\n");
+            app.on_key(ev(KeyCode::Char('m')));
+            app.rerender(60);
+            app.on_key(ev(KeyCode::Char('z')));
+            assert!(app.folded.is_empty());
+            let mut json = test_app(Source::Stdin, r#"[{"a":1}]"#);
+            json.doc.mode = cli::Mode::Json;
+            json.rerender(60);
+            json.view.height = 10;
+            json.on_key(ev(KeyCode::Char('Z')));
+            assert!(json.folded.is_empty());
+        }
+
         fn copiado(app: &App) -> Option<String> {
             app.pending_osc.clone()
         }
@@ -1518,14 +1831,6 @@ mod tests {
             app.on_key(ev(KeyCode::Char('y')));
             assert_eq!(copiado(&app), None);
             assert!(app.notice.as_deref().is_some_and(|n| n.contains("grande demais (70 KiB)")), "{:?}", app.notice);
-        }
-
-        #[test]
-        fn ref_line_e_window_lines_seguem_a_rolagem() {
-            let mut app = app_com_texto(&"linha\n\n".repeat(30));
-            app.view.scroll = 7;
-            assert_eq!(app.ref_line(), 7);
-            assert_eq!(app.window_lines(), (7, 17));
         }
 
         const TABELA: &str = "| a | b |\n|---|---|\n| 1 | 2 |\n";
