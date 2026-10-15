@@ -1849,6 +1849,26 @@ mod tests {
     }
 
     #[test]
+    fn link_md_dentro_do_chat_abre_como_markdown_e_backspace_volta_ao_chat() {
+        let dir = tempfile::tempdir().unwrap();
+        let chat = dir.path().join("conversa.jsonl");
+        let jsonl = "{\"role\":\"assistant\",\"content\":\"veja [leia](leia.md)\"}\n";
+        fs::write(&chat, jsonl).unwrap();
+        fs::write(dir.path().join("leia.md"), "# Leia\n\ntexto\n").unwrap();
+        let mut app = test_app(Source::File(chat.clone()), jsonl);
+        app.doc.mode = cli::Mode::Chat;
+        app.view.height = 5;
+        app.rerender(60);
+        key(&mut app, KeyCode::Tab);
+        assert!(app.link_at.is_some(), "o link do chat precisa ser selecionável");
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.doc.mode, cli::Mode::Markdown);
+        app.rerender(60);
+        key(&mut app, KeyCode::Backspace);
+        assert_eq!(app.doc.mode, cli::Mode::Chat, "voltar restaura o modo do chat");
+    }
+
+    #[test]
     fn link_externo_so_abre_com_y_e_link_fora_da_pasta_e_recusado() {
         let md = "[x](https://exemplo.org) e [y](/etc/passwd.md)\n";
         let mut app = test_app(Source::Stdin, md);
