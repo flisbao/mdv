@@ -1,0 +1,5 @@
+[
+  {"id": 1, "nome": "Ana", "nota": 9.5, "endereco": {"cidade": "Recife", "uf": "PE"}, "tags": ["a", "b"]},
+  {"id": 2, "nome": "Bia", "nota": 10, "endereco": {"cidade": "São Paulo", "uf": "SP"}},
+  {"id": 3, "nome": "Caio", "nota": 7.25, "ativo": true}
+]

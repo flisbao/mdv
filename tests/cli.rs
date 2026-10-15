@@ -86,7 +86,7 @@ fn ajuda_documenta_subcomandos_e_opcoes() {
     let out = mdv(&["--help"], "");
     let text = String::from_utf8_lossy(&out.stdout);
     for item in [
-        "mdv json", "mdv csv|tsv", "--remote", "--mermaid", "--follow", "--latest", "--toc",
+        "mdv json", "mdv csv|tsv", "--remote", "--mermaid", "--follow", "--latest", "--toc", "--as",
         "--path", "--head", "--cols", "--no-header", "--delimiter", "MDV_MMDC",
     ] {
         assert!(text.contains(item), "a ajuda não menciona {item}:\n{text}");
@@ -254,4 +254,261 @@ fn pipe_fechado_na_saida_nao_e_erro() {
     let out = child.wait_with_output().expect("mdv deve terminar");
     assert!(out.status.success(), "stderr: {}", stderr_of(&out));
     assert!(out.stderr.is_empty(), "stderr: {}", stderr_of(&out));
+}
+
+#[test]
+fn json_lista_de_objetos_vira_tabela_por_padrao() {
+    let out = mdv(&["json", "-p", "-"], "[{\"id\":1,\"nome\":\"Ana\"},{\"id\":2,\"nome\":\"Bia\"}]");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("│ nome") && text.contains("2 de 2 itens"), "{text}");
+}
+
+#[test]
+fn json_as_text_forca_a_vista_indentada() {
+    let out = mdv(&["json", "-p", "--as", "text", "-"], "[{\"id\":1}]");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("lista · 1 itens") && text.contains("\"id\": 1"), "{text}");
+}
+
+#[test]
+fn as_com_markdown_e_erro_de_uso() {
+    let out = mdv(&["--as", "table", "-"], "# a");
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--as"));
+}
+
+#[test]
+fn csv_com_celula_longa_quebra_em_vez_de_truncar() {
+    let frase = "uma descricao bem longa que precisa quebrar em varias linhas dentro da celula final";
+    let out = mdv(&["csv", "-p", "-w", "40", "-"], &format!("id,texto\n1,{frase}\n"));
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(!text.contains('…'), "{text}");
+    assert!(text.contains("final"), "{text}");
+    assert!(text.lines().all(|l| l.chars().count() <= 40), "{text}");
+}
+
+#[test]
+fn markdown_com_celula_longa_quebra_em_plain() {
+    let md = "| a | b |\n|---|---|\n| 1 | palavra1 palavra2 palavra3 palavra4 palavra5 palavra6 palavra7 |\n";
+    let out = mdv(&["-p", "-w", "30", "-"], md);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("palavra7") && !text.contains('…'), "{text}");
+}
+
+#[test]
+fn table_zero_e_erro_de_uso() {
+    let out = mdv(&["--table", "0", "-"], "# x\n");
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--table"));
+}
+
+#[test]
+fn table_e_ignorado_em_plain() {
+    let out = mdv(&["-p", "--table", "9", "-"], "| a |\n|---|\n| 1 |\n");
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains('┌'));
+}
+
+#[test]
+fn memory_buffer_invalido_e_erro_de_uso() {
+    let out = mdv(&["--memory-buffer", "abc", "-"], "# x\n");
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--memory-buffer"));
+}
+
+fn mdv_env(args: &[&str], stdin: &str, env: Option<&str>) -> Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_mdv"));
+    cmd.args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    if let Some(v) = env {
+        cmd.env("MDV_MEMORY_BUFFER", v);
+    } else {
+        cmd.env_remove("MDV_MEMORY_BUFFER");
+    }
+    let mut child = cmd.spawn().expect("mdv deve iniciar");
+    let _ = child.stdin.take().expect("stdin").write_all(stdin.as_bytes());
+    child.wait_with_output().expect("mdv deve terminar")
+}
+
+#[test]
+fn variavel_de_ambiente_invalida_e_erro_de_uso_que_cita_a_variavel() {
+    let out = mdv_env(&["-p", "-"], "# x\n", Some("muito"));
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("MDV_MEMORY_BUFFER"));
+}
+
+#[test]
+fn flag_valida_vence_variavel_invalida() {
+    let out = mdv_env(&["-p", "--memory-buffer", "256M", "-"], "# x\n", Some("muito"));
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+#[test]
+fn limite_maior_que_a_memoria_livre_avisa_no_stderr_e_segue() {
+    if !std::path::Path::new("/proc/meminfo").exists() {
+        return;
+    }
+    let out = mdv(&["-p", "--memory-buffer", "999999G", "-"], "# x\n");
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("aviso: o limite de memória"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains('x'));
+}
+
+#[test]
+fn markdown_que_expande_alem_do_limite_para_com_mensagem() {
+    // 4 MiB de parágrafos de uma letra: ~1,4 milhão de parágrafos, centenas de MiB renderizados.
+    let md = "a\n\n".repeat(4 * 1024 * 1024 / 3);
+    let out = mdv(&["-p", "--memory-buffer", "32M", "-"], &md);
+    assert!(out.status.success(), "não pode abortar: {}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("limite de memória de 32 MiB atingido"), "{}", &text[..text.len().min(300)]);
+    assert!(text.contains("--memory-buffer"), "{}", &text[..text.len().min(300)]);
+    assert!(text.lines().count() < 5, "o documento parcial é descartado");
+}
+
+#[test]
+fn arquivo_grande_demais_para_o_limite_e_recusado_antes_de_ler() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("grande.md");
+    std::fs::write(&p, "x".repeat(9 * 1024 * 1024)).unwrap();
+    let out = mdv(&["-p", "--memory-buffer", "32M", p.to_str().unwrap()], "");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("limite de memória de 32 MiB"));
+}
+
+#[test]
+fn json_de_numeros_pequenos_que_expande_para_com_mensagem() {
+    // 3 MiB de `0,` viram ~48 MiB de `Value`: tem que parar antes de montar a árvore.
+    let json = format!("[{}0]", "0,".repeat(3 * 1024 * 1024 / 2));
+    let out = mdv(&["json", "-p", "--memory-buffer", "32M", "-"], &json);
+    assert!(out.status.success(), "não pode abortar: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("limite de memória de 32 MiB atingido"));
+}
+
+#[test]
+fn json_com_chave_gigante_respeita_o_limite_padrao() {
+    // ~1 MiB de chave com 100 mil filhos: o flatten antigo copiava a chave para cada filho.
+    let filhos: String = (0..100_000).map(|i| format!("\"k{i}\":0")).collect::<Vec<_>>().join(",");
+    let json = format!("[{{\"{}\":{{{filhos}}}}}]", "A".repeat(1_000_000));
+    let out = mdv(&["json", "-p", "-"], &json);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+const DOC_EXTRACAO: &str = "intro\n\n# A\n\n```rust\nfn a() {}\n```\n\n## B\n\n```py\nprint('b')\n```\n\n```rust\nfn b() {}\n```\n\n# C\n\n```\nsem lang\n```\n";
+
+fn stdout(o: &Output) -> String {
+    String::from_utf8_lossy(&o.stdout).into_owned()
+}
+
+fn stderr(o: &Output) -> String {
+    String::from_utf8_lossy(&o.stderr).into_owned()
+}
+
+#[test]
+fn extract_code_imprime_todos_os_blocos_sem_cor() {
+    let out = mdv(&["--extract-code", "-"], DOC_EXTRACAO);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "fn a() {}\n\nprint('b')\n\nfn b() {}\n\nsem lang\n");
+    assert!(!stdout(&out).contains('\x1b'));
+}
+
+#[test]
+fn extract_code_filtra_por_linguagem_e_n() {
+    let out = mdv(&["--extract-code", "--lang", "RUST", "-n", "2", "-"], DOC_EXTRACAO);
+    assert_eq!(stdout(&out), "fn b() {}\n");
+}
+
+#[test]
+fn extract_code_n_fora_do_intervalo_sai_com_1() {
+    let out = mdv(&["--extract-code", "--lang", "rust", "-n", "9", "-"], DOC_EXTRACAO);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("fora do intervalo"));
+    assert!(stdout(&out).is_empty());
+}
+
+#[test]
+fn extract_code_sem_bloco_sai_com_1() {
+    let out = mdv(&["--extract-code", "-"], "só texto\n");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("nenhum bloco de código"));
+}
+
+#[test]
+fn section_imprime_o_markdown_cru_com_subsecoes() {
+    let out = mdv(&["--section", "a", "-"], DOC_EXTRACAO);
+    let s = stdout(&out);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(s.starts_with("# A\n") && s.contains("## B") && !s.contains("# C"), "{s}");
+}
+
+#[test]
+fn section_aninhada_para_no_proximo_titulo_do_mesmo_nivel() {
+    let out = mdv(&["--section", "B", "-"], DOC_EXTRACAO);
+    assert!(stdout(&out).starts_with("## B\n") && !stdout(&out).contains("fn a()"));
+}
+
+#[test]
+fn section_ambigua_lista_candidatos_e_sai_com_1() {
+    let out = mdv(&["--section", "passo", "-"], "# Passo um\n\n# Passo dois\n");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("Passo um") && stderr(&out).contains("Passo dois"));
+}
+
+#[test]
+fn section_inexistente_sai_com_1() {
+    let out = mdv(&["--section", "zzz", "-"], DOC_EXTRACAO);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("zzz"));
+}
+
+#[test]
+fn section_com_extract_code_extrai_so_dentro_da_secao() {
+    let out = mdv(&["--section", "B", "--extract-code", "-"], DOC_EXTRACAO);
+    assert_eq!(stdout(&out), "print('b')\n\nfn b() {}\n");
+}
+
+#[test]
+fn extract_code_de_bloco_indentado() {
+    let out = mdv(&["--extract-code", "-"], "texto\n\n    recuado\n");
+    assert_eq!(stdout(&out), "recuado\n");
+}
+
+#[test]
+fn extract_code_nao_deixa_escape_do_documento_passar() {
+    let out = mdv(&["--extract-code", "-"], "```\na\x1b]0;titulo\x07b\n```\n");
+    assert!(out.status.success());
+    assert!(!stdout(&out).contains('\x1b') && !stdout(&out).contains('\x07'));
+}
+
+#[test]
+fn extract_de_arquivo_funciona_como_de_stdin() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("a.md");
+    std::fs::write(&p, DOC_EXTRACAO).unwrap();
+    let out = mdv(&["--extract-code", "--lang", "py", p.to_str().unwrap()], "");
+    assert_eq!(stdout(&out), "print('b')\n");
+}
+
+#[test]
+fn flags_de_extracao_invalidas_sao_erro_de_uso() {
+    for args in [
+        &["--lang", "rust", "-"][..],
+        &["--extract-code", "-n", "0", "-"][..],
+        &["json", "--section", "A", "-"][..],
+        &["--extract-code", "--toc", "-"][..],
+    ] {
+        let out = mdv(args, "# A\n");
+        assert_eq!(out.status.code(), Some(2), "{args:?}: {}", stderr(&out));
+    }
+}
+
+#[test]
+fn section_ambigua_nao_deixa_escape_do_titulo_chegar_ao_stderr() {
+    let out = mdv(&["--section", "passo", "-"], "# Passo ]0;xum
+
+# Passo dois
+");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(!stderr(&out).contains('') && !stderr(&out).contains(''), "{:?}", stderr(&out));
 }

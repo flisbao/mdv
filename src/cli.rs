@@ -1,6 +1,6 @@
 //! Interpretação manual dos argumentos da linha de comando (sem dependência extra).
 
-use crate::render;
+use crate::{mem, render};
 
 pub const DEFAULT_HEAD: usize = 1000;
 pub const MAX_HEAD: usize = 100_000;
@@ -10,6 +10,15 @@ pub enum Mode {
     Markdown,
     Json,
     Table { delimiter: u8 },
+}
+
+/// Como o JSON é mostrado. `Auto` vira tabela para lista de objetos (e JSONL) e texto nos demais casos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JsonView {
+    Auto,
+    Text,
+    Table,
+    Schema,
 }
 
 /// Opções da linha de comando para exibir um documento.
@@ -26,11 +35,19 @@ pub struct Cli {
     pub mode: Mode,
     pub path: Option<String>,
     pub json_path: Option<String>,
+    pub json_view: JsonView,
+    pub table: Option<usize>,
+    pub memory_buffer: Option<usize>,
+    pub extract_code: bool,
+    pub lang: Option<String>,
+    pub nth: Option<usize>,
+    pub section: Option<String>,
     pub head: usize,
     pub cols: Vec<String>,
     pub no_header: bool,
 }
 
+#[allow(clippy::large_enum_variant)] // um único valor por execução; boxar só espalharia `*` nos testes
 pub enum Parsed {
     Run(Cli),
     Help,
@@ -60,6 +77,7 @@ fn parse_width(value: &str) -> Result<usize, String> {
 }
 
 /// Interpreta os argumentos (sem o nome do programa). `--` encerra as opções.
+#[allow(clippy::too_many_lines)]
 pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
     let mut args = args.into_iter().peekable();
     let mut cli = Cli {
@@ -73,6 +91,13 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         mode: Mode::Markdown,
         path: None,
         json_path: None,
+        json_view: JsonView::Auto,
+        table: None,
+        memory_buffer: None,
+        extract_code: false,
+        lang: None,
+        nth: None,
+        section: None,
         head: DEFAULT_HEAD,
         cols: Vec::new(),
         no_header: false,
@@ -105,6 +130,16 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
             "--mermaid" => cli.mermaid = true,
             "--follow" => cli.follow = true,
             "--toc" => cli.toc = true,
+            "--extract-code" => cli.extract_code = true,
+            "--lang" => cli.lang = Some(value(&mut args, &a)?),
+            "-n" => {
+                let v = value(&mut args, &a)?;
+                cli.nth = Some(match v.parse::<usize>() {
+                    Ok(n) if n >= 1 => n,
+                    _ => return Err(format!("-n inválido: {v} (esperado um número a partir de 1)")),
+                });
+            }
+            "--section" => cli.section = Some(value(&mut args, &a)?),
             "--latest" => cli.latest = true,
             "--no-header" => cli.no_header = true,
             "-w" | "--width" => {
@@ -114,6 +149,28 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
                 cli.width = Some(parse_width(&v)?);
             }
             "--path" => cli.json_path = Some(value(&mut args, &a)?),
+                        "--table" => {
+                            let v = value(&mut args, &a)?;
+                            cli.table = Some(match v.parse::<usize>() {
+                                Ok(n) if n >= 1 => n,
+                                _ => return Err(format!("--table inválido: {v} (esperado um número a partir de 1)")),
+                            });
+                        }
+            "--memory-buffer" => {
+                let v = value(&mut args, &a)?;
+                cli.memory_buffer =
+                    Some(mem::parse_size(&v).map_err(|e| format!("--memory-buffer: {e}"))?);
+            }
+            "--as" => {
+                let v = value(&mut args, &a)?;
+                cli.json_view = match v.as_str() {
+                    "auto" => JsonView::Auto,
+                    "text" => JsonView::Text,
+                    "table" => JsonView::Table,
+                    "schema" => JsonView::Schema,
+                    _ => return Err(format!("vista inválida: {v} (use auto, text, table ou schema)")),
+                };
+            }
             "--head" => {
                 let v = value(&mut args, &a)?;
                 let n: usize = v.parse().map_err(|_| format!("--head inválido: {v}"))?;
@@ -144,7 +201,30 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
             cli.mode = mode_from_extension(p);
         }
     }
+    if cli.json_view != JsonView::Auto && cli.mode != Mode::Json {
+        return Err("a opção --as só vale para JSON".to_string());
+    }
+    if (cli.lang.is_some() || cli.nth.is_some()) && !cli.extract_code {
+        return Err("as opções --lang e -n só valem com --extract-code".to_string());
+    }
+    if cli.wants_extract() {
+        if cli.mode != Mode::Markdown {
+            return Err("--extract-code e --section só valem para Markdown".to_string());
+        }
+        for (on, flag) in [(cli.toc, "--toc"), (cli.follow, "--follow"), (cli.latest, "--latest")] {
+            if on {
+                return Err(format!("--extract-code e --section não combinam com {flag}"));
+            }
+        }
+    }
     Ok(Parsed::Run(cli))
+}
+
+impl Cli {
+    /// `--extract-code` ou `--section`: imprime um trecho e sai, sem renderizar.
+    pub fn wants_extract(&self) -> bool {
+        self.extract_code || self.section.is_some()
+    }
 }
 
 #[cfg(test)]
@@ -156,6 +236,28 @@ mod tests {
             Parsed::Run(c) => Ok(c),
             _ => Err("esperava Run".into()),
         }
+    }
+
+    #[test]
+    fn as_define_a_vista_do_json() {
+        assert_eq!(run(&["json", "d.json", "--as", "table"]).unwrap().json_view, JsonView::Table);
+        assert_eq!(run(&["json", "d.json", "--as", "schema"]).unwrap().json_view, JsonView::Schema);
+        assert_eq!(run(&["json", "d.json", "--as", "text"]).unwrap().json_view, JsonView::Text);
+        assert_eq!(run(&["json", "d.json", "--as", "auto"]).unwrap().json_view, JsonView::Auto);
+        assert_eq!(run(&["d.json"]).unwrap().json_view, JsonView::Auto);
+    }
+
+    #[test]
+    fn as_por_extensao_tambem_vale() {
+        assert_eq!(run(&["d.jsonl", "--as", "table"]).unwrap().json_view, JsonView::Table);
+    }
+
+    #[test]
+    fn as_invalido_ou_fora_do_json_e_erro() {
+        assert!(run(&["json", "--as", "xml", "-"]).unwrap_err().contains("xml"));
+        assert!(run(&["--as"]).is_err());
+        assert!(run(&["a.md", "--as", "table"]).unwrap_err().contains("--as"));
+        assert!(run(&["csv", "a.csv", "--as", "table"]).unwrap_err().contains("--as"));
     }
 
     #[test]
@@ -245,5 +347,88 @@ mod tests {
     fn ajuda_e_versao() {
         assert!(matches!(parse(["-h".to_string()]), Ok(Parsed::Help)));
         assert!(matches!(parse(["a.md".to_string(), "-V".to_string()]), Ok(Parsed::Version)));
+    }
+
+        #[test]
+        fn memory_buffer_aceita_tamanhos() {
+            assert_eq!(run(&["--memory-buffer", "256M", "a.md"]).unwrap().memory_buffer, Some(256 * 1024 * 1024));
+            assert_eq!(run(&["--memory-buffer", "1g", "a.md"]).unwrap().memory_buffer, Some(1024 * 1024 * 1024));
+            assert_eq!(run(&["a.md"]).unwrap().memory_buffer, None);
+        }
+
+        #[test]
+        fn memory_buffer_invalido_e_erro_de_uso() {
+            for v in ["0", "-1", "1.5G", "abc", "", "16M", "999999999999999999999G"] {
+                let e = run(&["--memory-buffer", v, "a.md"]).unwrap_err();
+                assert!(e.contains("--memory-buffer"), "{v:?}: {e}");
+            }
+            assert!(run(&["--memory-buffer"]).is_err());
+        }
+
+        #[test]
+        fn table_aceita_numero_a_partir_de_1() {
+            assert_eq!(run(&["--table", "2", "a.md"]).unwrap().table, Some(2));
+            assert_eq!(run(&["a.md"]).unwrap().table, None);
+        }
+
+        #[test]
+        fn table_invalido_e_erro_de_uso() {
+            for v in ["0", "-1", "x", ""] {
+                let e = run(&["--table", v, "a.md"]).unwrap_err();
+                assert!(e.contains("--table"), "{e}");
+            }
+            assert!(run(&["--table"]).is_err());
+        }
+
+    #[test]
+    fn extract_code_e_suas_opcoes() {
+        let c = run(&["--extract-code", "--lang", "rust", "-n", "2", "a.md"]).unwrap();
+        assert!(c.extract_code && c.wants_extract());
+        assert_eq!(c.lang.as_deref(), Some("rust"));
+        assert_eq!(c.nth, Some(2));
+        assert_eq!(c.section, None);
+    }
+
+    #[test]
+    fn section_sozinha_e_valida() {
+        let c = run(&["--section", "Instalação", "a.md"]).unwrap();
+        assert!(c.wants_extract() && !c.extract_code);
+        assert_eq!(c.section.as_deref(), Some("Instalação"));
+    }
+
+    #[test]
+    fn sem_flags_de_extracao_nada_muda() {
+        let c = run(&["a.md"]).unwrap();
+        assert!(!c.wants_extract());
+    }
+
+    #[test]
+    fn n_invalido_e_erro_de_uso() {
+        for v in ["0", "-1", "x", ""] {
+            let e = run(&["--extract-code", "-n", v, "a.md"]).unwrap_err();
+            assert!(e.contains("-n"), "{v:?}: {e}");
+        }
+        assert!(run(&["--extract-code", "-n"]).is_err());
+    }
+
+    #[test]
+    fn lang_e_n_exigem_extract_code() {
+        assert!(run(&["--lang", "rust", "a.md"]).unwrap_err().contains("--extract-code"));
+        assert!(run(&["-n", "1", "--section", "A", "a.md"]).unwrap_err().contains("--extract-code"));
+    }
+
+    #[test]
+    fn extracao_so_vale_para_markdown() {
+        assert!(run(&["json", "--section", "A", "d.json"]).unwrap_err().contains("Markdown"));
+        assert!(run(&["csv", "--extract-code", "d.csv"]).unwrap_err().contains("Markdown"));
+        assert!(run(&["--extract-code", "d.json"]).unwrap_err().contains("Markdown"), "modo deduzido da extensão");
+    }
+
+    #[test]
+    fn extracao_nao_combina_com_toc_follow_latest() {
+        for f in ["--toc", "--follow", "--latest"] {
+            let e = run(&["--extract-code", f, "a.md"]).unwrap_err();
+            assert!(e.contains(f), "{f}: {e}");
+        }
     }
 }

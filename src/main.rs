@@ -1,6 +1,9 @@
 mod cli;
+mod clip;
 mod data;
+mod extract;
 mod image;
+mod mem;
 mod mermaid;
 mod net;
 mod stream;
@@ -20,6 +23,9 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
+
+#[global_allocator]
+static ALLOC: mem::CountingAlloc = mem::CountingAlloc;
 use ratatui::{DefaultTerminal, Frame};
 use unicode_width::UnicodeWidthStr;
 
@@ -57,11 +63,18 @@ OPÇÕES:
         --toc          imprime só o índice de títulos
         --follow       com stdin: acompanha o texto conforme chega
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
+        --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
+        --memory-buffer <T>  limite de memória (padrão: 512M; ex.: 256M, 2G; ou $MDV_MEMORY_BUFFER)
+        --extract-code imprime só o texto dos blocos de código (sem cor)
+        --lang <L>     com --extract-code: só os blocos da linguagem L
+    -n <N>             com --extract-code: só o N-ésimo bloco (a partir de 1)
+        --section <T>  imprime só o Markdown da seção de título T
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
 OPÇÕES DE JSON:
         --path <p>     mostra só um trecho, ex.: .itens[0].nome
+        --as <vista>   auto (padrão), text, table ou schema
 
 OPÇÕES DE CSV/TSV:
         --head <N>     mostra só as N primeiras linhas (padrão: 1000)
@@ -78,6 +91,8 @@ TECLAS (modo interativo):
     /                  buscar (Enter confirma, Esc cancela)
     n / N              próxima / anterior ocorrência
     m                  alterna entre renderizado e fonte crua
+    v                  (JSON) alterna tabela / esquema / texto
+    t                  zoom da tabela na tela (h/l colunas, Esc volta)
     r                  recarrega o arquivo
     q, Esc             sai
 ";
@@ -125,6 +140,11 @@ fn run_cli() -> Result<(), Failure> {
         }
         cli::Parsed::Run(cli) => cli,
     };
+    let limit = mem::resolve(cli.memory_buffer, std::env::var("MDV_MEMORY_BUFFER").ok().as_deref())
+        .map_err(Failure::Usage)?;
+    mem::set_limit(limit);
+    mem::init();
+    let mem_warning = mem::warn_if_above(limit, mem::available());
     let latest_dir = if cli.latest {
         let dir = cli
             .path
@@ -137,22 +157,41 @@ fn run_cli() -> Result<(), Failure> {
     let stdout_tty = io::stdout().is_terminal();
     let interactive = !cli.plain && stdout_tty;
     let width = cli.width.unwrap_or(DEFAULT_WIDTH);
+    if !interactive {
+        if let Some(w) = &mem_warning {
+            eprintln!("mdv: {w}");
+        }
+    }
 
     // `--follow` com stdin: a TUI abre na hora e o texto vai chegando aos poucos.
     if cli.follow && interactive && !cli.toc && latest_dir.is_none() && reads_stdin(cli.path.as_deref()) {
         let rx = stream::spawn_stdin_reader(usize::try_from(MAX_INPUT_BYTES).unwrap_or(usize::MAX));
-        return run_tui(App::new(Source::Stdin, String::new(), width, &cli).with_stream(rx));
+        let mut app = App::new(Source::Stdin, String::new(), width, &cli).with_stream(rx);
+        app.notice = app.notice.or(mem_warning);
+        return run_tui(app);
     }
 
     let (source, md) = match &latest_dir {
         Some(dir) => load_latest(dir)?,
         None => load_source(cli.path.as_deref())?,
     };
+    if cli.wants_extract() {
+        mem::check_parse(md.len()).map_err(|e| Failure::Runtime(e.to_string()))?;
+        let opts = extract::ExtractOpts {
+            code: cli.extract_code,
+            lang: cli.lang.clone(),
+            nth: cli.nth,
+            section: cli.section.clone(),
+        };
+        let text = extract::extract(&md, &opts).map_err(Failure::Runtime)?;
+        return write_stdout(&text);
+    }
     if cli.toc && cli.mode == cli::Mode::Markdown {
         return write_stdout(&render::toc(&render::render(&md, width)));
     }
     if interactive {
         let mut app = App::new(source, md, width, &cli);
+        app.notice = app.notice.or(mem_warning);
         if let Some(dir) = latest_dir {
             app = app.with_latest(dir);
         }
@@ -221,6 +260,7 @@ fn image_store(source: &Source, cli: &cli::Cli, blocking: bool) -> image::ImageS
 struct DocOpts {
     mode: cli::Mode,
     json_path: Option<String>,
+    json_view: cli::JsonView,
     head: usize,
     cols: Vec<String>,
     no_header: bool,
@@ -231,6 +271,7 @@ impl DocOpts {
         DocOpts {
             mode: cli.mode,
             json_path: cli.json_path.clone(),
+            json_view: cli.json_view,
             head: cli.head,
             cols: cli.cols.clone(),
             no_header: cli.no_header,
@@ -244,7 +285,15 @@ fn render_doc(doc: &DocOpts, text: &str, width: usize, images: &image::ImageStor
         cli::Mode::Markdown => {
             render::render_with(text, &render::RenderOpts { width, images: Some(images) })
         }
-        cli::Mode::Json => data::render_json(text, doc.json_path.as_deref(), width),
+        cli::Mode::Json => {
+            let opts = data::JsonOpts {
+                path: doc.json_path.clone(),
+                view: doc.json_view,
+                head: doc.head,
+                cols: doc.cols.clone(),
+            };
+            data::render_json(text, &opts, width)
+        }
         cli::Mode::Table { delimiter } => {
             let opts = data::TableOpts {
                 delimiter,
@@ -309,12 +358,15 @@ fn read_stdin() -> io::Result<String> {
 
 /// Lê um arquivo regular (nunca dispositivo, FIFO ou diretório) respeitando o teto.
 fn read_markdown_file(path: &Path) -> io::Result<String> {
-    if !fs::metadata(path)?.is_file() {
+    let meta = fs::metadata(path)?;
+    if !meta.is_file() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "não é um arquivo regular",
         ));
     }
+    mem::check_input(meta.len())
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
     read_limited(fs::File::open(path)?, MAX_INPUT_BYTES)
 }
 
@@ -333,6 +385,13 @@ fn file_mtime(p: &Path) -> Option<SystemTime> {
     fs::metadata(p).and_then(|m| m.modified()).ok()
 }
 
+/// Escreve uma sequência de controle direto no terminal (OSC 52).
+fn emit_osc(seq: &str) {
+    let mut out = io::stdout();
+    let _ = out.write_all(seq.as_bytes());
+    let _ = out.flush();
+}
+
 fn event_loop(term: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     loop {
         term.draw(|f| app.draw(f))?;
@@ -341,6 +400,9 @@ fn event_loop(term: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
             if let Event::Key(k) = event::read()? {
                 if k.kind == KeyEventKind::Press && app.on_key(k) {
                     return Ok(());
+                }
+                if let Some(seq) = app.pending_osc.take() {
+                    emit_osc(&seq);
                 }
             }
         } else {
@@ -377,6 +439,44 @@ impl Viewport {
 }
 
 /// Busca incremental: texto em edição, termo confirmado e linhas encontradas.
+/// Tela de zoom: uma tabela desenhada na largura inteira do terminal.
+struct Zoom {
+    /// Índice em `Rendered.tables`.
+    table: usize,
+    /// Primeira coluna rolável pedida (a coluna 0 fica sempre; `draw` normaliza).
+    first_col: usize,
+    /// Rolagem do corpo da tabela, sem as linhas fixas do topo.
+    view: Viewport,
+    /// Último desenho: (largura, `first_col` usado, resultado).
+    drawn: Option<(usize, usize, render::TableView)>,
+}
+
+impl Zoom {
+    fn new(table: usize) -> Self {
+        Zoom { table, first_col: 0, view: Viewport::default(), drawn: None }
+    }
+
+    /// Linhas do corpo (tudo que não é fixo no topo).
+    fn body_total(&self) -> usize {
+        self.drawn.as_ref().map_or(0, |(_, _, v)| v.lines.len().saturating_sub(v.pinned))
+    }
+}
+
+/// "todas as N colunas" ou "colunas 1 e A–B de N" (1 é a coluna fixa).
+fn columns_label(v: &render::TableView) -> String {
+    if v.total_cols == 1 {
+        return "1 coluna".to_string();
+    }
+    if v.shown_cols >= v.total_cols {
+        return format!("todas as {} colunas", v.total_cols);
+    }
+    if v.shown_cols == 1 {
+        return format!("coluna 1 de {}", v.total_cols);
+    }
+    let (from, to) = (v.first_col + 1, v.first_col + v.shown_cols - 1);
+    format!("colunas 1 e {from}–{to} de {}", v.total_cols)
+}
+
 #[derive(Default)]
 struct SearchState {
     /// Texto sendo digitado (`Some` enquanto o prompt `/` está aberto).
@@ -446,6 +546,10 @@ struct App {
     dirty: bool,
     view: Viewport,
     search: SearchState,
+    zoom: Option<Zoom>,
+    notice: Option<String>,
+    open_table: Option<usize>,
+    pending_osc: Option<String>,
 }
 
 impl App {
@@ -476,6 +580,10 @@ impl App {
             dirty: true,
             view: Viewport::default(),
             search: SearchState::default(),
+            zoom: None,
+            notice: None,
+            open_table: cli.table.map(|n| n - 1),
+            pending_osc: None,
         }
     }
 
@@ -512,6 +620,7 @@ impl App {
                 }
             }
         }
+        self.stop_stream_for_memory(mem::check().err());
         if finished {
             self.stream = None;
             self.images.set_mermaid_hold(false);
@@ -520,6 +629,17 @@ impl App {
         if got {
             self.stick_bottom |= was_at_bottom;
             self.dirty = true;
+        }
+    }
+
+    /// Para de acumular o stdin quando a memória passou do limite (`--follow`).
+    fn stop_stream_for_memory(&mut self, over: Option<mem::MemoryLimit>) {
+        if let Some(e) = over {
+            if self.stream.take().is_some() {
+                self.images.set_mermaid_hold(false);
+                self.notice = Some(format!("leitura interrompida: {e}"));
+                self.dirty = true;
+            }
         }
     }
 
@@ -561,6 +681,61 @@ impl App {
         self.view.scroll_to(line, self.total_lines());
     }
 
+    /// Linha renderizada de referência para `y`/`Y`/`t`: a primeira visível.
+    fn ref_line(&self) -> usize {
+        self.view.scroll
+    }
+
+    /// Linhas renderizadas visíveis, `[topo, base)`.
+    fn window_lines(&self) -> (usize, usize) {
+        (self.view.scroll, self.view.scroll + self.view.height)
+    }
+
+    /// Rola para que a linha renderizada `line` fique no topo.
+    fn scroll_to_line(&mut self, line: usize) {
+        self.scroll_to(line);
+    }
+
+    /// Copia o bloco de código sob a linha de referência (`y`).
+    fn copy_code(&mut self) {
+        let (top, bottom) = (self.ref_line(), self.window_lines().1);
+        let Some(text) = self.rendered.code_block_at(top, bottom).map(|c| c.text.clone()) else {
+            self.notice = Some("nenhum bloco de código".to_string());
+            return;
+        };
+        self.copy_text(&text);
+    }
+
+    /// Copia o Markdown cru da seção da linha de referência (`Y`).
+    fn copy_section(&mut self) {
+        if self.raw || self.doc.mode != cli::Mode::Markdown {
+            self.notice = Some("seção só existe no Markdown renderizado".to_string());
+            return;
+        }
+        let Some(idx) = render::section_at(&self.rendered.outline, self.ref_line()) else {
+            self.notice = Some("nenhuma seção aqui".to_string());
+            return;
+        };
+        match render::section_source(&self.md, &self.rendered, idx) {
+            Some(text) => self.copy_text(&text),
+            None => self.notice = Some("não consegui recortar a seção".to_string()),
+        }
+    }
+
+    /// Prepara o OSC 52 (escrito pelo `event_loop`) ou avisa que o texto é grande demais.
+    fn copy_text(&mut self, text: &str) {
+        match clip::osc52(text) {
+            Ok(seq) => {
+                self.pending_osc = Some(seq);
+                let n = text.lines().count();
+                self.notice = Some(format!("copiado: {n} linha{}", if n == 1 { "" } else { "s" }));
+            }
+            Err(bytes) => {
+                self.notice = Some(format!("grande demais ({} KiB), nada copiado", bytes / 1024));
+            }
+        }
+    }
+
     fn rerender(&mut self, w: usize) {
         self.rendered = if self.raw {
             render::render_code_only(&self.md, raw_lang(self.doc.mode), w)
@@ -570,6 +745,12 @@ impl App {
         self.render_width = w;
         self.dirty = false;
         self.search.refresh(&self.rendered.lines);
+        let n = self.rendered.tables.len();
+        if self.zoom.as_ref().is_some_and(|z| z.table >= n) {
+            self.zoom = None;
+        } else if let Some(z) = &mut self.zoom {
+            z.drawn = None;
+        }
     }
 
     /// Recarrega só se o arquivo mudou desde a última leitura.
@@ -605,6 +786,71 @@ impl App {
         self.goto_match();
     }
 
+            /// Abre o zoom pedido por `--table`, assim que há um documento renderizado.
+        fn open_pending_table(&mut self) {
+            if let Some(i) = self.open_table.take() {
+                self.open_zoom(i);
+            }
+        }
+
+    fn open_zoom(&mut self, table: usize) {
+            if table >= self.rendered.tables.len() {
+                self.notice = Some(format!(
+                    "tabela {} não existe (há {})",
+                    table + 1,
+                    self.rendered.tables.len()
+                ));
+                return;
+            }
+            self.notice = None;
+            self.zoom = Some(Zoom::new(table));
+        }
+
+        /// Abre o zoom da primeira tabela que aparece na tela.
+        fn open_visible_table(&mut self) {
+            let (top, bottom) = self.window_lines();
+            match self.rendered.tables.iter().position(|t| t.end > top && t.start < bottom) {
+                Some(i) => self.open_zoom(i),
+                None => self.notice = Some("nenhuma tabela na tela".to_string()),
+            }
+        }
+
+        /// Redesenha a tabela do zoom se a largura ou a coluna mudaram.
+        fn refresh_zoom(&mut self, width: usize) {
+            let Some(z) = self.zoom.as_mut() else { return };
+            let Some(span) = self.rendered.tables.get(z.table) else { return };
+            let fresh = matches!(&z.drawn, Some((w, c, _)) if *w == width && *c == z.first_col);
+            if !fresh {
+                let v = span.data.draw(width, z.first_col);
+                z.first_col = v.first_col;
+                z.drawn = Some((width, v.first_col, v));
+            }
+        }
+
+        fn on_zoom_key(&mut self, code: KeyCode) {
+            let Some(z) = self.zoom.as_mut() else { return };
+            let body = z.body_total();
+            let h = z.view.height;
+            let page = isize::try_from(h.saturating_sub(1).max(1)).unwrap_or(isize::MAX);
+            let half = isize::try_from((h / 2).max(1)).unwrap_or(isize::MAX);
+            match code {
+                KeyCode::Esc | KeyCode::Char('q' | 't') => self.zoom = None,
+                KeyCode::Char('j') | KeyCode::Down | KeyCode::Enter => z.view.scroll_by(1, body),
+                KeyCode::Char('k') | KeyCode::Up => z.view.scroll_by(-1, body),
+                KeyCode::Char(' ' | 'f') | KeyCode::PageDown => z.view.scroll_by(page, body),
+                KeyCode::Char('b') | KeyCode::PageUp => z.view.scroll_by(-page, body),
+                KeyCode::Char('d') => z.view.scroll_by(half, body),
+                KeyCode::Char('u') => z.view.scroll_by(-half, body),
+                KeyCode::Char('g') | KeyCode::Home => z.view.scroll_to(0, body),
+                KeyCode::Char('G') | KeyCode::End => z.view.scroll_to(usize::MAX, body),
+                KeyCode::Char('l') | KeyCode::Right => z.first_col = z.first_col.saturating_add(1),
+                KeyCode::Char('h') | KeyCode::Left => z.first_col = z.first_col.saturating_sub(1),
+                KeyCode::Char('0') => z.first_col = 0,
+                KeyCode::Char('$') => z.first_col = usize::MAX,
+                _ => {}
+            }
+        }
+
     fn goto_match(&mut self) {
         if let Some(line) = self.search.current_line() {
             self.scroll_to(line.saturating_sub(self.view.height / 3));
@@ -621,6 +867,11 @@ impl App {
         if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
             return true;
         }
+                if self.zoom.is_some() {
+                    self.on_zoom_key(k.code);
+                    return false;
+                }
+                self.notice = None;
         if let Some(buf) = self.search.input.take() {
             self.on_search_key(k.code, buf);
             return false;
@@ -661,6 +912,18 @@ impl App {
             KeyCode::Char('n') => self.step_match(true),
             KeyCode::Char('N') => self.step_match(false),
             KeyCode::Char('r') => self.reload(),
+                        KeyCode::Char('v') if self.doc.mode == cli::Mode::Json => {
+                            let current = if self.doc.json_view == cli::JsonView::Auto {
+                                data::auto_view_of_text(&self.md, self.doc.json_path.as_deref())
+                            } else {
+                                self.doc.json_view
+                            };
+                            self.doc.json_view = data::next_view(current);
+                            self.dirty = true;
+                        }
+                        KeyCode::Char('t') => self.open_visible_table(),
+                        KeyCode::Char('y') => self.copy_code(),
+                        KeyCode::Char('Y') => self.copy_section(),
             KeyCode::Char('m') => {
                 self.raw = !self.raw;
                 self.dirty = true;
@@ -699,6 +962,11 @@ impl App {
         if self.dirty || w != self.render_width {
             self.rerender(w);
         }
+        self.open_pending_table();
+                if self.zoom.is_some() {
+                    self.draw_zoom(f, content, status);
+                    return;
+                }
         self.view.height = usize::from(content.height);
         self.view.scroll = self.view.scroll.min(self.view.max_scroll(self.total_lines()));
         self.apply_stick_bottom();
@@ -733,7 +1001,7 @@ impl App {
             Some(buf) => format!(" /{buf}█"),
             None => self.status_left(),
         };
-        let right = "j/k rolar  [ ] títulos  / buscar  m fonte  q sair ";
+        let right = "j/k rolar  [ ] título  / buscar  t tabela  y/Y copiar  m fonte  q sair ";
         let (lw, rw) = (left.width(), right.width());
         let text = if lw + rw < width {
             format!("{left}{}{right}", " ".repeat(width - lw - rw))
@@ -744,6 +1012,51 @@ impl App {
     }
 
     /// Nome do arquivo, posição no documento e estado da busca.
+        fn draw_zoom(&mut self, f: &mut Frame, content: Rect, status: Rect) {
+            self.refresh_zoom(render::clamp_width(usize::from(content.width)));
+            let Some(z) = self.zoom.as_mut() else { return };
+            let Some((_, _, tv)) = &z.drawn else { return };
+            let pinned = tv.pinned.min(tv.lines.len());
+            z.view.height = usize::from(content.height).saturating_sub(pinned).max(1);
+            let body = tv.lines.len() - pinned;
+            z.view.scroll = z.view.scroll.min(z.view.max_scroll(body));
+            let start = pinned + z.view.scroll;
+            let end = (start + z.view.height).min(tv.lines.len());
+            let mut visible: Vec<Line<'static>> = tv.lines[..pinned].to_vec();
+            visible.extend_from_slice(&tv.lines[start..end]);
+            f.render_widget(Paragraph::new(visible), content);
+
+            let bar = Style::default().bg(Color::Rgb(59, 66, 82)).fg(Color::Rgb(229, 233, 240));
+            let left = format!(
+                " {}  tabela {}/{}  {}",
+                self.name,
+                z.table + 1,
+                self.rendered.tables.len(),
+                columns_label(tv)
+            );
+            let right = "j/k rolar  h/l colunas  0/$ extremos  Esc voltar ";
+            let width = usize::from(status.width);
+            let (lw, rw) = (left.width(), right.width());
+            let text = if lw + rw < width { format!("{left}{}{right}", " ".repeat(width - lw - rw)) } else { left };
+            f.render_widget(Paragraph::new(Line::from(text)).style(bar), status);
+        }
+
+    /// `☑ feitas/total` do documento e, se a seção atual tem tarefas e difere do todo, `(seção f/t)`.
+    fn task_summary(&self) -> Option<String> {
+        let all = render::count_tasks(&self.rendered.tasks, 0, usize::MAX);
+        if all.total == 0 {
+            return None;
+        }
+        let mut s = format!("☑ {}/{}", all.done, all.total);
+        if let Some(idx) = render::section_at(&self.rendered.outline, self.ref_line()) {
+            let c = render::section_tasks(&self.rendered, idx);
+            if c.total > 0 && c != all {
+                let _ = write!(s, " (seção {}/{})", c.done, c.total);
+            }
+        }
+        Some(s)
+    }
+
     fn status_left(&self) -> String {
         let total = self.total_lines();
         let pct = self
@@ -752,20 +1065,36 @@ impl App {
             .saturating_mul(100)
             .checked_div(self.view.max_scroll(total))
             .unwrap_or(100);
-        let mut s = format!(" {}  {pct}%{}", self.name, if self.raw { "  [fonte]" } else { "" });
+        let view = match (self.doc.mode, self.doc.json_view) {
+            (cli::Mode::Json, cli::JsonView::Text) => "  [texto]",
+            (cli::Mode::Json, cli::JsonView::Table) => "  [tabela]",
+            (cli::Mode::Json, cli::JsonView::Schema) => "  [esquema]",
+            _ => "",
+        };
+        let mut s = format!(
+            " {}  {pct}%{}{view}",
+            self.name,
+            if self.raw { "  [fonte]" } else { "" }
+        );
         let search = &self.search;
         if !search.query.is_empty() {
             if search.matches.is_empty() {
-                let _ = write!(s, "  /{}: nada encontrado", search.query);
+        let _ = write!(s, "  /{}: nada encontrado", search.query);
             } else {
-                let _ = write!(
-                    s,
-                    "  /{} [{}/{}]",
-                    search.query,
-                    search.current + 1,
-                    search.matches.len()
-                );
+        let _ = write!(
+            s,
+            "  /{} [{}/{}]",
+            search.query,
+            search.current + 1,
+            search.matches.len()
+        );
             }
+        }
+        if let Some(t) = self.task_summary() {
+            let _ = write!(s, "  {t}");
+        }
+        if let Some(n) = &self.notice {
+            let _ = write!(s, "  {n}");
         }
         s
     }
@@ -844,6 +1173,18 @@ mod tests {
     fn read_limited_rejeita_utf8_invalido() {
         let err = read_limited(&[0xff, 0xfe][..], 16).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn stdin_para_de_acumular_quando_a_memoria_acaba() {
+        let (_tx, rx) = std::sync::mpsc::channel::<String>();
+        let mut app = test_app(Source::Stdin, "").with_stream(rx);
+        app.stop_stream_for_memory(None);
+        assert!(app.stream.is_some(), "sem estouro, segue lendo");
+        app.stop_stream_for_memory(Some(mem::MemoryLimit { used: 2, limit: 1 }));
+        assert!(app.stream.is_none());
+        assert!(app.notice.as_deref().is_some_and(|n| n.contains("leitura interrompida")));
+        assert!(!app.images.mermaid_held(), "libera os diagramas");
     }
 
     #[test]
@@ -937,6 +1278,13 @@ mod tests {
     }
 
     #[test]
+    fn barra_de_status_explica_que_as_teclas_pulam_de_titulo() {
+        let app = test_app(Source::Stdin, "# a");
+        let barra: String = app.status_line(120).spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(barra.contains("[ ] título"), "{barra}");
+    }
+
+    #[test]
     fn stream_sem_novidade_nao_redesenha() {
         let (_tx, rx) = std::sync::mpsc::channel::<String>();
         let mut app = test_app(Source::Stdin, "").with_stream(rx);
@@ -996,4 +1344,338 @@ mod tests {
         assert_eq!(app.name, "a.md");
         assert!(!app.dirty);
     }
+
+        fn tecla(app: &mut App, c: char) {
+            app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+
+        #[test]
+        fn v_alterna_as_vistas_do_json() {
+            let mut app = test_app(Source::Stdin, r#"[{"a":1}]"#);
+            app.doc.mode = cli::Mode::Json;
+            tecla(&mut app, 'v'); // Auto já era tabela: o próximo é o esquema
+            assert_eq!(app.doc.json_view, cli::JsonView::Schema);
+            assert!(app.dirty);
+            tecla(&mut app, 'v');
+            assert_eq!(app.doc.json_view, cli::JsonView::Text);
+            tecla(&mut app, 'v');
+            assert_eq!(app.doc.json_view, cli::JsonView::Table);
+        }
+
+        #[test]
+        fn v_em_json_que_nao_e_lista_comeca_pela_tabela() {
+            let mut app = test_app(Source::Stdin, r#"{"a":1}"#);
+            app.doc.mode = cli::Mode::Json;
+            tecla(&mut app, 'v');
+            assert_eq!(app.doc.json_view, cli::JsonView::Table);
+        }
+
+        #[test]
+        fn v_fora_do_modo_json_nao_faz_nada() {
+            let mut app = test_app(Source::Stdin, "# a");
+            app.dirty = false;
+            tecla(&mut app, 'v');
+            assert_eq!(app.doc.json_view, cli::JsonView::Auto);
+            assert!(!app.dirty);
+        }
+
+        #[test]
+        fn barra_mostra_a_vista_do_json_quando_escolhida() {
+            let mut app = test_app(Source::Stdin, r#"[{"a":1}]"#);
+            app.doc.mode = cli::Mode::Json;
+            tecla(&mut app, 'v');
+            assert!(app.status_left().contains("[esquema]"), "{}", app.status_left());
+        }
+
+        fn app_com_tabela(md: &str) -> App {
+            let mut app = test_app(Source::Stdin, md);
+            app.rerender(60);
+            app.view.height = 10;
+            app
+        }
+
+        fn ev(c: KeyCode) -> KeyEvent {
+            KeyEvent::new(c, KeyModifiers::NONE)
+        }
+
+        fn app_com_texto(md: &str) -> App {
+            let mut app = test_app(Source::Stdin, md);
+            app.rerender(60);
+            app.view.height = 10;
+            app
+        }
+
+        fn copiado(app: &App) -> Option<String> {
+            app.pending_osc.clone()
+        }
+
+        #[test]
+        fn rodape_mostra_o_andamento_das_tarefas_do_documento() {
+            let app = app_com_texto("- [x] a\n- [ ] b\n- [ ] c\n");
+            assert!(app.status_left().contains("☑ 1/3"), "{}", app.status_left());
+        }
+
+        #[test]
+        fn rodape_sem_tarefas_nao_mostra_contador() {
+            let app = app_com_texto("# A\n\ntexto\n");
+            assert!(!app.status_left().contains('☑'), "{}", app.status_left());
+        }
+
+        #[test]
+        fn rodape_acrescenta_a_secao_atual_quando_ela_tem_tarefas() {
+            let mut app = app_com_texto("# A\n\n- [x] a\n\n# B\n\n- [ ] b\n- [ ] c\n");
+            app.view.scroll = app.rendered.outline[1].line;
+            let s = app.status_left();
+            assert!(s.contains("☑ 1/3") && s.contains("(seção 0/2)"), "{s}");
+        }
+
+        #[test]
+        fn rodape_nao_repete_a_contagem_quando_a_secao_e_o_documento() {
+            let app = app_com_texto("# A\n\n- [x] a\n- [ ] b\n");
+            let s = app.status_left();
+            assert!(s.contains("☑ 1/2") && !s.contains("seção"), "{s}");
+        }
+
+        #[test]
+        fn rodape_com_tarefa_antes_do_primeiro_titulo_nao_quebra() {
+            let app = app_com_texto("- [x] solta\n\n# A\n\ntexto\n");
+            assert!(app.status_left().contains("☑ 1/1"));
+        }
+
+        #[test]
+        fn rodape_no_modo_fonte_nao_mostra_contador() {
+            let mut app = app_com_texto("- [x] a\n");
+            app.on_key(ev(KeyCode::Char('m')));
+            app.rerender(60);
+            assert!(!app.status_left().contains('☑'), "{}", app.status_left());
+        }
+
+        #[test]
+        fn y_copia_o_bloco_de_codigo_da_tela() {
+            let mut app = app_com_texto("texto\n\n```rust\nfn a() {}\n```\n");
+            app.on_key(ev(KeyCode::Char('y')));
+            assert_eq!(copiado(&app), Some(clip::osc52("fn a() {}\n").unwrap()));
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("copiado: 1 linha")), "{:?}", app.notice);
+        }
+
+        #[test]
+        fn y_sem_bloco_de_codigo_avisa_e_nao_copia() {
+            let mut app = app_com_texto("só texto\n");
+            app.on_key(ev(KeyCode::Char('y')));
+            assert_eq!(copiado(&app), None);
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("nenhum bloco de código")));
+        }
+
+        #[test]
+        fn y_em_json_nao_entra_em_panico_e_avisa() {
+            let mut app = test_app(Source::Stdin, r#"[{"a":1}]"#);
+            app.doc.mode = cli::Mode::Json;
+            app.rerender(60);
+            app.view.height = 10;
+            app.on_key(ev(KeyCode::Char('y')));
+            assert_eq!(copiado(&app), None);
+            assert!(app.notice.is_some());
+        }
+
+        #[test]
+        fn y_no_modo_fonte_copia_o_documento() {
+            let mut app = app_com_texto("# A\n\ntexto\n");
+            app.on_key(ev(KeyCode::Char('m')));
+            app.rerender(60);
+            app.on_key(ev(KeyCode::Char('y')));
+            assert_eq!(copiado(&app), Some(clip::osc52("# A\n\ntexto\n").unwrap()));
+        }
+
+        #[test]
+        fn y_maiusculo_copia_o_markdown_cru_da_secao() {
+            let mut app = app_com_texto("# A\n\ntexto\n\n## B\n\nb\n");
+            app.on_key(ev(KeyCode::Char('Y')));
+            assert_eq!(copiado(&app), Some(clip::osc52("# A\n\ntexto\n\n## B\n\nb\n").unwrap()));
+        }
+
+        #[test]
+        fn y_maiusculo_usa_a_secao_da_primeira_linha_visivel() {
+            let mut app = app_com_texto("# A\n\na\n\n# B\n\nb\n");
+            let b = app.rendered.outline[1].line;
+            app.view.scroll = b;
+            app.on_key(ev(KeyCode::Char('Y')));
+            assert_eq!(copiado(&app), Some(clip::osc52("# B\n\nb\n").unwrap()));
+        }
+
+        #[test]
+        fn y_maiusculo_sem_titulo_avisa_e_nao_copia() {
+            let mut app = app_com_texto("só texto\n");
+            app.on_key(ev(KeyCode::Char('Y')));
+            assert_eq!(copiado(&app), None);
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("nenhuma seção")));
+        }
+
+        #[test]
+        fn copia_maior_que_64_kib_nao_envia_nada() {
+            let md = format!("```\n{}\n```\n", "x".repeat(70 * 1024));
+            let mut app = app_com_texto(&md);
+            app.on_key(ev(KeyCode::Char('y')));
+            assert_eq!(copiado(&app), None);
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("grande demais (70 KiB)")), "{:?}", app.notice);
+        }
+
+        #[test]
+        fn ref_line_e_window_lines_seguem_a_rolagem() {
+            let mut app = app_com_texto(&"linha\n\n".repeat(30));
+            app.view.scroll = 7;
+            assert_eq!(app.ref_line(), 7);
+            assert_eq!(app.window_lines(), (7, 17));
+        }
+
+        const TABELA: &str = "| a | b |\n|---|---|\n| 1 | 2 |\n";
+
+        fn tabela_larga(n: usize) -> String {
+            let h: String = (1..=n).map(|i| format!(" c{i} |")).collect();
+            format!("|{h}\n|{}\n|{h}\n", "---|".repeat(n))
+        }
+
+        #[test]
+        fn t_abre_o_zoom_da_tabela_visivel() {
+            let mut app = app_com_tabela(TABELA);
+            assert!(!app.on_key(ev(KeyCode::Char('t'))));
+            assert_eq!(app.zoom.as_ref().map(|z| z.table), Some(0));
+        }
+
+        #[test]
+        fn t_sem_tabela_na_tela_avisa_e_nao_abre() {
+            let mut app = app_com_tabela("# só texto\n");
+            app.on_key(ev(KeyCode::Char('t')));
+            assert!(app.zoom.is_none());
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("nenhuma tabela")));
+            app.on_key(ev(KeyCode::Char('j')));
+            assert!(app.notice.is_none(), "o aviso some na próxima tecla");
+        }
+
+        #[test]
+        fn t_escolhe_a_tabela_que_aparece_na_tela() {
+            let md = format!("{TABELA}\n{}\n{TABELA}", "texto\n\n".repeat(30));
+            let mut app = app_com_tabela(&md);
+            let segunda = app.rendered.tables[1].start;
+            app.view.scroll = segunda.saturating_sub(1);
+            app.on_key(ev(KeyCode::Char('t')));
+            assert_eq!(app.zoom.as_ref().map(|z| z.table), Some(1));
+        }
+
+        #[test]
+        fn esc_e_q_fecham_o_zoom_sem_sair() {
+            for k in [KeyCode::Esc, KeyCode::Char('q'), KeyCode::Char('t')] {
+                let mut app = app_com_tabela(TABELA);
+                app.on_key(ev(KeyCode::Char('t')));
+                assert!(!app.on_key(ev(k)), "{k:?} no zoom só fecha");
+                assert!(app.zoom.is_none());
+            }
+        }
+
+        #[test]
+        fn ctrl_c_sai_mesmo_no_zoom() {
+            let mut app = app_com_tabela(TABELA);
+            app.on_key(ev(KeyCode::Char('t')));
+            assert!(app.on_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)));
+        }
+
+        #[test]
+        fn colunas_rolam_com_h_l_zero_e_cifrao() {
+            let mut app = app_com_tabela(&tabela_larga(12));
+            app.on_key(ev(KeyCode::Char('t')));
+            app.refresh_zoom(20);
+            let first = |app: &App| app.zoom.as_ref().unwrap().first_col;
+            assert_eq!(first(&app), 1);
+
+            app.on_key(ev(KeyCode::Char('l')));
+            app.refresh_zoom(20);
+            assert_eq!(first(&app), 2);
+
+            app.on_key(ev(KeyCode::Char('$')));
+            app.refresh_zoom(20);
+            let v = app.zoom.as_ref().unwrap().drawn.as_ref().map(|d| &d.2).unwrap();
+            assert_eq!(v.first_col + v.shown_cols - 1, v.total_cols);
+
+            app.on_key(ev(KeyCode::Right));
+            app.refresh_zoom(20);
+            let v = app.zoom.as_ref().unwrap().drawn.as_ref().map(|d| &d.2).unwrap();
+            assert_eq!(v.first_col + v.shown_cols - 1, v.total_cols, "não passa da última");
+
+            app.on_key(ev(KeyCode::Char('0')));
+            app.refresh_zoom(20);
+            assert_eq!(first(&app), 1);
+
+            app.on_key(ev(KeyCode::Left));
+            app.refresh_zoom(20);
+            assert_eq!(first(&app), 1, "não anda para antes da primeira");
+        }
+
+        #[test]
+        fn rolagem_vertical_do_zoom_nao_passa_do_fim() {
+            let linhas: String = (0..40).map(|i| format!("| {i} |\n")).collect();
+            let mut app = app_com_tabela(&format!("| n |\n|---|\n{linhas}"));
+            app.on_key(ev(KeyCode::Char('t')));
+            app.refresh_zoom(30);
+            app.on_key(ev(KeyCode::Char('G')));
+            let z = app.zoom.as_ref().unwrap();
+            assert!(z.view.scroll > 0);
+            app.on_key(ev(KeyCode::Char('g')));
+            assert_eq!(app.zoom.as_ref().unwrap().view.scroll, 0);
+        }
+
+        #[test]
+        fn recarregar_com_a_tabela_sumida_fecha_o_zoom() {
+            let mut app = app_com_tabela(TABELA);
+            app.on_key(ev(KeyCode::Char('t')));
+            app.md = "sem tabela\n".to_string();
+            app.rerender(60);
+            assert!(app.zoom.is_none());
+        }
+
+        #[test]
+        fn rerender_com_a_tabela_ainda_presente_mantem_o_zoom_e_refaz_o_desenho() {
+            let mut app = app_com_tabela(TABELA);
+            app.on_key(ev(KeyCode::Char('t')));
+            app.refresh_zoom(30);
+            app.rerender(60);
+            let z = app.zoom.as_ref().expect("continua aberto");
+            assert!(z.drawn.is_none(), "o cache do desenho é descartado");
+        }
+
+        #[test]
+        fn rotulo_de_colunas() {
+            let md = tabela_larga(12);
+            let out = render::render(&md, 20);
+            let data = &out.tables[0].data;
+            assert_eq!(columns_label(&data.draw(200, 0)), "todas as 12 colunas");
+            assert_eq!(columns_label(&data.draw(20, 0)), "colunas 1 e 2–3 de 12");
+            let so_uma = render::render("| a |\n|---|\n| 1 |\n", 20);
+            assert_eq!(columns_label(&so_uma.tables[0].data.draw(20, 0)), "1 coluna");
+        }
+
+        fn app_com_cli(args: &[&str], md: &str) -> App {
+            let cli = match cli::parse(args.iter().map(|s| s.to_string())) {
+                Ok(cli::Parsed::Run(c)) => c,
+                _ => panic!("cli de teste"),
+            };
+            App::new(Source::Stdin, md.to_string(), 80, &cli)
+        }
+
+        #[test]
+        fn table_n_abre_o_zoom_na_primeira_renderizacao() {
+            let md = format!("{TABELA}\ntexto\n\n{TABELA}");
+            let mut app = app_com_cli(&["--table", "2", "-"], &md);
+            app.rerender(60);
+            app.open_pending_table();
+            assert_eq!(app.zoom.as_ref().map(|z| z.table), Some(1));
+            assert!(app.open_table.is_none());
+        }
+
+        #[test]
+        fn table_alem_do_que_existe_avisa_e_nao_abre() {
+            let mut app = app_com_cli(&["--table", "5", "-"], TABELA);
+            app.rerender(60);
+            app.open_pending_table();
+            assert!(app.zoom.is_none());
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("tabela 5 não existe (há 1)")));
+        }
 }

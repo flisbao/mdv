@@ -36,3 +36,10 @@
 | 🦀 | Rust |
 | 🐍 | Python |
 | 日本語 | texto em japonês |
+
+## Célula longa
+
+| Arquivo | Descrição |
+|---|---|
+| `src/render.rs` | Máquina de estados sobre os eventos do pulldown-cmark: as linhas já saem quebradas na largura pedida, então quem consome não faz wrap. |
+| `https://example.com/um/caminho/muito/longo/sem/espacos/que/nao/cabe/na/coluna/index.html` | URL sem espaços quebra por caractere |

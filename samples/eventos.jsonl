@@ -1,0 +1,3 @@
+{"hora":"10:00:01","evento":"inicio","detalhe":{"agente":"planejador"}}
+{"hora":"10:00:07","evento":"ferramenta","detalhe":{"nome":"busca","ms":412}}
+{"hora":"10:00:09","evento":"fim","detalhe":{"ok":true}}

@@ -16,6 +16,7 @@ use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+use crate::mem;
 use crate::image::{halfblock, ImageState, ImageStore, MAX_IMAGE_COLS, MAX_IMAGE_ROWS};
 
 const H1: Color = Color::Rgb(210, 168, 255);
@@ -81,6 +82,127 @@ pub struct Rendered {
     pub headings: Vec<usize>,
     /// Títulos com nível e texto, para o `--toc`.
     pub outline: Vec<OutlineEntry>,
+        /// Tabelas desenhadas, em ordem, com o intervalo de linhas de cada uma (zoom `t`).
+        pub tables: Vec<TableSpan>,
+    /// Linha (0-based) do fonte onde cada linha renderizada começa. Vazio fora do Markdown.
+    pub line_src: Vec<usize>,
+    /// Blocos de código desenhados, em ordem.
+    pub code_blocks: Vec<CodeSpan>,
+    /// Itens de lista de tarefas, em ordem.
+    pub tasks: Vec<TaskItem>,
+}
+
+/// Bloco de código desenhado: linhas renderizadas `[start, end)` e o texto cru (já saneado).
+#[derive(Clone)]
+pub struct CodeSpan {
+    pub start: usize,
+    pub end: usize,
+    pub lang: String,
+    pub text: String,
+}
+
+/// Item de lista de tarefas e a linha renderizada onde ele começa.
+#[derive(Clone, Copy)]
+pub struct TaskItem {
+    pub line: usize,
+    pub done: bool,
+}
+
+impl Rendered {
+    /// Bloco de código sob a linha `top`; se não houver, o primeiro que cruza a janela `[top, bottom)`.
+    pub fn code_block_at(&self, top: usize, bottom: usize) -> Option<&CodeSpan> {
+        self.code_blocks
+            .iter()
+            .find(|c| c.start <= top && top < c.end)
+            .or_else(|| self.code_blocks.iter().find(|c| c.end > top && c.start < bottom))
+    }
+}
+
+/// Linhas renderizadas `[início, fim)` da seção `idx`: do título até o próximo de nível
+/// igual ou menor, ou até `total`.
+pub fn section_range(outline: &[OutlineEntry], idx: usize, total: usize) -> (usize, usize) {
+    let e = &outline[idx];
+    let end = outline[idx + 1..].iter().find(|n| n.level <= e.level).map_or(total, |n| n.line);
+    (e.line, end)
+}
+
+/// Tarefas feitas e total num trecho do documento.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+pub struct TaskCount {
+    pub done: usize,
+    pub total: usize,
+}
+
+/// Conta as tarefas cujas linhas estão em `[from, to)`.
+pub fn count_tasks(tasks: &[TaskItem], from: usize, to: usize) -> TaskCount {
+    let mut c = TaskCount::default();
+    for t in tasks.iter().filter(|t| t.line >= from && t.line < to) {
+        c.total += 1;
+        if t.done {
+            c.done += 1;
+        }
+    }
+    c
+}
+
+/// Tarefas da seção `idx`, contando as subseções.
+pub fn section_tasks(r: &Rendered, idx: usize) -> TaskCount {
+    let (start, end) = section_range(&r.outline, idx, r.lines.len());
+    count_tasks(&r.tasks, start, end)
+}
+
+/// Título mais profundo que começa em `line` ou antes (a seção que contém a linha).
+pub fn section_at(outline: &[OutlineEntry], line: usize) -> Option<usize> {
+    outline.iter().rposition(|e| e.line <= line)
+}
+
+/// Markdown cru da seção `idx` (com o título), fatiado do fonte pelo mapa `line_src`.
+pub fn section_source(md: &str, r: &Rendered, idx: usize) -> Option<String> {
+    if idx >= r.outline.len() || r.line_src.len() != r.lines.len() {
+        return None;
+    }
+    let (start, end) = section_range(&r.outline, idx, r.lines.len());
+    let first = *r.line_src.get(start)?;
+    let last = r.line_src.get(end).copied().unwrap_or_else(|| md.lines().count());
+    let body: Vec<&str> = md.lines().skip(first).take(last.saturating_sub(first)).collect();
+    let mut text = body.join("\n").trim_end().to_string();
+    text.push('\n');
+    Some(text)
+}
+
+/// Converte offsets de byte (crescentes) em número de linha, contando `\n` de forma incremental.
+#[derive(Default)]
+struct LineCursor {
+    pos: usize,
+    line: usize,
+}
+
+impl LineCursor {
+    fn line_at(&mut self, md: &str, off: usize) -> usize {
+        if off < self.pos {
+            *self = LineCursor::default();
+        }
+        let off = off.min(md.len());
+        self.line += md.as_bytes()[self.pos..off].iter().filter(|&&b| b == b'\n').count();
+        self.pos = off;
+        self.line
+    }
+}
+
+/// Início de um bloco que tem linha própria no fonte.
+fn starts_source_block(tag: &Tag<'_>) -> bool {
+    matches!(
+        tag,
+        Tag::Paragraph
+            | Tag::Heading { .. }
+            | Tag::BlockQuote(_)
+            | Tag::CodeBlock(_)
+            | Tag::List(_)
+            | Tag::Item
+            | Tag::Table(_)
+            | Tag::HtmlBlock
+            | Tag::FootnoteDefinition(_)
+    )
 }
 
 #[allow(dead_code)] // `line` será usado pela navegação do sumário
@@ -90,11 +212,55 @@ pub struct OutlineEntry {
     pub title: String,
 }
 
+/// Tabela guardada para ser desenhada de novo em outra largura (zoom).
+#[derive(Clone)]
+pub struct TableData {
+    rows: Vec<Vec<Vec<Piece>>>,
+    aligns: Vec<Alignment>,
+    has_header: bool,
+}
+
+/// Onde uma tabela está em `Rendered.lines` (`start..end`) e como redesenhá-la.
+pub struct TableSpan {
+    pub start: usize,
+    pub end: usize,
+    pub data: TableData,
+}
+
+/// Tabela desenhada numa largura: as linhas, quantas ficam fixas no topo e quais colunas aparecem.
+pub struct TableView {
+    pub lines: Vec<Line<'static>>,
+    /// Linhas fixas no topo (borda, cabeçalho e separador; só a borda sem cabeçalho).
+    pub pinned: usize,
+    /// Índice (0-based) da primeira coluna rolável mostrada, já limitado ao intervalo válido.
+    pub first_col: usize,
+    /// Colunas desenhadas, contando a primeira (fixa).
+    pub shown_cols: usize,
+    pub total_cols: usize,
+}
+
+impl TableData {
+    pub fn total_cols(&self) -> usize {
+        self.rows.iter().map(Vec::len).max().unwrap_or(0)
+    }
+
+    /// Desenha a tabela em `width` colunas, sem recuo. A coluna 0 fica sempre;
+    /// as demais começam em `first_col`.
+    pub fn draw(&self, width: usize, first_col: usize) -> TableView {
+        layout_table(self, &[], &[], width, first_col)
+    }
+}
+
 /// Índice dos títulos, um por linha, indentado conforme o nível.
 pub fn toc(r: &Rendered) -> String {
     let mut out = String::new();
-    for e in &r.outline {
-        let _ = writeln!(out, "{}{}", "  ".repeat(usize::from(e.level.saturating_sub(1))), e.title);
+    for (i, e) in r.outline.iter().enumerate() {
+        let _ = write!(out, "{}{}", "  ".repeat(usize::from(e.level.saturating_sub(1))), e.title);
+        let c = section_tasks(r, i);
+        if c.total > 0 {
+            let _ = write!(out, " [{}/{}]", c.done, c.total);
+        }
+        out.push('\n');
     }
     out
 }
@@ -103,7 +269,7 @@ pub fn toc(r: &Rendered) -> String {
 pub fn render_code_only(code: &str, lang: &str, width: usize) -> Rendered {
     let mut r = Renderer::new(width, None);
     r.render_code(&CodeBlock { lang: lang.to_string(), buf: sanitize(code).into_owned() });
-    r.out
+    memory_error().unwrap_or(r.out)
 }
 
 /// Desenha só uma tabela já em células de texto (CSV/TSV); `header` estiliza a primeira linha.
@@ -127,8 +293,13 @@ pub fn render_table_only(
         })
         .collect();
     let mut r = Renderer::new(width, None);
-    r.render_table(&TableBuilder { aligns, rows, cur: Vec::new(), has_header: header, in_head: false });
-    r.out
+        r.render_table(TableBuilder { aligns, rows, cur: Vec::new(), has_header: header, in_head: false });
+    memory_error().unwrap_or(r.out)
+}
+
+/// Erro de memória como documento, se o limite foi passado.
+pub fn memory_error() -> Option<Rendered> {
+    mem::check().err().map(|e| error_rendered(&e.to_string()))
 }
 
 /// Uma linha vermelha com a mensagem de erro (saneada).
@@ -180,17 +351,40 @@ pub fn render(md: &str, width: usize) -> Rendered {
     render_with(md, &RenderOpts { width, images: None })
 }
 
-pub fn render_with(md: &str, opts: &RenderOpts) -> Rendered {
+/// Opções do `pulldown-cmark` usadas em todo o programa (renderização e extração veem a mesma estrutura).
+pub(crate) fn parse_options() -> Options {
     // `ENABLE_MATH` fica de fora de propósito: textos de LLM com `$5 e $10` seriam lidos como fórmula.
-    let parse_opts = Options::ENABLE_TABLES
+    Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_FOOTNOTES
         | Options::ENABLE_GFM
-        | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS;
+        | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS
+}
+
+pub fn render_with(md: &str, opts: &RenderOpts) -> Rendered {
+    let parse_opts = parse_options();
+    if let Err(e) = mem::check_parse(md.len()) {
+        return error_rendered(&e.to_string());
+    }
     let mut r = Renderer::new(opts.width, opts.images);
-    for ev in Parser::new_ext(md, parse_opts) {
+    let mut cursor = LineCursor::default();
+    for (ev, range) in Parser::new_ext(md, parse_opts).into_offset_iter() {
+        // `Rule` e HTML geram linhas no próprio evento; um `Start` só vale para o que vem depois,
+        // senão o texto do item pai (descarregado ao abrir uma sublista) herdaria a linha do filho.
+        let before = matches!(ev, Event::Rule | Event::Html(_));
+        let after = matches!(&ev, Event::Start(t) if starts_source_block(t));
+        if before {
+            r.src_line = cursor.line_at(md, range.start);
+        }
         r.handle(sanitize_event(ev));
+        r.out.line_src.resize(r.out.lines.len(), r.src_line);
+        if after {
+            r.src_line = cursor.line_at(md, range.start);
+        }
+        if let Some(err) = memory_error() {
+            return err;
+        }
     }
     r.finish()
 }
@@ -198,7 +392,7 @@ pub fn render_with(md: &str, opts: &RenderOpts) -> Rendered {
 /// Ponto único de entrada do texto do documento: troca caracteres de controle
 /// (ESC, BEL, C1, `\r` solto...) por U+FFFD, para que nada do Markdown vire
 /// comando de terminal. Preserva `\n` e `\t`; `\r\n` vira `\n`.
-fn sanitize(s: &str) -> Cow<'_, str> {
+pub(crate) fn sanitize(s: &str) -> Cow<'_, str> {
     let is_unsafe = |c: char| c.is_control() && c != '\n' && c != '\t';
     if !s.contains(is_unsafe) {
         return Cow::Borrowed(s);
@@ -520,6 +714,7 @@ struct Renderer<'a> {
     images: Option<&'a ImageStore>,
     image: Option<ImageCtx>,
     think: usize,
+    src_line: usize,
 }
 
 impl<'a> Renderer<'a> {
@@ -528,6 +723,7 @@ impl<'a> Renderer<'a> {
             images,
             image: None,
             think: 0,
+            src_line: 0,
             width: clamp_width(width),
             out: Rendered::default(),
             inline: InlineBuffer::default(),
@@ -544,6 +740,8 @@ impl<'a> Renderer<'a> {
         while self.out.lines.last().is_some_and(is_blank) {
             self.out.lines.pop();
         }
+        let n = self.out.lines.len();
+        self.out.line_src.resize(n, self.src_line);
         self.out
     }
 
@@ -565,7 +763,10 @@ impl<'a> Renderer<'a> {
             Event::SoftBreak => self.inline.push_text(" "),
             Event::HardBreak => self.inline.push(Piece::Break),
             Event::Rule => self.rule(),
-            Event::TaskListMarker(done) => self.lists.set_task_marker(done),
+            Event::TaskListMarker(done) => {
+                self.out.tasks.push(TaskItem { line: self.out.lines.len(), done });
+                self.lists.set_task_marker(done);
+            }
             Event::Html(h) => self.html_block(&h),
             Event::InlineHtml(h) => match think_tags(&h) {
                 Some(tl) => self.think_tag(tl.opens, tl.closes),
@@ -757,7 +958,7 @@ impl<'a> Renderer<'a> {
             }
             TagEnd::Table => {
                 if let Some(t) = self.table.take() {
-                    self.render_table(&t);
+                    self.render_table(t);
                 }
                 self.push_blank();
             }
@@ -972,12 +1173,16 @@ impl<'a> Renderer<'a> {
         let avail = self.width.saturating_sub(spans_width(&cont) + 2).max(MIN_BODY_WIDTH);
         let dim = Style::default().fg(DIM);
 
+        let start = self.out.lines.len();
         let header = if label.is_empty() { "╭─".to_string() } else { format!("╭─ {label}") };
         let mut v = first;
         v.push(Span::styled(header, dim));
         self.out.lines.push(Line::from(v));
 
         for line in LinesWithEndings::from(&block.buf) {
+            if mem::exceeded() {
+                break;
+            }
             let pieces: Vec<Styled> = match h.highlight_line(line, ss) {
                 Ok(regions) => regions
                     .iter()
@@ -1007,50 +1212,95 @@ impl<'a> Renderer<'a> {
         let mut v = cont;
         v.push(Span::styled("╰─", dim));
         self.out.lines.push(Line::from(v));
+        self.out.code_blocks.push(CodeSpan {
+            start,
+            end: self.out.lines.len(),
+            lang: block.lang.clone(),
+            text: block.buf.clone(),
+        });
     }
 
-    fn render_table(&mut self, t: &TableBuilder) {
-        let (first, cont) = self.prefixes();
-        let avail = self.width.saturating_sub(spans_width(&cont));
-        let total_cols = t.rows.iter().map(Vec::len).max().unwrap_or(0);
-        if total_cols == 0 {
-            return;
-        }
-        self.take_marker();
-        // Colunas além do que cabe (cada uma precisa de MIN_COL_WIDTH + borda) são omitidas.
-        let ncols = total_cols.min((avail.saturating_sub(1) / (CELL_OVERHEAD + MIN_COL_WIDTH)).max(1));
-        let hidden = total_cols - ncols;
-        let widths = compute_column_widths(&natural_widths(&t.rows, ncols), avail);
-
-        let mut out: Vec<Line<'static>> = vec![table_border(&first, &widths, ["┌", "┬", "┐"])];
-        for (ri, row) in t.rows.iter().enumerate() {
-            out.push(draw_table_row(&cont, row, &widths, &t.aligns));
-            if ri == 0 && t.has_header {
-                out.push(table_border(&cont, &widths, ["├", "┼", "┤"]));
+        fn render_table(&mut self, t: TableBuilder) {
+            let (first, cont) = self.prefixes();
+            let avail = self.width.saturating_sub(spans_width(&cont));
+            let data = TableData { rows: t.rows, aligns: t.aligns, has_header: t.has_header };
+            if data.total_cols() == 0 {
+                return;
             }
+            self.take_marker();
+            let view = layout_table(&data, &first, &cont, avail, 0);
+            let start = self.out.lines.len();
+            let end = start + view.lines.len();
+            self.out.lines.extend(view.lines);
+            self.out.tables.push(TableSpan { start, end, data });
         }
-        out.push(table_border(&cont, &widths, ["└", "┴", "┘"]));
-        if hidden > 0 {
-            let note = [Piece::Text(format!("… +{hidden} colunas"), Style::default().fg(DIM))];
-            let mut v = cont;
-            v.extend(fit(&note, avail).0);
-            out.push(Line::from(v));
+}
+
+/// Desenha a tabela em `avail` colunas. A coluna 0 fica sempre; as colunas roláveis mostradas
+/// começam em `first_col` (limitado para a última coluna caber no máximo). Colunas que não
+/// cabem (cada uma precisa de `MIN_COL_WIDTH` mais a borda) ficam de fora e são contadas no aviso.
+fn layout_table(
+    t: &TableData,
+    first: &[Span<'static>],
+    cont: &[Span<'static>],
+    avail: usize,
+    first_col: usize,
+) -> TableView {
+    let total = t.total_cols();
+    let fit_cols = (avail.saturating_sub(1) / (CELL_OVERHEAD + MIN_COL_WIDTH)).max(1);
+    let shown = total.min(fit_cols);
+    let scrollable = shown.saturating_sub(1);
+    let first_col = if total <= shown {
+        usize::from(total > 1)
+    } else {
+        first_col.clamp(1, total - scrollable)
+    };
+    let idx: Vec<usize> = std::iter::once(0).chain(first_col..first_col + scrollable).collect();
+    let aligns: Vec<Alignment> =
+        idx.iter().map(|&c| t.aligns.get(c).copied().unwrap_or(Alignment::None)).collect();
+    let widths = compute_column_widths(&natural_widths(&t.rows, &idx), avail);
+
+    let mut lines: Vec<Line<'static>> = vec![table_border(first, &widths, ["┌", "┬", "┐"])];
+    let mut pinned = 1;
+    for (ri, row) in t.rows.iter().enumerate() {
+        if mem::exceeded() {
+            break;
         }
-        self.out.lines.extend(out);
+        let cells: Vec<&[Piece]> =
+            idx.iter().map(|&c| row.get(c).map_or(&[][..], Vec::as_slice)).collect();
+        let drawn = draw_table_row(cont, &cells, &widths, &aligns);
+        let is_head = ri == 0 && t.has_header;
+        if is_head {
+            pinned += drawn.len() + 1;
+        }
+        lines.extend(drawn);
+        if is_head {
+            lines.push(table_border(cont, &widths, ["├", "┼", "┤"]));
+        }
     }
+    lines.push(table_border(cont, &widths, ["└", "┴", "┘"]));
+    let hidden = total - shown;
+    if hidden > 0 {
+        let note = [Piece::Text(format!("… +{hidden} colunas"), Style::default().fg(DIM))];
+        let mut v = cont.to_vec();
+        v.extend(fit(&note, avail).0);
+        lines.push(Line::from(v));
+    }
+    TableView { lines, pinned, first_col, shown_cols: shown, total_cols: total }
 }
 
 fn spans_width(spans: &[Span<'_>]) -> usize {
     spans.iter().map(|s| s.content.width()).sum()
 }
 
-/// Maior largura de conteúdo de cada uma das `ncols` primeiras colunas (mínimo 1).
-fn natural_widths(rows: &[Vec<Vec<Piece>>], ncols: usize) -> Vec<usize> {
-    let mut natural = vec![1usize; ncols];
+/// Maior largura de conteúdo de cada coluna de `idx` (mínimo 1).
+fn natural_widths(rows: &[Vec<Vec<Piece>>], idx: &[usize]) -> Vec<usize> {
+    let mut natural = vec![1usize; idx.len()];
     for row in rows {
-        for (i, cell) in row.iter().take(ncols).enumerate() {
-            let w: usize = cell.iter().map(Piece::width).sum();
-            natural[i] = natural[i].max(w);
+        for (n, &c) in natural.iter_mut().zip(idx) {
+            if let Some(cell) = row.get(c) {
+                *n = (*n).max(cell.iter().map(Piece::width).sum());
+            }
         }
     }
     natural
@@ -1069,31 +1319,41 @@ fn table_border(prefix: &[Span<'static>], widths: &[usize], corners: [&str; 3]) 
     Line::from(v)
 }
 
-/// Linha de dados da tabela com cada célula truncada e alinhada à sua coluna.
+/// Linhas de dados da tabela: cada célula é quebrada na largura da sua coluna e alinhada;
+/// a linha da tabela tem a altura da maior célula.
 fn draw_table_row(
     prefix: &[Span<'static>],
-    row: &[Vec<Piece>],
+    row: &[&[Piece]],
     widths: &[usize],
     aligns: &[Alignment],
-) -> Line<'static> {
+) -> Vec<Line<'static>> {
     let dim = Style::default().fg(DIM);
-    let mut v = prefix.to_vec();
-    v.push(Span::styled("│", dim));
-    for (c, &width) in widths.iter().enumerate() {
-        let cell = row.get(c).map_or(&[][..], Vec::as_slice);
-        let (spans, w) = fit(cell, width);
-        let pad = width.saturating_sub(w);
-        let (lead, trail) = match aligns.get(c).copied().unwrap_or(Alignment::None) {
-            Alignment::Right => (pad, 0),
-            Alignment::Center => (pad / 2, pad - pad / 2),
-            _ => (0, pad),
-        };
-        v.push(Span::raw(format!(" {}", " ".repeat(lead))));
-        v.extend(spans);
-        v.push(Span::raw(format!("{} ", " ".repeat(trail))));
-        v.push(Span::styled("│", dim));
-    }
-    Line::from(v)
+    let cells: Vec<Vec<(Vec<Span<'static>>, usize)>> = widths
+        .iter()
+        .enumerate()
+                .map(|(c, &width)| wrap_cell(row.get(c).copied().unwrap_or(&[]), width))
+        .collect();
+    let height = cells.iter().map(Vec::len).max().unwrap_or(1);
+    (0..height)
+        .map(|li| {
+            let mut v = prefix.to_vec();
+            v.push(Span::styled("│", dim));
+            for (c, &width) in widths.iter().enumerate() {
+                let (spans, w) = cells[c].get(li).cloned().unwrap_or_default();
+                let pad = width.saturating_sub(w);
+                let (lead, trail) = match aligns.get(c).copied().unwrap_or(Alignment::None) {
+                    Alignment::Right => (pad, 0),
+                    Alignment::Center => (pad / 2, pad - pad / 2),
+                    _ => (0, pad),
+                };
+                v.push(Span::raw(format!(" {}", " ".repeat(lead))));
+                v.extend(spans);
+                v.push(Span::raw(format!("{} ", " ".repeat(trail))));
+                v.push(Span::styled("│", dim));
+            }
+            Line::from(v)
+        })
+        .collect()
 }
 
 /// Largura de borda e preenchimento por coluna (`│ ` + ` `) mais a borda final.
@@ -1136,6 +1396,75 @@ fn largest_cap_within(mut lo: usize, mut hi: usize, budget: usize, sum: impl Fn(
         }
     }
     lo
+}
+
+/// Teto de linhas por célula de tabela; o que passa disso termina em "…".
+const MAX_CELL_LINES: usize = 8;
+
+/// Mesma natureza de `piece` (texto ou código) com outro conteúdo; `Break` vira espaço.
+fn with_text(piece: &Piece, text: String) -> Piece {
+    match piece {
+        Piece::Code(_, st) => Piece::Code(text, *st),
+        Piece::Text(_, st) => Piece::Text(text, *st),
+        Piece::Break => Piece::Text(text, Style::default()),
+    }
+}
+
+/// Mantém só os primeiros `budget` colunas da célula; o `bool` diz se algo foi cortado.
+/// Evita quebrar em linhas um texto de milhões de caracteres que só mostraria `MAX_CELL_LINES`.
+fn clip_pieces(cell: &[Piece], budget: usize) -> (Vec<Piece>, bool) {
+    let mut used = 0;
+    let mut out = Vec::new();
+    for piece in cell {
+        let text = piece.as_text().0;
+        let room = budget - used;
+        let w = text.width();
+        if w <= room {
+            out.push(with_text(piece, text.to_string()));
+            used += w;
+            continue;
+        }
+        let mut buf = String::new();
+        let mut taken = 0;
+        for ch in text.chars() {
+            let cw = ch.width().unwrap_or(0);
+            if taken + cw > room {
+                break;
+            }
+            buf.push(ch);
+            taken += cw;
+        }
+        if !buf.is_empty() {
+            out.push(with_text(piece, buf));
+        }
+        return (out, true);
+    }
+    (out, false)
+}
+
+/// Quebra a célula em linhas de até `w` colunas (no máximo `MAX_CELL_LINES`), cada uma com a
+/// sua largura. Se sobrar texto, a última linha termina em "…".
+fn wrap_cell(cell: &[Piece], w: usize) -> Vec<(Vec<Span<'static>>, usize)> {
+    let w = w.max(1);
+    let (pieces, clipped) = clip_pieces(cell, w.saturating_mul(MAX_CELL_LINES));
+    let mut lines = wrap(&pieces, w);
+    let overflow = lines.len() > MAX_CELL_LINES;
+    lines.truncate(MAX_CELL_LINES);
+    if overflow || clipped {
+        let last = lines.pop().unwrap_or_default();
+        let style = last.last().map_or_else(Style::default, |s| s.style);
+        let mut ps: Vec<Piece> =
+            last.iter().map(|s| Piece::Text(s.content.to_string(), s.style)).collect();
+        ps.push(Piece::Text("…".to_string(), style));
+        lines.push(fit(&ps, w).0);
+    }
+    lines
+        .into_iter()
+        .map(|spans| {
+            let n = spans_width(&spans);
+            (spans, n)
+        })
+        .collect()
 }
 
 fn clean_code(s: &str) -> String {
@@ -1500,6 +1829,10 @@ mod tests {
         rendered_text_at(md, 80)
     }
 
+        fn line_to_string(l: &Line<'_>) -> String {
+            l.spans.iter().map(|s| s.content.as_ref()).collect()
+        }
+
     fn rendered_text_at(md: &str, width: usize) -> Vec<String> {
         render(md, width)
             .lines
@@ -1590,6 +1923,93 @@ mod tests {
         assert_fits(&format!("{header}{sep}{row}"), 20);
         assert_fits(&format!("> {header}> {sep}> {row}"), 20);
     }
+
+        const FRASE_LONGA: &str = "uma descricao bem longa que precisa quebrar em varias linhas dentro da celula";
+
+        fn tabela_de_uma_celula(texto: &str, alinhamento: &str) -> String {
+            format!("| titulo |\n|{alinhamento}|\n| {texto} |\n")
+        }
+
+        #[test]
+        fn celula_longa_quebra_em_varias_linhas() {
+            let md = format!("| nome | descricao |\n|---|---|\n| a | {FRASE_LONGA} |\n");
+            let lines = rendered_text_at(&md, 40);
+            let junto = lines.join("\n");
+            assert!(!junto.contains('…'), "não deve truncar: {junto}");
+            for palavra in FRASE_LONGA.split(' ') {
+                assert!(junto.contains(palavra), "faltou {palavra:?}: {junto}");
+            }
+            // borda, cabeçalho, separador, 3+ linhas de dado, borda
+            assert!(lines.len() >= 7, "{lines:?}");
+            assert_fits(&md, 40);
+        }
+
+        #[test]
+        fn palavra_maior_que_a_coluna_quebra_por_caractere() {
+            let md = tabela_de_uma_celula(&"x".repeat(100), "---");
+            let junto = rendered_text_at(&md, 30).join("");
+            assert_eq!(junto.matches('x').count(), 100, "{junto}");
+            assert_fits(&md, 30);
+        }
+
+        #[test]
+        fn teto_de_linhas_termina_com_reticencias() {
+            let md = tabela_de_uma_celula(&"palavra ".repeat(200), "---");
+            let lines = rendered_text_at(&md, 30);
+            let dados: Vec<&String> = lines.iter().filter(|l| l.contains("palavra") || l.contains('…')).collect();
+            assert_eq!(dados.len(), MAX_CELL_LINES, "{lines:?}");
+            assert!(dados.last().unwrap().contains('…'), "{dados:?}");
+            assert!(dados[..MAX_CELL_LINES - 1].iter().all(|l| !l.contains('…')), "{dados:?}");
+        }
+
+        #[test]
+        fn celula_enorme_respeita_o_teto() {
+            let md = tabela_de_uma_celula(&"x".repeat(500), "---");
+            let lines = rendered_text_at(&md, 30);
+            let dados: Vec<&String> = lines.iter().filter(|l| l.contains('x')).collect();
+            assert_eq!(dados.len(), MAX_CELL_LINES, "{lines:?}");
+            assert!(dados.last().unwrap().contains('…'), "{dados:?}");
+        }
+
+        #[test]
+        fn alinhamento_a_direita_vale_em_cada_linha_da_celula() {
+            let md = tabela_de_uma_celula("1234567890 1234567890", "--:");
+            let lines = rendered_text_at(&md, 20);
+            let dados: Vec<&String> = lines.iter().filter(|l| l.contains("1234567890")).collect();
+            assert_eq!(dados.len(), 2, "{lines:?}");
+            assert!(dados.iter().all(|l| l.ends_with("1234567890 │")), "{dados:?}");
+        }
+
+        #[test]
+        fn todas_as_linhas_da_tabela_tem_a_mesma_largura() {
+            let md = format!(
+                "| a | b | c |\n|:--|:-:|--:|\n| {FRASE_LONGA} | 世界世界世界世界 | |\n| x | y | z |\n"
+            );
+            let larguras: std::collections::HashSet<usize> =
+                render(&md, 40).lines.iter().filter(|l| !l.spans.is_empty()).map(Line::width).collect();
+            assert_eq!(larguras.len(), 1, "{larguras:?}");
+        }
+
+        #[test]
+        fn celula_com_estilo_mantem_o_estilo_apos_quebrar() {
+            let md = tabela_de_uma_celula("**negrito comprido que quebra** fim", "---");
+            let out = render(&md, 20);
+            let negrito = out
+                .lines
+                .iter()
+                .flat_map(|l| l.spans.iter())
+                .filter(|s| s.style.add_modifier.contains(Modifier::BOLD) && s.content.contains("negrito"))
+                .count();
+            assert!(negrito >= 1);
+        }
+
+        #[test]
+        fn tabela_so_de_dados_quebra_celula_longa() {
+            let rows = vec![vec!["id".to_string(), FRASE_LONGA.to_string()]];
+            let out = render_table_only(rows, false, vec![Alignment::Left; 2], 30);
+            let junto: String = out.lines.iter().map(line_to_string).collect::<Vec<_>>().join("\n");
+            assert!(junto.contains("celula") && !junto.contains('…'), "{junto}");
+        }
 
     #[test]
     fn tabela_com_colunas_ocultas_avisa() {
@@ -1838,6 +2258,64 @@ mod tests {
         assert!(t.contains("# a") && t.contains("**b**") && t.contains("md"), "{t}");
     }
 
+    fn todas(r: &Rendered) -> TaskCount {
+        count_tasks(&r.tasks, 0, usize::MAX)
+    }
+
+    #[test]
+    fn conta_tarefas_em_lista_aninhada() {
+        let r = render("- [x] a\n- [ ] b\n  - [x] c\n", 40);
+        assert_eq!(todas(&r), TaskCount { done: 2, total: 3 });
+    }
+
+    #[test]
+    fn conta_tarefa_marcada_dentro_de_citacao() {
+        let r = render("> - [x] q\n> - [ ] w\n", 40);
+        assert_eq!(todas(&r), TaskCount { done: 1, total: 2 });
+    }
+
+    #[test]
+    fn nao_conta_colchetes_em_codigo_nem_em_texto_corrido() {
+        let r = render("```\n- [x] falso\n```\n\ntexto [ ] solto\n\n[x] sem lista\n", 40);
+        assert_eq!(todas(&r), TaskCount::default());
+    }
+
+    #[test]
+    fn count_tasks_usa_intervalo_fechado_aberto() {
+        let tasks = [TaskItem { line: 2, done: true }, TaskItem { line: 5, done: false }];
+        assert_eq!(count_tasks(&tasks, 2, 5), TaskCount { done: 1, total: 1 });
+        assert_eq!(count_tasks(&tasks, 2, 6), TaskCount { done: 1, total: 2 });
+        assert_eq!(count_tasks(&tasks, 3, 5), TaskCount::default());
+    }
+
+    #[test]
+    fn secao_sem_tarefas_conta_zero() {
+        let r = render("# A\n\n- [x] a\n\n# B\n\ntexto\n", 40);
+        assert_eq!(section_tasks(&r, 0), TaskCount { done: 1, total: 1 });
+        assert_eq!(section_tasks(&r, 1), TaskCount::default());
+    }
+
+    #[test]
+    fn contagem_do_titulo_inclui_as_subsecoes() {
+        let r = render("# A\n\n- [x] a\n\n## B\n\n- [ ] b\n\n## C\n\n- [x] c\n", 40);
+        assert_eq!(section_tasks(&r, 0), TaskCount { done: 2, total: 3 });
+        assert_eq!(section_tasks(&r, 1), TaskCount { done: 0, total: 1 });
+        assert_eq!(section_tasks(&r, 2), TaskCount { done: 1, total: 1 });
+    }
+
+    #[test]
+    fn tarefa_antes_do_primeiro_titulo_conta_so_no_documento() {
+        let r = render("- [x] solta\n\n# A\n\ntexto\n", 40);
+        assert_eq!(todas(&r), TaskCount { done: 1, total: 1 });
+        assert_eq!(section_tasks(&r, 0), TaskCount::default());
+    }
+
+    #[test]
+    fn toc_acrescenta_a_contagem_aos_titulos_com_tarefas() {
+        let r = render("# A\n\n- [x] a\n\n## B\n\n- [ ] b\n\n# C\n\ntexto\n", 40);
+        assert_eq!(toc(&r), "A [1/2]\n  B [0/1]\nC\n");
+    }
+
     #[test]
     fn toc_indenta_por_nivel() {
         let r = render("# A\n\n## B\n\n### C\n\n## D", 40);
@@ -1882,5 +2360,219 @@ mod tests {
     fn sem_store_mantem_comportamento_antigo() {
         let t = joined_text(&render("![logo](a.png)", 40));
         assert_eq!(t.trim(), "[imagem: logo]");
+    }
+
+        fn tabela_de_n_colunas(n: usize) -> String {
+            let header: String = (1..=n).map(|i| format!(" c{i} |")).collect();
+            let sep = "---|".repeat(n);
+            let row: String = (1..=n).map(|i| format!(" v{i} |")).collect();
+            format!("|{header}\n|{sep}\n|{row}\n")
+        }
+
+        #[test]
+        fn render_registra_o_intervalo_de_cada_tabela() {
+            let md = "antes\n\n| x | y |\n|---|---|\n| 1 | 2 |\n\ndepois\n";
+            let out = render(md, 40);
+            assert_eq!(out.tables.len(), 1);
+            let t = &out.tables[0];
+            assert!(line_to_string(&out.lines[t.start]).starts_with('┌'));
+            assert!(line_to_string(&out.lines[t.end - 1]).starts_with('└'));
+            assert_eq!(t.data.total_cols(), 2);
+        }
+
+        #[test]
+        fn tabela_em_citacao_e_lista_registra_o_intervalo_com_recuo() {
+            let out = render("> | x |\n> |---|\n> | 1 |\n", 40);
+            assert_eq!(out.tables.len(), 1);
+            let t = &out.tables[0];
+            assert!(line_to_string(&out.lines[t.start]).contains('┌'));
+            let out = render("- item\n\n  | x |\n  |---|\n  | 1 |\n", 40);
+            assert_eq!(out.tables.len(), 1);
+            assert!(out.tables[0].end <= out.lines.len());
+        }
+
+        #[test]
+        fn duas_tabelas_ficam_em_ordem_e_sem_sobreposicao() {
+            let md = "| a |\n|---|\n| 1 |\n\ntexto\n\n| b |\n|---|\n| 2 |\n";
+            let out = render(md, 40);
+            assert_eq!(out.tables.len(), 2);
+            assert!(out.tables[0].end <= out.tables[1].start);
+        }
+
+        #[test]
+        fn render_table_only_registra_a_tabela() {
+            let out = render_table_only(vec![vec!["a".into(), "b".into()]], false, vec![Alignment::Left; 2], 40);
+            assert_eq!(out.tables.len(), 1);
+            assert_eq!((out.tables[0].start, out.tables[0].end), (0, out.lines.len()));
+        }
+
+        #[test]
+        fn draw_nao_tem_recuo_e_fixa_cabecalho() {
+            let out = render("> | x | y |\n> |---|---|\n> | 1 | 2 |\n", 40);
+            let v = out.tables[0].data.draw(40, 0);
+            assert!(line_to_string(&v.lines[0]).starts_with('┌'), "sem o '▎ ' da citação");
+            assert_eq!(v.pinned, 3, "borda, cabeçalho e separador");
+            assert_eq!((v.first_col, v.shown_cols, v.total_cols), (1, 2, 2));
+        }
+
+        #[test]
+        fn draw_sem_cabecalho_fixa_so_a_borda() {
+            let out = render_table_only(vec![vec!["a".into()]], false, vec![Alignment::Left], 40);
+            assert_eq!(out.tables[0].data.draw(40, 0).pinned, 1);
+        }
+
+        #[test]
+        fn draw_com_uma_coluna_nao_estoura_o_indice() {
+            let out = render("| só |\n|---|\n| 1 |\n", 40);
+            let v = out.tables[0].data.draw(20, usize::MAX);
+            assert_eq!((v.first_col, v.shown_cols, v.total_cols), (0, 1, 1));
+        }
+
+        #[test]
+        fn draw_rola_por_coluna_e_mantem_a_primeira() {
+            let out = render(&tabela_de_n_colunas(12), 20);
+            let data = &out.tables[0].data;
+
+            let v = data.draw(20, 0);
+            assert_eq!((v.first_col, v.shown_cols), (1, 3));
+            let cab = line_to_string(&v.lines[1]);
+            assert!(cab.contains("│ c1 ") && cab.contains("c2"), "{cab}");
+            assert!(line_to_string(v.lines.last().unwrap()).contains("+9 colunas"));
+
+            let v = data.draw(20, 5);
+            assert_eq!(v.first_col, 5);
+            let cab = line_to_string(&v.lines[1]);
+            assert!(cab.contains("│ c1 ") && cab.contains("c6") && !cab.contains("c2 "), "{cab}");
+
+            let v = data.draw(20, usize::MAX);
+            assert_eq!(v.first_col + v.shown_cols - 1, v.total_cols, "última coluna à vista");
+            assert!(line_to_string(&v.lines[1]).contains("c12"));
+        }
+
+        #[test]
+        fn draw_cabe_em_qualquer_largura_pedida() {
+            let out = render(&tabela_de_n_colunas(30), 80);
+            for w in [20, 33, 80, 200] {
+                for first in [0, 3, usize::MAX] {
+                    let v = out.tables[0].data.draw(w, first);
+                    assert!(v.lines.iter().all(|l| l.width() <= w), "largura {w}, coluna {first}");
+                }
+            }
+        }
+
+    fn linha_de(r: &Rendered, i: usize) -> String {
+        r.lines[i].spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    fn indice_da_linha_com(r: &Rendered, trecho: &str) -> usize {
+        (0..r.lines.len())
+            .find(|&i| linha_de(r, i).contains(trecho))
+            .unwrap_or_else(|| panic!("nenhuma linha contém {trecho:?}"))
+    }
+
+    #[test]
+    fn line_src_tem_uma_entrada_por_linha_renderizada() {
+        let md = "# T\n\npar um\n\n- a\n- b\n\n```rust\nfn x() {}\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n> citação\n";
+        let r = render(md, 40);
+        assert_eq!(r.line_src.len(), r.lines.len());
+    }
+
+    #[test]
+    fn line_src_aponta_para_a_linha_do_fonte() {
+        let r = render("# Título\n\nprimeiro\n\nsegundo parágrafo\n", 40);
+        assert_eq!(r.line_src[indice_da_linha_com(&r, "Título")], 0);
+        assert_eq!(r.line_src[indice_da_linha_com(&r, "primeiro")], 2);
+        assert_eq!(r.line_src[indice_da_linha_com(&r, "segundo")], 4);
+    }
+
+    #[test]
+    fn line_src_de_lista_aninhada_e_citacao_usa_a_linha_de_cada_item() {
+        let r = render("- a\n  - b\n- c\n\n> q1\n> q2\n", 40);
+        assert_eq!(r.line_src[indice_da_linha_com(&r, "a")], 0);
+        assert_eq!(r.line_src[indice_da_linha_com(&r, "b")], 1);
+        assert_eq!(r.line_src[indice_da_linha_com(&r, "c")], 2);
+        assert_eq!(r.line_src[indice_da_linha_com(&r, "q1")], 4);
+    }
+
+    #[test]
+    fn linha_quebrada_pela_largura_herda_a_linha_do_bloco() {
+        let md = format!("# T\n\n{}\n\nfim\n", "palavra ".repeat(30));
+        let r = render(&md, 30);
+        let do_bloco: Vec<usize> = (0..r.lines.len())
+            .filter(|&i| linha_de(&r, i).contains("palavra"))
+            .map(|i| r.line_src[i])
+            .collect();
+        assert!(do_bloco.len() > 1, "o parágrafo deveria quebrar em várias linhas");
+        assert!(do_bloco.iter().all(|&s| s == 2), "{do_bloco:?}");
+    }
+
+    #[test]
+    fn bloco_de_codigo_registra_intervalo_linguagem_e_texto_cru() {
+        let r = render("x\n\n```rust\nfn a() {}\n```\n\n~~~\nsem lang\n~~~\n", 40);
+        assert_eq!(r.code_blocks.len(), 2);
+        let (a, b) = (&r.code_blocks[0], &r.code_blocks[1]);
+        assert_eq!(a.lang, "rust");
+        assert_eq!(a.text, "fn a() {}\n");
+        assert!(linha_de(&r, a.start).starts_with("╭─"));
+        assert!(linha_de(&r, a.end - 1).starts_with("╰─"));
+        assert_eq!(b.lang, "");
+        assert_eq!(b.text, "sem lang\n");
+    }
+
+    #[test]
+    fn code_block_at_prefere_o_que_contem_a_linha_e_cai_para_o_visivel() {
+        let r = render("```a\n1\n```\n\ntexto\n\n```b\n2\n```\n", 40);
+        let (a, b) = (&r.code_blocks[0], &r.code_blocks[1]);
+        assert_eq!(r.code_block_at(a.start, a.start + 5).map(|c| c.lang.as_str()), Some("a"));
+        // Linha de referência no texto entre os blocos: o primeiro que cruza a janela.
+        let texto = indice_da_linha_com(&r, "texto");
+        assert_eq!(r.code_block_at(texto, b.end).map(|c| c.lang.as_str()), Some("b"));
+        assert!(r.code_block_at(texto, texto + 1).is_none());
+    }
+
+    #[test]
+    fn tarefas_registram_feita_ou_aberta_na_linha_do_item() {
+        let r = render("# T\n\n- [x] a\n- [ ] b\n  - [x] c\n\n> - [ ] d\n", 40);
+        let feitas: Vec<bool> = r.tasks.iter().map(|t| t.done).collect();
+        assert_eq!(feitas, vec![true, false, true, false]);
+        for t in &r.tasks {
+            let marca = if t.done { '☑' } else { '☐' };
+            assert!(linha_de(&r, t.line).contains(marca), "linha {}: {:?}", t.line, linha_de(&r, t.line));
+        }
+    }
+
+    #[test]
+    fn section_range_vai_ate_o_proximo_titulo_de_nivel_igual_ou_menor() {
+        let r = render("# A\n\ntexto\n\n## B\n\nb\n\n## C\n\nc\n\n# D\n\nd\n", 40);
+        let o = &r.outline;
+        assert_eq!(section_range(o, 0, r.lines.len()), (o[0].line, o[3].line));
+        assert_eq!(section_range(o, 1, r.lines.len()), (o[1].line, o[2].line));
+        assert_eq!(section_range(o, 3, r.lines.len()), (o[3].line, r.lines.len()));
+    }
+
+    #[test]
+    fn section_at_acha_o_titulo_mais_profundo_antes_da_linha() {
+        let r = render("antes\n\n# A\n\ntexto\n\n## B\n\nb\n", 40);
+        let o = &r.outline;
+        assert_eq!(section_at(o, 0), None, "antes do primeiro título");
+        assert_eq!(section_at(o, o[0].line), Some(0));
+        assert_eq!(section_at(o, indice_da_linha_com(&r, "texto")), Some(0));
+        assert_eq!(section_at(o, indice_da_linha_com(&r, "b")), Some(1));
+    }
+
+    #[test]
+    fn section_source_devolve_o_markdown_cru_com_o_titulo() {
+        let md = "intro\n\n# A\n\ntexto\n\n## B\n\nb\n\n# C\n\nc\n";
+        let r = render(md, 40);
+        assert_eq!(section_source(md, &r, 0).as_deref(), Some("# A\n\ntexto\n\n## B\n\nb\n"));
+        assert_eq!(section_source(md, &r, 1).as_deref(), Some("## B\n\nb\n"));
+        assert_eq!(section_source(md, &r, 2).as_deref(), Some("# C\n\nc\n"), "última seção vai ao fim");
+        assert_eq!(section_source(md, &r, 9), None);
+    }
+
+    #[test]
+    fn section_source_sem_mapa_de_linhas_devolve_none() {
+        let r = error_rendered("x");
+        assert_eq!(section_source("# A\n", &r, 0), None);
     }
 }

@@ -22,13 +22,14 @@ mdv json dados.json --path .itens[0]      # só um trecho do JSON
 
 - **Renderização completa.** Títulos, ênfase, ~~tachado~~, `código inline`, links, citações, listas ordenadas, não ordenadas, aninhadas e de tarefas (`- [x]`), réguas e tabelas com alinhamento por coluna.
 - **Código com realce de sintaxe.** Blocos com linguagem declarada saem coloridos (via `syntect`), com moldura e rótulo da linguagem.
-- **Tabelas que cabem na tela.** Colunas se ajustam à largura disponível; células largas são truncadas com `…` em vez de quebrar o layout.
+- **Tabelas que cabem na tela.** Colunas se ajustam à largura disponível; células largas quebram em várias linhas (até 8, depois `…`). Na TUI, `t` abre a tabela na largura inteira do terminal, com cabeçalho e primeira coluna fixos e `h`/`l` para rolar as colunas; `--table N` abre direto numa delas.
 - **Quebra de linha correta.** O texto é quebrado na largura do terminal respeitando caracteres largos: acentos, emojis e CJK (日本語) não desalinham nada.
 - **Leitor interativo.** Rolagem, página, meia página, busca com `/`, `n`/`N` entre ocorrências e `]`/`[` para pular de título em título.
 - **Imagens no terminal.** `![alt](arquivo.png)` e, com `--remote`, imagens por URL, desenhadas em meio-bloco, sem protocolo gráfico. [Detalhes](#imagens).
 - **Diagramas Mermaid.** Com `--mermaid`, blocos <code>```mermaid</code> viram imagem via `mmdc`. [Detalhes](#mermaid).
+- **Andamento de tarefas.** Listas `- [x]`/`- [ ]` mostram o progresso: o rodapé da leitura traz `☑ feitas/total` do documento e da seção atual, e o `--toc` acrescenta `[feitas/total]` aos títulos. Sem tarefas no documento (e no modo fonte, JSON e CSV) nada disso aparece.
 - **Feito para saída de agentes e LLMs.** Front matter YAML, alertas GFM, notas de rodapé, `<details>` e `<think>` aparecem formatados; `--follow`, `--latest <pasta>` e `--toc` acompanham e resumem. Na TUI, `m` alterna para a fonte crua. [Detalhes](#markdown-de-agentes-e-llms).
-- **JSON, CSV e TSV.** `mdv json|csv|tsv` com `--path`, `--head`, `--cols`, `--no-header` e `--delimiter`. [Detalhes](#json-csv-e-tsv).
+- **JSON, CSV e TSV.** `mdv json|csv|tsv` com `--as table|schema|text`, `--path`, `--head`, `--cols`, `--no-header` e `--delimiter`. [Detalhes](#json-csv-e-tsv).
 - **Live reload.** Edite o arquivo no seu editor e veja o resultado atualizar sozinho no `mdv` ao lado. Ótimo para escrever README.
 - **Funciona em pipe.** Com `-p` ou quando a saída não é um terminal, imprime texto com ANSI. Serve em scripts, `less -R` e CI.
 - **Responsivo.** Redesenha ao redimensionar a janela; `-w` fixa a largura máxima.
@@ -42,15 +43,15 @@ Baixe o binário da última release, extraia e coloque `mdv` no seu `PATH`:
 <!-- mdv:install:start -->
 | Plataforma | Download |
 |------------|----------|
-| Linux x86_64 (glibc 2.35+) | [`mdv-v0.2.0-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.2.0/mdv-v0.2.0-linux-x86_64.tar.gz) |
-| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.2.0-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.2.0/mdv-v0.2.0-linux-x86_64-musl.tar.gz) |
-| Linux aarch64 | [`mdv-v0.2.0-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.2.0/mdv-v0.2.0-linux-aarch64.tar.gz) |
-| macOS Apple Silicon | [`mdv-v0.2.0-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.2.0/mdv-v0.2.0-macos-aarch64.tar.gz) |
-| macOS Intel | [`mdv-v0.2.0-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.2.0/mdv-v0.2.0-macos-x86_64.tar.gz) |
-| Windows x86_64 | [`mdv-v0.2.0-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.2.0/mdv-v0.2.0-windows-x86_64.zip) |
-| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.2.0) |
+| Linux x86_64 (glibc 2.35+) | [`mdv-v0.3.0-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.3.0/mdv-v0.3.0-linux-x86_64.tar.gz) |
+| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.3.0-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.3.0/mdv-v0.3.0-linux-x86_64-musl.tar.gz) |
+| Linux aarch64 | [`mdv-v0.3.0-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.3.0/mdv-v0.3.0-linux-aarch64.tar.gz) |
+| macOS Apple Silicon | [`mdv-v0.3.0-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.3.0/mdv-v0.3.0-macos-aarch64.tar.gz) |
+| macOS Intel | [`mdv-v0.3.0-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.3.0/mdv-v0.3.0-macos-x86_64.tar.gz) |
+| Windows x86_64 | [`mdv-v0.3.0-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.3.0/mdv-v0.3.0-windows-x86_64.zip) |
+| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.3.0) |
 
-Versão atual: **v0.2.0**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
+Versão atual: **v0.3.0**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
 <!-- mdv:install:end -->
 
 Os binários de macOS e Windows **não são assinados**, então o sistema pode avisar na primeira execução:
@@ -85,11 +86,18 @@ OPÇÕES:
         --toc          imprime só o índice de títulos
         --follow       com stdin: acompanha o texto conforme chega
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
+        --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
+        --memory-buffer <T>  limite de memória (padrão: 512M; ex.: 256M, 2G; ou $MDV_MEMORY_BUFFER)
+        --extract-code imprime só o texto dos blocos de código (sem cor)
+        --lang <L>     com --extract-code: só os blocos da linguagem L
+    -n <N>             com --extract-code: só o N-ésimo bloco (a partir de 1)
+        --section <T>  imprime só o Markdown da seção de título T
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
 OPÇÕES DE JSON:
         --path <p>     mostra só um trecho, ex.: .itens[0].nome
+        --as <vista>   auto (padrão), text, table ou schema
 
 OPÇÕES DE CSV/TSV:
         --head <N>     mostra só as N primeiras linhas (padrão: 1000)
@@ -106,6 +114,9 @@ TECLAS (modo interativo):
     /                  buscar (Enter confirma, Esc cancela)
     n / N              próxima / anterior ocorrência
     m                  alterna entre renderizado e fonte crua
+    v                  (JSON) alterna tabela / esquema / texto
+    t                  zoom da tabela na tela (h/l colunas, Esc volta)
+    y / Y              copia o bloco de código da tela / o Markdown da seção (OSC 52, até 64 KiB)
     r                  recarrega o arquivo
     q, Esc             sai
 ```
@@ -137,28 +148,58 @@ mdv --toc relatorio.md         # só o índice de títulos
 
 Na TUI, a tecla `m` alterna entre o texto renderizado e a **fonte crua**.
 
+## Extrair trechos
+
+Para scripts e prompts, o `mdv` imprime só o que você pede, em texto puro (sem cor):
+
+```bash
+mdv --extract-code plano.md                      # todos os blocos de código
+mdv --extract-code --lang bash -n 2 plano.md     # o 2º bloco bash
+mdv --section "Instalação" plano.md              # o Markdown da seção
+mdv --section "Instalação" --extract-code plano.md | sh
+```
+
+`--lang` não distingue maiúsculas; `-n` conta a partir de 1, depois do filtro. O título casa por igualdade (sem distinguir caixa) ou por trecho único; se for ambíguo, o `mdv` lista os candidatos e sai com código 1, o mesmo código de quando nada é encontrado.
+
 ## JSON, CSV e TSV
 
 ```bash
-mdv json dados.json --path .itens[0]   # só um trecho; JSONL vira lista
+mdv json itens.json                    # lista de objetos (e JSONL) vira tabela
+mdv json dados.json --as schema        # só chaves e tipos, sem os valores
+mdv json dados.json --as text          # JSON indentado e colorido
+mdv json dados.json --path .itens[0]   # só um trecho
 mdv csv vendas.csv --head 20 --cols produto,total
 mdv tsv planilha.tsv --no-header
 mdv csv dados.txt --delimiter ';'
 ```
 
-O formato também é deduzido da extensão (`.json`, `.jsonl`, `.csv`, `.tsv`) e funciona com `-` (stdin). O JSON sai indentado, com realce e um resumo de tipo e tamanho. CSV/TSV viram tabela com colunas numéricas alinhadas à direita e um rodapé `N de M linhas · K colunas`; use `--cols` para tabelas largas, pois não há rolagem horizontal. A entrada de dados é limitada a 5 MiB.
+Uma lista de objetos (ou JSONL) abre como **tabela**: uma coluna por chave, objetos aninhados achatados como `endereco.cidade` e listas mostradas de forma compacta. `--head` e `--cols` valem também aqui. Os outros JSONs abrem **indentados**, com um resumo de tipo e tamanho. `--as table|schema|text` força a vista, e na TUI a tecla `v` alterna entre tabela, esquema e texto. O **esquema** mostra o tipo de cada campo (`itens: lista · 120 × objeto`, `tags?: ...` quando o campo falta em alguns itens) a partir de uma amostra dos 1000 primeiros itens.
+
+O formato também é deduzido da extensão (`.json`, `.jsonl`, `.csv`, `.tsv`) e funciona com `-` (stdin). Tabelas mostram até 200 colunas (o rodapé avisa `+N omitidas`) e cortam células com mais de 500 caracteres; para tabelas com muitas colunas use `t` (zoom) ou `--cols`. CSV/TSV têm colunas numéricas alinhadas à direita e rodapé `N de M linhas · K colunas`. A entrada de dados é limitada a 5 MiB.
+
+## Limite de memória
+
+Por segurança o `mdv` usa no máximo **512 MiB** de memória. Se um arquivo precisar de mais (um Markdown muito grande ou um JSON hostil), ele para e mostra no lugar do documento uma mensagem com o limite, a memória livre do computador e o valor sugerido. Para ler arquivos maiores:
+
+```bash
+mdv --memory-buffer 2G grande.md
+MDV_MEMORY_BUFFER=2G mdv grande.md      # a flag vence a variável
+```
+
+Aceita `256M`, `1G`, `512MiB`, `65536K` (múltiplos de 1024); o mínimo é 32 MiB. Se o valor passar da memória livre do computador, o `mdv` avisa e segue. A memória livre é detectada no Linux; no macOS e no Windows a mensagem só não traz o número.
 
 ## Limitações conhecidas
 
 - Linhas de código largas são quebradas na largura da tela, não rolam na horizontal.
-- Células de tabela largas são truncadas com `…`.
 - A busca encontra ocorrências dentro de um mesmo trecho estilizado.
 - Imagens usam meio-bloco (baixa resolução); um protocolo gráfico como Kitty/Sixel seria um refinamento opcional.
+- A memória livre do computador só é informada no Linux.
+- `y`/`Y` dependem de o terminal aceitar OSC 52 (no tmux, `set -g set-clipboard on`); terminais sem suporte ignoram em silêncio.
 
 ## Changelog
 
 <!-- mdv:changelog:start -->
-### v0.2.0
+### v0.3.0
 
 _2026-10-13_
 
