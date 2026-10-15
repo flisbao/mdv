@@ -1041,6 +1041,22 @@ impl App {
             f.render_widget(Paragraph::new(Line::from(text)).style(bar), status);
         }
 
+    /// `☑ feitas/total` do documento e, se a seção atual tem tarefas e difere do todo, `(seção f/t)`.
+    fn task_summary(&self) -> Option<String> {
+        let all = render::count_tasks(&self.rendered.tasks, 0, usize::MAX);
+        if all.total == 0 {
+            return None;
+        }
+        let mut s = format!("☑ {}/{}", all.done, all.total);
+        if let Some(idx) = render::section_at(&self.rendered.outline, self.ref_line()) {
+            let c = render::section_tasks(&self.rendered, idx);
+            if c.total > 0 && c != all {
+                let _ = write!(s, " (seção {}/{})", c.done, c.total);
+            }
+        }
+        Some(s)
+    }
+
     fn status_left(&self) -> String {
         let total = self.total_lines();
         let pct = self
@@ -1074,6 +1090,9 @@ impl App {
                 );
             }
         }
+                if let Some(t) = self.task_summary() {
+                    let _ = write!(s, "  {t}");
+                }
                 if let Some(n) = &self.notice {
                     let _ = write!(s, "  {n}");
                 }
@@ -1388,6 +1407,47 @@ mod tests {
 
         fn copiado(app: &App) -> Option<String> {
             app.pending_osc.clone()
+        }
+
+        #[test]
+        fn rodape_mostra_o_andamento_das_tarefas_do_documento() {
+            let app = app_com_texto("- [x] a\n- [ ] b\n- [ ] c\n");
+            assert!(app.status_left().contains("☑ 1/3"), "{}", app.status_left());
+        }
+
+        #[test]
+        fn rodape_sem_tarefas_nao_mostra_contador() {
+            let app = app_com_texto("# A\n\ntexto\n");
+            assert!(!app.status_left().contains('☑'), "{}", app.status_left());
+        }
+
+        #[test]
+        fn rodape_acrescenta_a_secao_atual_quando_ela_tem_tarefas() {
+            let mut app = app_com_texto("# A\n\n- [x] a\n\n# B\n\n- [ ] b\n- [ ] c\n");
+            app.view.scroll = app.rendered.outline[1].line;
+            let s = app.status_left();
+            assert!(s.contains("☑ 1/3") && s.contains("(seção 0/2)"), "{s}");
+        }
+
+        #[test]
+        fn rodape_nao_repete_a_contagem_quando_a_secao_e_o_documento() {
+            let app = app_com_texto("# A\n\n- [x] a\n- [ ] b\n");
+            let s = app.status_left();
+            assert!(s.contains("☑ 1/2") && !s.contains("seção"), "{s}");
+        }
+
+        #[test]
+        fn rodape_com_tarefa_antes_do_primeiro_titulo_nao_quebra() {
+            let app = app_com_texto("- [x] solta\n\n# A\n\ntexto\n");
+            assert!(app.status_left().contains("☑ 1/1"));
+        }
+
+        #[test]
+        fn rodape_no_modo_fonte_nao_mostra_contador() {
+            let mut app = app_com_texto("- [x] a\n");
+            app.on_key(ev(KeyCode::Char('m')));
+            app.rerender(60);
+            assert!(!app.status_left().contains('☑'), "{}", app.status_left());
         }
 
         #[test]
