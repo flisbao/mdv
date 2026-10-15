@@ -1,6 +1,7 @@
 mod cli;
 mod data;
 mod image;
+mod mem;
 mod mermaid;
 mod net;
 mod stream;
@@ -20,6 +21,9 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
+
+#[global_allocator]
+static ALLOC: mem::CountingAlloc = mem::CountingAlloc;
 use ratatui::{DefaultTerminal, Frame};
 use unicode_width::UnicodeWidthStr;
 
