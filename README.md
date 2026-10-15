@@ -116,7 +116,6 @@ TECLAS (modo interativo):
     m                  alterna entre renderizado e fonte crua
     v                  (JSON) alterna tabela / esquema / texto
     t                  zoom da tabela na tela (h/l colunas, Esc volta)
-    y / Y              copia o bloco de código da tela / o Markdown da seção (OSC 52, até 64 KiB)
     r                  recarrega o arquivo
     q, Esc             sai
 ```
