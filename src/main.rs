@@ -369,6 +369,13 @@ fn file_mtime(p: &Path) -> Option<SystemTime> {
     fs::metadata(p).and_then(|m| m.modified()).ok()
 }
 
+/// Escreve uma sequência de controle direto no terminal (OSC 52).
+fn emit_osc(seq: &str) {
+    let mut out = io::stdout();
+    let _ = out.write_all(seq.as_bytes());
+    let _ = out.flush();
+}
+
 fn event_loop(term: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     loop {
         term.draw(|f| app.draw(f))?;
@@ -377,6 +384,9 @@ fn event_loop(term: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
             if let Event::Key(k) = event::read()? {
                 if k.kind == KeyEventKind::Press && app.on_key(k) {
                     return Ok(());
+                }
+                if let Some(seq) = app.pending_osc.take() {
+                    emit_osc(&seq);
                 }
             }
         } else {
@@ -523,6 +533,7 @@ struct App {
     zoom: Option<Zoom>,
     notice: Option<String>,
     open_table: Option<usize>,
+    pending_osc: Option<String>,
 }
 
 impl App {
@@ -556,6 +567,7 @@ impl App {
             zoom: None,
             notice: None,
             open_table: cli.table.map(|n| n - 1),
+            pending_osc: None,
         }
     }
 
@@ -653,6 +665,61 @@ impl App {
         self.view.scroll_to(line, self.total_lines());
     }
 
+    /// Linha renderizada de referência para `y`/`Y`/`t`: a primeira visível.
+    fn ref_line(&self) -> usize {
+        self.view.scroll
+    }
+
+    /// Linhas renderizadas visíveis, `[topo, base)`.
+    fn window_lines(&self) -> (usize, usize) {
+        (self.view.scroll, self.view.scroll + self.view.height)
+    }
+
+    /// Rola para que a linha renderizada `line` fique no topo.
+    fn scroll_to_line(&mut self, line: usize) {
+        self.scroll_to(line);
+    }
+
+    /// Copia o bloco de código sob a linha de referência (`y`).
+    fn copy_code(&mut self) {
+        let (top, bottom) = (self.ref_line(), self.window_lines().1);
+        let Some(text) = self.rendered.code_block_at(top, bottom).map(|c| c.text.clone()) else {
+            self.notice = Some("nenhum bloco de código".to_string());
+            return;
+        };
+        self.copy_text(&text);
+    }
+
+    /// Copia o Markdown cru da seção da linha de referência (`Y`).
+    fn copy_section(&mut self) {
+        if self.raw || self.doc.mode != cli::Mode::Markdown {
+            self.notice = Some("seção só existe no Markdown renderizado".to_string());
+            return;
+        }
+        let Some(idx) = render::section_at(&self.rendered.outline, self.ref_line()) else {
+            self.notice = Some("nenhuma seção aqui".to_string());
+            return;
+        };
+        match render::section_source(&self.md, &self.rendered, idx) {
+            Some(text) => self.copy_text(&text),
+            None => self.notice = Some("não consegui recortar a seção".to_string()),
+        }
+    }
+
+    /// Prepara o OSC 52 (escrito pelo `event_loop`) ou avisa que o texto é grande demais.
+    fn copy_text(&mut self, text: &str) {
+        match clip::osc52(text) {
+            Ok(seq) => {
+                self.pending_osc = Some(seq);
+                let n = text.lines().count();
+                self.notice = Some(format!("copiado: {n} linha{}", if n == 1 { "" } else { "s" }));
+            }
+            Err(bytes) => {
+                self.notice = Some(format!("grande demais ({} KiB), nada copiado", bytes / 1024));
+            }
+        }
+    }
+
     fn rerender(&mut self, w: usize) {
         self.rendered = if self.raw {
             render::render_code_only(&self.md, raw_lang(self.doc.mode), w)
@@ -725,7 +792,7 @@ impl App {
 
         /// Abre o zoom da primeira tabela que aparece na tela.
         fn open_visible_table(&mut self) {
-            let (top, bottom) = (self.view.scroll, self.view.scroll + self.view.height);
+            let (top, bottom) = self.window_lines();
             match self.rendered.tables.iter().position(|t| t.end > top && t.start < bottom) {
                 Some(i) => self.open_zoom(i),
                 None => self.notice = Some("nenhuma tabela na tela".to_string()),
@@ -839,6 +906,8 @@ impl App {
                             self.dirty = true;
                         }
                         KeyCode::Char('t') => self.open_visible_table(),
+                        KeyCode::Char('y') => self.copy_code(),
+                        KeyCode::Char('Y') => self.copy_section(),
             KeyCode::Char('m') => {
                 self.raw = !self.raw;
                 self.dirty = true;
@@ -916,7 +985,7 @@ impl App {
             Some(buf) => format!(" /{buf}█"),
             None => self.status_left(),
         };
-        let right = "j/k rolar  [ ] pular título  / buscar  t tabela  m fonte  q sair ";
+        let right = "j/k rolar  [ ] título  / buscar  t tabela  y/Y copiar  m fonte  q sair ";
         let (lw, rw) = (left.width(), right.width());
         let text = if lw + rw < width {
             format!("{left}{}{right}", " ".repeat(width - lw - rw))
@@ -1177,7 +1246,7 @@ mod tests {
     fn barra_de_status_explica_que_as_teclas_pulam_de_titulo() {
         let app = test_app(Source::Stdin, "# a");
         let barra: String = app.status_line(120).spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(barra.contains("[ ] pular título"), "{barra}");
+        assert!(barra.contains("[ ] título"), "{barra}");
     }
 
     #[test]
@@ -1292,6 +1361,94 @@ mod tests {
 
         fn ev(c: KeyCode) -> KeyEvent {
             KeyEvent::new(c, KeyModifiers::NONE)
+        }
+
+        fn app_com_texto(md: &str) -> App {
+            let mut app = test_app(Source::Stdin, md);
+            app.rerender(60);
+            app.view.height = 10;
+            app
+        }
+
+        fn copiado(app: &App) -> Option<String> {
+            app.pending_osc.clone()
+        }
+
+        #[test]
+        fn y_copia_o_bloco_de_codigo_da_tela() {
+            let mut app = app_com_texto("texto\n\n```rust\nfn a() {}\n```\n");
+            app.on_key(ev(KeyCode::Char('y')));
+            assert_eq!(copiado(&app), Some(clip::osc52("fn a() {}\n").unwrap()));
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("copiado: 1 linha")), "{:?}", app.notice);
+        }
+
+        #[test]
+        fn y_sem_bloco_de_codigo_avisa_e_nao_copia() {
+            let mut app = app_com_texto("só texto\n");
+            app.on_key(ev(KeyCode::Char('y')));
+            assert_eq!(copiado(&app), None);
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("nenhum bloco de código")));
+        }
+
+        #[test]
+        fn y_em_json_nao_entra_em_panico_e_avisa() {
+            let mut app = test_app(Source::Stdin, r#"[{"a":1}]"#);
+            app.doc.mode = cli::Mode::Json;
+            app.rerender(60);
+            app.view.height = 10;
+            app.on_key(ev(KeyCode::Char('y')));
+            assert_eq!(copiado(&app), None);
+            assert!(app.notice.is_some());
+        }
+
+        #[test]
+        fn y_no_modo_fonte_copia_o_documento() {
+            let mut app = app_com_texto("# A\n\ntexto\n");
+            app.on_key(ev(KeyCode::Char('m')));
+            app.rerender(60);
+            app.on_key(ev(KeyCode::Char('y')));
+            assert_eq!(copiado(&app), Some(clip::osc52("# A\n\ntexto\n").unwrap()));
+        }
+
+        #[test]
+        fn y_maiusculo_copia_o_markdown_cru_da_secao() {
+            let mut app = app_com_texto("# A\n\ntexto\n\n## B\n\nb\n");
+            app.on_key(ev(KeyCode::Char('Y')));
+            assert_eq!(copiado(&app), Some(clip::osc52("# A\n\ntexto\n\n## B\n\nb\n").unwrap()));
+        }
+
+        #[test]
+        fn y_maiusculo_usa_a_secao_da_primeira_linha_visivel() {
+            let mut app = app_com_texto("# A\n\na\n\n# B\n\nb\n");
+            let b = app.rendered.outline[1].line;
+            app.view.scroll = b;
+            app.on_key(ev(KeyCode::Char('Y')));
+            assert_eq!(copiado(&app), Some(clip::osc52("# B\n\nb\n").unwrap()));
+        }
+
+        #[test]
+        fn y_maiusculo_sem_titulo_avisa_e_nao_copia() {
+            let mut app = app_com_texto("só texto\n");
+            app.on_key(ev(KeyCode::Char('Y')));
+            assert_eq!(copiado(&app), None);
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("nenhuma seção")));
+        }
+
+        #[test]
+        fn copia_maior_que_64_kib_nao_envia_nada() {
+            let md = format!("```\n{}\n```\n", "x".repeat(70 * 1024));
+            let mut app = app_com_texto(&md);
+            app.on_key(ev(KeyCode::Char('y')));
+            assert_eq!(copiado(&app), None);
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("grande demais (70 KiB)")), "{:?}", app.notice);
+        }
+
+        #[test]
+        fn ref_line_e_window_lines_seguem_a_rolagem() {
+            let mut app = app_com_texto(&"linha\n\n".repeat(30));
+            app.view.scroll = 7;
+            assert_eq!(app.ref_line(), 7);
+            assert_eq!(app.window_lines(), (7, 17));
         }
 
         const TABELA: &str = "| a | b |\n|---|---|\n| 1 | 2 |\n";
