@@ -84,6 +84,100 @@ pub struct Rendered {
     pub outline: Vec<OutlineEntry>,
         /// Tabelas desenhadas, em ordem, com o intervalo de linhas de cada uma (zoom `t`).
         pub tables: Vec<TableSpan>,
+    /// Linha (0-based) do fonte onde cada linha renderizada começa. Vazio fora do Markdown.
+    pub line_src: Vec<usize>,
+    /// Blocos de código desenhados, em ordem.
+    pub code_blocks: Vec<CodeSpan>,
+    /// Itens de lista de tarefas, em ordem.
+    pub tasks: Vec<TaskItem>,
+}
+
+/// Bloco de código desenhado: linhas renderizadas `[start, end)` e o texto cru (já saneado).
+#[derive(Clone)]
+pub struct CodeSpan {
+    pub start: usize,
+    pub end: usize,
+    pub lang: String,
+    pub text: String,
+}
+
+/// Item de lista de tarefas e a linha renderizada onde ele começa.
+#[derive(Clone, Copy)]
+pub struct TaskItem {
+    pub line: usize,
+    pub done: bool,
+}
+
+impl Rendered {
+    /// Bloco de código sob a linha `top`; se não houver, o primeiro que cruza a janela `[top, bottom)`.
+    pub fn code_block_at(&self, top: usize, bottom: usize) -> Option<&CodeSpan> {
+        self.code_blocks
+            .iter()
+            .find(|c| c.start <= top && top < c.end)
+            .or_else(|| self.code_blocks.iter().find(|c| c.end > top && c.start < bottom))
+    }
+}
+
+/// Linhas renderizadas `[início, fim)` da seção `idx`: do título até o próximo de nível
+/// igual ou menor, ou até `total`.
+pub fn section_range(outline: &[OutlineEntry], idx: usize, total: usize) -> (usize, usize) {
+    let e = &outline[idx];
+    let end = outline[idx + 1..].iter().find(|n| n.level <= e.level).map_or(total, |n| n.line);
+    (e.line, end)
+}
+
+/// Título mais profundo que começa em `line` ou antes (a seção que contém a linha).
+pub fn section_at(outline: &[OutlineEntry], line: usize) -> Option<usize> {
+    outline.iter().rposition(|e| e.line <= line)
+}
+
+/// Markdown cru da seção `idx` (com o título), fatiado do fonte pelo mapa `line_src`.
+pub fn section_source(md: &str, r: &Rendered, idx: usize) -> Option<String> {
+    if idx >= r.outline.len() || r.line_src.len() != r.lines.len() {
+        return None;
+    }
+    let (start, end) = section_range(&r.outline, idx, r.lines.len());
+    let first = *r.line_src.get(start)?;
+    let last = r.line_src.get(end).copied().unwrap_or_else(|| md.lines().count());
+    let body: Vec<&str> = md.lines().skip(first).take(last.saturating_sub(first)).collect();
+    let mut text = body.join("\n").trim_end().to_string();
+    text.push('\n');
+    Some(text)
+}
+
+/// Converte offsets de byte (crescentes) em número de linha, contando `\n` de forma incremental.
+#[derive(Default)]
+struct LineCursor {
+    pos: usize,
+    line: usize,
+}
+
+impl LineCursor {
+    fn line_at(&mut self, md: &str, off: usize) -> usize {
+        if off < self.pos {
+            *self = LineCursor::default();
+        }
+        let off = off.min(md.len());
+        self.line += md.as_bytes()[self.pos..off].iter().filter(|&&b| b == b'\n').count();
+        self.pos = off;
+        self.line
+    }
+}
+
+/// Início de um bloco que tem linha própria no fonte.
+fn starts_source_block(tag: &Tag<'_>) -> bool {
+    matches!(
+        tag,
+        Tag::Paragraph
+            | Tag::Heading { .. }
+            | Tag::BlockQuote(_)
+            | Tag::CodeBlock(_)
+            | Tag::List(_)
+            | Tag::Item
+            | Tag::Table(_)
+            | Tag::HtmlBlock
+            | Tag::FootnoteDefinition(_)
+    )
 }
 
 #[allow(dead_code)] // `line` será usado pela navegação do sumário
@@ -239,8 +333,20 @@ pub fn render_with(md: &str, opts: &RenderOpts) -> Rendered {
         return error_rendered(&e.to_string());
     }
     let mut r = Renderer::new(opts.width, opts.images);
-    for ev in Parser::new_ext(md, parse_opts) {
+    let mut cursor = LineCursor::default();
+    for (ev, range) in Parser::new_ext(md, parse_opts).into_offset_iter() {
+        // `Rule` e HTML geram linhas no próprio evento; um `Start` só vale para o que vem depois,
+        // senão o texto do item pai (descarregado ao abrir uma sublista) herdaria a linha do filho.
+        let before = matches!(ev, Event::Rule | Event::Html(_));
+        let after = matches!(&ev, Event::Start(t) if starts_source_block(t));
+        if before {
+            r.src_line = cursor.line_at(md, range.start);
+        }
         r.handle(sanitize_event(ev));
+        r.out.line_src.resize(r.out.lines.len(), r.src_line);
+        if after {
+            r.src_line = cursor.line_at(md, range.start);
+        }
         if let Some(err) = memory_error() {
             return err;
         }
@@ -251,7 +357,7 @@ pub fn render_with(md: &str, opts: &RenderOpts) -> Rendered {
 /// Ponto único de entrada do texto do documento: troca caracteres de controle
 /// (ESC, BEL, C1, `\r` solto...) por U+FFFD, para que nada do Markdown vire
 /// comando de terminal. Preserva `\n` e `\t`; `\r\n` vira `\n`.
-fn sanitize(s: &str) -> Cow<'_, str> {
+pub(crate) fn sanitize(s: &str) -> Cow<'_, str> {
     let is_unsafe = |c: char| c.is_control() && c != '\n' && c != '\t';
     if !s.contains(is_unsafe) {
         return Cow::Borrowed(s);
@@ -573,6 +679,7 @@ struct Renderer<'a> {
     images: Option<&'a ImageStore>,
     image: Option<ImageCtx>,
     think: usize,
+    src_line: usize,
 }
 
 impl<'a> Renderer<'a> {
@@ -581,6 +688,7 @@ impl<'a> Renderer<'a> {
             images,
             image: None,
             think: 0,
+            src_line: 0,
             width: clamp_width(width),
             out: Rendered::default(),
             inline: InlineBuffer::default(),
@@ -597,6 +705,8 @@ impl<'a> Renderer<'a> {
         while self.out.lines.last().is_some_and(is_blank) {
             self.out.lines.pop();
         }
+        let n = self.out.lines.len();
+        self.out.line_src.resize(n, self.src_line);
         self.out
     }
 
@@ -618,7 +728,10 @@ impl<'a> Renderer<'a> {
             Event::SoftBreak => self.inline.push_text(" "),
             Event::HardBreak => self.inline.push(Piece::Break),
             Event::Rule => self.rule(),
-            Event::TaskListMarker(done) => self.lists.set_task_marker(done),
+            Event::TaskListMarker(done) => {
+                self.out.tasks.push(TaskItem { line: self.out.lines.len(), done });
+                self.lists.set_task_marker(done);
+            }
             Event::Html(h) => self.html_block(&h),
             Event::InlineHtml(h) => match think_tags(&h) {
                 Some(tl) => self.think_tag(tl.opens, tl.closes),
@@ -1025,6 +1138,7 @@ impl<'a> Renderer<'a> {
         let avail = self.width.saturating_sub(spans_width(&cont) + 2).max(MIN_BODY_WIDTH);
         let dim = Style::default().fg(DIM);
 
+        let start = self.out.lines.len();
         let header = if label.is_empty() { "╭─".to_string() } else { format!("╭─ {label}") };
         let mut v = first;
         v.push(Span::styled(header, dim));
@@ -1063,6 +1177,12 @@ impl<'a> Renderer<'a> {
         let mut v = cont;
         v.push(Span::styled("╰─", dim));
         self.out.lines.push(Line::from(v));
+        self.out.code_blocks.push(CodeSpan {
+            start,
+            end: self.out.lines.len(),
+            lang: block.lang.clone(),
+            text: block.buf.clone(),
+        });
     }
 
         fn render_table(&mut self, t: TableBuilder) {
@@ -2246,4 +2366,120 @@ mod tests {
                 }
             }
         }
+
+    fn linha_de(r: &Rendered, i: usize) -> String {
+        r.lines[i].spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    fn indice_da_linha_com(r: &Rendered, trecho: &str) -> usize {
+        (0..r.lines.len())
+            .find(|&i| linha_de(r, i).contains(trecho))
+            .unwrap_or_else(|| panic!("nenhuma linha contém {trecho:?}"))
+    }
+
+    #[test]
+    fn line_src_tem_uma_entrada_por_linha_renderizada() {
+        let md = "# T\n\npar um\n\n- a\n- b\n\n```rust\nfn x() {}\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n> citação\n";
+        let r = render(md, 40);
+        assert_eq!(r.line_src.len(), r.lines.len());
+    }
+
+    #[test]
+    fn line_src_aponta_para_a_linha_do_fonte() {
+        let r = render("# Título\n\nprimeiro\n\nsegundo parágrafo\n", 40);
+        assert_eq!(r.line_src[indice_da_linha_com(&r, "Título")], 0);
+        assert_eq!(r.line_src[indice_da_linha_com(&r, "primeiro")], 2);
+        assert_eq!(r.line_src[indice_da_linha_com(&r, "segundo")], 4);
+    }
+
+    #[test]
+    fn line_src_de_lista_aninhada_e_citacao_usa_a_linha_de_cada_item() {
+        let r = render("- a\n  - b\n- c\n\n> q1\n> q2\n", 40);
+        assert_eq!(r.line_src[indice_da_linha_com(&r, "a")], 0);
+        assert_eq!(r.line_src[indice_da_linha_com(&r, "b")], 1);
+        assert_eq!(r.line_src[indice_da_linha_com(&r, "c")], 2);
+        assert_eq!(r.line_src[indice_da_linha_com(&r, "q1")], 4);
+    }
+
+    #[test]
+    fn linha_quebrada_pela_largura_herda_a_linha_do_bloco() {
+        let md = format!("# T\n\n{}\n\nfim\n", "palavra ".repeat(30));
+        let r = render(&md, 30);
+        let do_bloco: Vec<usize> = (0..r.lines.len())
+            .filter(|&i| linha_de(&r, i).contains("palavra"))
+            .map(|i| r.line_src[i])
+            .collect();
+        assert!(do_bloco.len() > 1, "o parágrafo deveria quebrar em várias linhas");
+        assert!(do_bloco.iter().all(|&s| s == 2), "{do_bloco:?}");
+    }
+
+    #[test]
+    fn bloco_de_codigo_registra_intervalo_linguagem_e_texto_cru() {
+        let r = render("x\n\n```rust\nfn a() {}\n```\n\n~~~\nsem lang\n~~~\n", 40);
+        assert_eq!(r.code_blocks.len(), 2);
+        let (a, b) = (&r.code_blocks[0], &r.code_blocks[1]);
+        assert_eq!(a.lang, "rust");
+        assert_eq!(a.text, "fn a() {}\n");
+        assert!(linha_de(&r, a.start).starts_with("╭─"));
+        assert!(linha_de(&r, a.end - 1).starts_with("╰─"));
+        assert_eq!(b.lang, "");
+        assert_eq!(b.text, "sem lang\n");
+    }
+
+    #[test]
+    fn code_block_at_prefere_o_que_contem_a_linha_e_cai_para_o_visivel() {
+        let r = render("```a\n1\n```\n\ntexto\n\n```b\n2\n```\n", 40);
+        let (a, b) = (&r.code_blocks[0], &r.code_blocks[1]);
+        assert_eq!(r.code_block_at(a.start, a.start + 5).map(|c| c.lang.as_str()), Some("a"));
+        // Linha de referência no texto entre os blocos: o primeiro que cruza a janela.
+        let texto = indice_da_linha_com(&r, "texto");
+        assert_eq!(r.code_block_at(texto, b.end).map(|c| c.lang.as_str()), Some("b"));
+        assert!(r.code_block_at(texto, texto + 1).is_none());
+    }
+
+    #[test]
+    fn tarefas_registram_feita_ou_aberta_na_linha_do_item() {
+        let r = render("# T\n\n- [x] a\n- [ ] b\n  - [x] c\n\n> - [ ] d\n", 40);
+        let feitas: Vec<bool> = r.tasks.iter().map(|t| t.done).collect();
+        assert_eq!(feitas, vec![true, false, true, false]);
+        for t in &r.tasks {
+            let marca = if t.done { '☑' } else { '☐' };
+            assert!(linha_de(&r, t.line).contains(marca), "linha {}: {:?}", t.line, linha_de(&r, t.line));
+        }
+    }
+
+    #[test]
+    fn section_range_vai_ate_o_proximo_titulo_de_nivel_igual_ou_menor() {
+        let r = render("# A\n\ntexto\n\n## B\n\nb\n\n## C\n\nc\n\n# D\n\nd\n", 40);
+        let o = &r.outline;
+        assert_eq!(section_range(o, 0, r.lines.len()), (o[0].line, o[3].line));
+        assert_eq!(section_range(o, 1, r.lines.len()), (o[1].line, o[2].line));
+        assert_eq!(section_range(o, 3, r.lines.len()), (o[3].line, r.lines.len()));
+    }
+
+    #[test]
+    fn section_at_acha_o_titulo_mais_profundo_antes_da_linha() {
+        let r = render("antes\n\n# A\n\ntexto\n\n## B\n\nb\n", 40);
+        let o = &r.outline;
+        assert_eq!(section_at(o, 0), None, "antes do primeiro título");
+        assert_eq!(section_at(o, o[0].line), Some(0));
+        assert_eq!(section_at(o, indice_da_linha_com(&r, "texto")), Some(0));
+        assert_eq!(section_at(o, indice_da_linha_com(&r, "b")), Some(1));
+    }
+
+    #[test]
+    fn section_source_devolve_o_markdown_cru_com_o_titulo() {
+        let md = "intro\n\n# A\n\ntexto\n\n## B\n\nb\n\n# C\n\nc\n";
+        let r = render(md, 40);
+        assert_eq!(section_source(md, &r, 0).as_deref(), Some("# A\n\ntexto\n\n## B\n\nb\n"));
+        assert_eq!(section_source(md, &r, 1).as_deref(), Some("## B\n\nb\n"));
+        assert_eq!(section_source(md, &r, 2).as_deref(), Some("# C\n\nc\n"), "última seção vai ao fim");
+        assert_eq!(section_source(md, &r, 9), None);
+    }
+
+    #[test]
+    fn section_source_sem_mapa_de_linhas_devolve_none() {
+        let r = error_rendered("x");
+        assert_eq!(section_source("# A\n", &r, 0), None);
+    }
 }
