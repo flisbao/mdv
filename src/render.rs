@@ -405,6 +405,12 @@ pub fn render_diff_split(text: &str, width: usize) -> Rendered {
             break;
         }
         let line = clean_code(raw);
+        // Dentro de um hunk toda linha começa com ' ', '-', '+' ou '\\': `@@ ` e `diff ` só podem
+        // ser cabeçalho novo, mesmo que a contagem do hunk anterior tenha sido enorme ou errada.
+        if line.starts_with("@@ ") || line.starts_with("diff ") {
+            old_left = 0;
+            new_left = 0;
+        }
         let in_hunk = old_left > 0 || new_left > 0;
         if in_hunk && line.starts_with('-') {
             old_left = old_left.saturating_sub(1);
@@ -3024,5 +3030,15 @@ mod tests {
     fn section_source_sem_mapa_de_linhas_devolve_none() {
         let r = error_rendered("x");
         assert_eq!(section_source("# A\n", &r, 0), None);
+    }
+
+    #[test]
+    fn split_hunk_com_contagem_absurda_nao_engole_os_cabecalhos() {
+        let diff = "@@ -1,999999 +1,999999 @@\n-a\n+b\ndiff --git a/x b/x\n--- a/x\n+++ b/x\n";
+        let r = render_diff_split(diff, 40);
+        let texts: Vec<String> =
+            r.lines.iter().map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect()).collect();
+        let header = texts.iter().find(|t| t.contains("--- a/x")).expect("cabeçalho renderizado");
+        assert!(!header.contains(" │ "), "cabeçalho não pode virar duas colunas: {header:?}");
     }
 }
