@@ -28,6 +28,7 @@ Nenhum teste (nem execução manual) pode alocar memória sem teto. Entrada host
 - Antes de escrever ou rodar um teste com entrada grande, calcule o pior caso de memória (inclusive o que o código derivado gera: concatenar o prefixo de uma chave de N caracteres para cada um de M filhos custa N×M). Se passar de algumas dezenas de MiB, **não rode**: corrija o limite no código primeiro e só então teste com tamanhos pequenos que provem o limite (por exemplo, teto reduzido por constante ou parâmetro de teste).
 - Entradas de teste de estresse ficam em dezenas de MiB no máximo; prefira provar o teto com um valor um pouco acima dele.
 - Se a ferramenta for rodar algo potencialmente pesado, use `ulimit -v` (por exemplo `(ulimit -v 2000000; cargo test ...)`) para o processo morrer sozinho em vez de travar o terminal.
+- O `mdv` já tem esse fail-safe (`src/mem.rs`): novo laço que cresça com a entrada deve chamar `mem::check()`/`mem::exceeded()`.
 
 ## Arquitetura
 
@@ -40,6 +41,7 @@ Um único pipeline: entrada (Markdown, JSON, CSV/TSV) → `Vec<Line>` do ratatui
 - `src/net.rs`: download HTTP(S) restrito (`--remote`): resolvedor que recusa rede privada/loopback, teto de bytes, redirecionamento manual.
 - `src/mermaid.rs`: executa o `mmdc` (`--mermaid`, binário configurável por `MDV_MMDC`) com timeout.
 - `src/stream.rs`: leitor de stdin em thread (`Utf8Accum`) e `newest_md`.
+- `src/mem.rs`: limite de memória do processo (`--memory-buffer`, `MDV_MEMORY_BUFFER`, padrão 512 MiB). `CountingAlloc` é o `#[global_allocator]` (conta bytes vivos, teto duro `limite×1,5+16 MiB`); `check()`/`exceeded()` são os pontos de checagem usados por `render_with`, `layout_table`, `render_code`, `data.rs` e `main.rs`; ao estourar devolvem `error_rendered(MemoryLimit)`. `check_parse` barra antes de analisar o texto cuja árvore do `pulldown-cmark` passaria do limite. Testes unitários **não** alteram o limite global (rodam em paralelo); o estouro real é testado pelo binário em `tests/cli.rs`.
 - `src/data.rs`: visualizadores de dados: JSON/JSONL (`render_json` com as vistas texto, tabela e esquema, escolhidas por `--as`/tecla `v`) e CSV/TSV (`render_table_data`); as duas tabelas passam por `finish_table` (tetos `MAX_TABLE_COLS`/`MAX_CELL_CHARS`), reaproveitando `render_code_only` e `render_table_only`.
 
 **Regra: I/O fica fora de `render.rs`.** Disco, rede e subprocesso vivem em `ImageStore`/`net`/`mermaid`; `render` só consulta o cache. Rede e subprocesso são opt-in (`--remote`, `--mermaid`).

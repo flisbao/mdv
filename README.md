@@ -86,6 +86,7 @@ OPÇÕES:
         --follow       com stdin: acompanha o texto conforme chega
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
         --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
+        --memory-buffer <T>  limite de memória (padrão: 512M; ex.: 256M, 2G; ou $MDV_MEMORY_BUFFER)
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
@@ -157,11 +158,23 @@ Uma lista de objetos (ou JSONL) abre como **tabela**: uma coluna por chave, obje
 
 O formato também é deduzido da extensão (`.json`, `.jsonl`, `.csv`, `.tsv`) e funciona com `-` (stdin). Tabelas mostram até 200 colunas (o rodapé avisa `+N omitidas`) e cortam células com mais de 500 caracteres; para tabelas com muitas colunas use `t` (zoom) ou `--cols`. CSV/TSV têm colunas numéricas alinhadas à direita e rodapé `N de M linhas · K colunas`. A entrada de dados é limitada a 5 MiB.
 
+## Limite de memória
+
+Por segurança o `mdv` usa no máximo **512 MiB** de memória. Se um arquivo precisar de mais (um Markdown muito grande ou um JSON hostil), ele para e mostra no lugar do documento uma mensagem com o limite, a memória livre do computador e o valor sugerido. Para ler arquivos maiores:
+
+```bash
+mdv --memory-buffer 2G grande.md
+MDV_MEMORY_BUFFER=2G mdv grande.md      # a flag vence a variável
+```
+
+Aceita `256M`, `1G`, `512MiB`, `65536K` (múltiplos de 1024); o mínimo é 32 MiB. Se o valor passar da memória livre do computador, o `mdv` avisa e segue. A memória livre é detectada no Linux; no macOS e no Windows a mensagem só não traz o número.
+
 ## Limitações conhecidas
 
 - Linhas de código largas são quebradas na largura da tela, não rolam na horizontal.
 - A busca encontra ocorrências dentro de um mesmo trecho estilizado.
 - Imagens usam meio-bloco (baixa resolução); um protocolo gráfico como Kitty/Sixel seria um refinamento opcional.
+- A memória livre do computador só é informada no Linux.
 
 ## Changelog
 
