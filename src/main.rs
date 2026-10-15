@@ -389,6 +389,44 @@ impl Viewport {
 }
 
 /// Busca incremental: texto em edição, termo confirmado e linhas encontradas.
+/// Tela de zoom: uma tabela desenhada na largura inteira do terminal.
+struct Zoom {
+    /// Índice em `Rendered.tables`.
+    table: usize,
+    /// Primeira coluna rolável pedida (a coluna 0 fica sempre; `draw` normaliza).
+    first_col: usize,
+    /// Rolagem do corpo da tabela, sem as linhas fixas do topo.
+    view: Viewport,
+    /// Último desenho: (largura, `first_col` usado, resultado).
+    drawn: Option<(usize, usize, render::TableView)>,
+}
+
+impl Zoom {
+    fn new(table: usize) -> Self {
+        Zoom { table, first_col: 0, view: Viewport::default(), drawn: None }
+    }
+
+    /// Linhas do corpo (tudo que não é fixo no topo).
+    fn body_total(&self) -> usize {
+        self.drawn.as_ref().map_or(0, |(_, _, v)| v.lines.len().saturating_sub(v.pinned))
+    }
+}
+
+/// "todas as N colunas" ou "colunas 1 e A–B de N" (1 é a coluna fixa).
+fn columns_label(v: &render::TableView) -> String {
+    if v.total_cols == 1 {
+        return "1 coluna".to_string();
+    }
+    if v.shown_cols >= v.total_cols {
+        return format!("todas as {} colunas", v.total_cols);
+    }
+    if v.shown_cols == 1 {
+        return format!("coluna 1 de {}", v.total_cols);
+    }
+    let (from, to) = (v.first_col + 1, v.first_col + v.shown_cols - 1);
+    format!("colunas 1 e {from}–{to} de {}", v.total_cols)
+}
+
 #[derive(Default)]
 struct SearchState {
     /// Texto sendo digitado (`Some` enquanto o prompt `/` está aberto).
@@ -458,6 +496,8 @@ struct App {
     dirty: bool,
     view: Viewport,
     search: SearchState,
+    zoom: Option<Zoom>,
+    notice: Option<String>,
 }
 
 impl App {
@@ -488,6 +528,8 @@ impl App {
             dirty: true,
             view: Viewport::default(),
             search: SearchState::default(),
+            zoom: None,
+            notice: None,
         }
     }
 
@@ -582,6 +624,12 @@ impl App {
         self.render_width = w;
         self.dirty = false;
         self.search.refresh(&self.rendered.lines);
+        let n = self.rendered.tables.len();
+        if self.zoom.as_ref().is_some_and(|z| z.table >= n) {
+            self.zoom = None;
+        } else if let Some(z) = &mut self.zoom {
+            z.drawn = None;
+        }
     }
 
     /// Recarrega só se o arquivo mudou desde a última leitura.
@@ -617,6 +665,64 @@ impl App {
         self.goto_match();
     }
 
+        fn open_zoom(&mut self, table: usize) {
+            if table >= self.rendered.tables.len() {
+                self.notice = Some(format!(
+                    "tabela {} não existe (há {})",
+                    table + 1,
+                    self.rendered.tables.len()
+                ));
+                return;
+            }
+            self.notice = None;
+            self.zoom = Some(Zoom::new(table));
+        }
+
+        /// Abre o zoom da primeira tabela que aparece na tela.
+        fn open_visible_table(&mut self) {
+            let (top, bottom) = (self.view.scroll, self.view.scroll + self.view.height);
+            match self.rendered.tables.iter().position(|t| t.end > top && t.start < bottom) {
+                Some(i) => self.open_zoom(i),
+                None => self.notice = Some("nenhuma tabela na tela".to_string()),
+            }
+        }
+
+        /// Redesenha a tabela do zoom se a largura ou a coluna mudaram.
+        fn refresh_zoom(&mut self, width: usize) {
+            let Some(z) = self.zoom.as_mut() else { return };
+            let Some(span) = self.rendered.tables.get(z.table) else { return };
+            let fresh = matches!(&z.drawn, Some((w, c, _)) if *w == width && *c == z.first_col);
+            if !fresh {
+                let v = span.data.draw(width, z.first_col);
+                z.first_col = v.first_col;
+                z.drawn = Some((width, v.first_col, v));
+            }
+        }
+
+        fn on_zoom_key(&mut self, code: KeyCode) {
+            let Some(z) = self.zoom.as_mut() else { return };
+            let body = z.body_total();
+            let h = z.view.height;
+            let page = isize::try_from(h.saturating_sub(1).max(1)).unwrap_or(isize::MAX);
+            let half = isize::try_from((h / 2).max(1)).unwrap_or(isize::MAX);
+            match code {
+                KeyCode::Esc | KeyCode::Char('q' | 't') => self.zoom = None,
+                KeyCode::Char('j') | KeyCode::Down | KeyCode::Enter => z.view.scroll_by(1, body),
+                KeyCode::Char('k') | KeyCode::Up => z.view.scroll_by(-1, body),
+                KeyCode::Char(' ' | 'f') | KeyCode::PageDown => z.view.scroll_by(page, body),
+                KeyCode::Char('b') | KeyCode::PageUp => z.view.scroll_by(-page, body),
+                KeyCode::Char('d') => z.view.scroll_by(half, body),
+                KeyCode::Char('u') => z.view.scroll_by(-half, body),
+                KeyCode::Char('g') | KeyCode::Home => z.view.scroll_to(0, body),
+                KeyCode::Char('G') | KeyCode::End => z.view.scroll_to(usize::MAX, body),
+                KeyCode::Char('l') | KeyCode::Right => z.first_col = z.first_col.saturating_add(1),
+                KeyCode::Char('h') | KeyCode::Left => z.first_col = z.first_col.saturating_sub(1),
+                KeyCode::Char('0') => z.first_col = 0,
+                KeyCode::Char('$') => z.first_col = usize::MAX,
+                _ => {}
+            }
+        }
+
     fn goto_match(&mut self) {
         if let Some(line) = self.search.current_line() {
             self.scroll_to(line.saturating_sub(self.view.height / 3));
@@ -633,6 +739,11 @@ impl App {
         if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
             return true;
         }
+                if self.zoom.is_some() {
+                    self.on_zoom_key(k.code);
+                    return false;
+                }
+                self.notice = None;
         if let Some(buf) = self.search.input.take() {
             self.on_search_key(k.code, buf);
             return false;
@@ -682,6 +793,7 @@ impl App {
                             self.doc.json_view = data::next_view(current);
                             self.dirty = true;
                         }
+                        KeyCode::Char('t') => self.open_visible_table(),
             KeyCode::Char('m') => {
                 self.raw = !self.raw;
                 self.dirty = true;
@@ -720,6 +832,10 @@ impl App {
         if self.dirty || w != self.render_width {
             self.rerender(w);
         }
+                if self.zoom.is_some() {
+                    self.draw_zoom(f, content, status);
+                    return;
+                }
         self.view.height = usize::from(content.height);
         self.view.scroll = self.view.scroll.min(self.view.max_scroll(self.total_lines()));
         self.apply_stick_bottom();
@@ -754,7 +870,7 @@ impl App {
             Some(buf) => format!(" /{buf}█"),
             None => self.status_left(),
         };
-        let right = "j/k rolar  [ ] pular título  / buscar  m fonte  q sair ";
+        let right = "j/k rolar  [ ] pular título  / buscar  t tabela  m fonte  q sair ";
         let (lw, rw) = (left.width(), right.width());
         let text = if lw + rw < width {
             format!("{left}{}{right}", " ".repeat(width - lw - rw))
@@ -765,6 +881,35 @@ impl App {
     }
 
     /// Nome do arquivo, posição no documento e estado da busca.
+        fn draw_zoom(&mut self, f: &mut Frame, content: Rect, status: Rect) {
+            self.refresh_zoom(render::clamp_width(usize::from(content.width)));
+            let Some(z) = self.zoom.as_mut() else { return };
+            let Some((_, _, tv)) = &z.drawn else { return };
+            let pinned = tv.pinned.min(tv.lines.len());
+            z.view.height = usize::from(content.height).saturating_sub(pinned).max(1);
+            let body = tv.lines.len() - pinned;
+            z.view.scroll = z.view.scroll.min(z.view.max_scroll(body));
+            let start = pinned + z.view.scroll;
+            let end = (start + z.view.height).min(tv.lines.len());
+            let mut visible: Vec<Line<'static>> = tv.lines[..pinned].to_vec();
+            visible.extend_from_slice(&tv.lines[start..end]);
+            f.render_widget(Paragraph::new(visible), content);
+
+            let bar = Style::default().bg(Color::Rgb(59, 66, 82)).fg(Color::Rgb(229, 233, 240));
+            let left = format!(
+                " {}  tabela {}/{}  {}",
+                self.name,
+                z.table + 1,
+                self.rendered.tables.len(),
+                columns_label(tv)
+            );
+            let right = "j/k rolar  h/l colunas  0/$ extremos  Esc voltar ";
+            let width = usize::from(status.width);
+            let (lw, rw) = (left.width(), right.width());
+            let text = if lw + rw < width { format!("{left}{}{right}", " ".repeat(width - lw - rw)) } else { left };
+            f.render_widget(Paragraph::new(Line::from(text)).style(bar), status);
+        }
+
     fn status_left(&self) -> String {
         let total = self.total_lines();
         let pct = self
@@ -798,6 +943,9 @@ impl App {
                 );
             }
         }
+                if let Some(n) = &self.notice {
+                    let _ = write!(s, "  {n}");
+                }
         s
     }
 }
@@ -1075,5 +1223,141 @@ mod tests {
             app.doc.mode = cli::Mode::Json;
             tecla(&mut app, 'v');
             assert!(app.status_left().contains("[esquema]"), "{}", app.status_left());
+        }
+
+        fn app_com_tabela(md: &str) -> App {
+            let mut app = test_app(Source::Stdin, md);
+            app.rerender(60);
+            app.view.height = 10;
+            app
+        }
+
+        fn ev(c: KeyCode) -> KeyEvent {
+            KeyEvent::new(c, KeyModifiers::NONE)
+        }
+
+        const TABELA: &str = "| a | b |\n|---|---|\n| 1 | 2 |\n";
+
+        fn tabela_larga(n: usize) -> String {
+            let h: String = (1..=n).map(|i| format!(" c{i} |")).collect();
+            format!("|{h}\n|{}\n|{h}\n", "---|".repeat(n))
+        }
+
+        #[test]
+        fn t_abre_o_zoom_da_tabela_visivel() {
+            let mut app = app_com_tabela(TABELA);
+            assert!(!app.on_key(ev(KeyCode::Char('t'))));
+            assert_eq!(app.zoom.as_ref().map(|z| z.table), Some(0));
+        }
+
+        #[test]
+        fn t_sem_tabela_na_tela_avisa_e_nao_abre() {
+            let mut app = app_com_tabela("# só texto\n");
+            app.on_key(ev(KeyCode::Char('t')));
+            assert!(app.zoom.is_none());
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("nenhuma tabela")));
+            app.on_key(ev(KeyCode::Char('j')));
+            assert!(app.notice.is_none(), "o aviso some na próxima tecla");
+        }
+
+        #[test]
+        fn t_escolhe_a_tabela_que_aparece_na_tela() {
+            let md = format!("{TABELA}\n{}\n{TABELA}", "texto\n\n".repeat(30));
+            let mut app = app_com_tabela(&md);
+            let segunda = app.rendered.tables[1].start;
+            app.view.scroll = segunda.saturating_sub(1);
+            app.on_key(ev(KeyCode::Char('t')));
+            assert_eq!(app.zoom.as_ref().map(|z| z.table), Some(1));
+        }
+
+        #[test]
+        fn esc_e_q_fecham_o_zoom_sem_sair() {
+            for k in [KeyCode::Esc, KeyCode::Char('q'), KeyCode::Char('t')] {
+                let mut app = app_com_tabela(TABELA);
+                app.on_key(ev(KeyCode::Char('t')));
+                assert!(!app.on_key(ev(k)), "{k:?} no zoom só fecha");
+                assert!(app.zoom.is_none());
+            }
+        }
+
+        #[test]
+        fn ctrl_c_sai_mesmo_no_zoom() {
+            let mut app = app_com_tabela(TABELA);
+            app.on_key(ev(KeyCode::Char('t')));
+            assert!(app.on_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)));
+        }
+
+        #[test]
+        fn colunas_rolam_com_h_l_zero_e_cifrao() {
+            let mut app = app_com_tabela(&tabela_larga(12));
+            app.on_key(ev(KeyCode::Char('t')));
+            app.refresh_zoom(20);
+            let first = |app: &App| app.zoom.as_ref().unwrap().first_col;
+            assert_eq!(first(&app), 1);
+
+            app.on_key(ev(KeyCode::Char('l')));
+            app.refresh_zoom(20);
+            assert_eq!(first(&app), 2);
+
+            app.on_key(ev(KeyCode::Char('$')));
+            app.refresh_zoom(20);
+            let v = app.zoom.as_ref().unwrap().drawn.as_ref().map(|d| &d.2).unwrap();
+            assert_eq!(v.first_col + v.shown_cols - 1, v.total_cols);
+
+            app.on_key(ev(KeyCode::Right));
+            app.refresh_zoom(20);
+            let v = app.zoom.as_ref().unwrap().drawn.as_ref().map(|d| &d.2).unwrap();
+            assert_eq!(v.first_col + v.shown_cols - 1, v.total_cols, "não passa da última");
+
+            app.on_key(ev(KeyCode::Char('0')));
+            app.refresh_zoom(20);
+            assert_eq!(first(&app), 1);
+
+            app.on_key(ev(KeyCode::Left));
+            app.refresh_zoom(20);
+            assert_eq!(first(&app), 1, "não anda para antes da primeira");
+        }
+
+        #[test]
+        fn rolagem_vertical_do_zoom_nao_passa_do_fim() {
+            let linhas: String = (0..40).map(|i| format!("| {i} |\n")).collect();
+            let mut app = app_com_tabela(&format!("| n |\n|---|\n{linhas}"));
+            app.on_key(ev(KeyCode::Char('t')));
+            app.refresh_zoom(30);
+            app.on_key(ev(KeyCode::Char('G')));
+            let z = app.zoom.as_ref().unwrap();
+            assert!(z.view.scroll > 0);
+            app.on_key(ev(KeyCode::Char('g')));
+            assert_eq!(app.zoom.as_ref().unwrap().view.scroll, 0);
+        }
+
+        #[test]
+        fn recarregar_com_a_tabela_sumida_fecha_o_zoom() {
+            let mut app = app_com_tabela(TABELA);
+            app.on_key(ev(KeyCode::Char('t')));
+            app.md = "sem tabela\n".to_string();
+            app.rerender(60);
+            assert!(app.zoom.is_none());
+        }
+
+        #[test]
+        fn rerender_com_a_tabela_ainda_presente_mantem_o_zoom_e_refaz_o_desenho() {
+            let mut app = app_com_tabela(TABELA);
+            app.on_key(ev(KeyCode::Char('t')));
+            app.refresh_zoom(30);
+            app.rerender(60);
+            let z = app.zoom.as_ref().expect("continua aberto");
+            assert!(z.drawn.is_none(), "o cache do desenho é descartado");
+        }
+
+        #[test]
+        fn rotulo_de_colunas() {
+            let md = tabela_larga(12);
+            let out = render::render(&md, 20);
+            let data = &out.tables[0].data;
+            assert_eq!(columns_label(&data.draw(200, 0)), "todas as 12 colunas");
+            assert_eq!(columns_label(&data.draw(20, 0)), "colunas 1 e 2–3 de 12");
+            let so_uma = render::render("| a |\n|---|\n| 1 |\n", 20);
+            assert_eq!(columns_label(&so_uma.tables[0].data.draw(20, 0)), "1 coluna");
         }
 }
