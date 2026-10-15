@@ -143,6 +143,15 @@ pub fn auto_view_of_text(text: &str, path: Option<&str>) -> JsonView {
     }
 }
 
+/// Próxima vista no ciclo da tecla `v`: tabela, esquema, texto.
+pub fn next_view(current: JsonView) -> JsonView {
+    match current {
+        JsonView::Auto | JsonView::Text => JsonView::Table,
+        JsonView::Table => JsonView::Schema,
+        JsonView::Schema => JsonView::Text,
+    }
+}
+
 fn cell_text(v: &Value) -> String {
     match v {
         Value::String(s) => clip_cell(s),
@@ -825,5 +834,13 @@ mod tests {
             let r = render_json(r#"{"\u001b]0;pwn\u0007":1}"#, &jopts(JsonView::Schema), 80);
             let ansi = crate::render::to_ansi(&r.lines, false);
             assert!(!ansi.contains('\x1b') && ansi.contains("número"), "{ansi:?}");
+        }
+
+        #[test]
+        fn ciclo_de_vistas() {
+            assert_eq!(next_view(JsonView::Auto), JsonView::Table);
+            assert_eq!(next_view(JsonView::Text), JsonView::Table);
+            assert_eq!(next_view(JsonView::Table), JsonView::Schema);
+            assert_eq!(next_view(JsonView::Schema), JsonView::Text);
         }
 }

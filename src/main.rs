@@ -62,6 +62,7 @@ OPÇÕES:
 
 OPÇÕES DE JSON:
         --path <p>     mostra só um trecho, ex.: .itens[0].nome
+        --as <vista>   auto (padrão), text, table ou schema
 
 OPÇÕES DE CSV/TSV:
         --head <N>     mostra só as N primeiras linhas (padrão: 1000)
@@ -78,6 +79,7 @@ TECLAS (modo interativo):
     /                  buscar (Enter confirma, Esc cancela)
     n / N              próxima / anterior ocorrência
     m                  alterna entre renderizado e fonte crua
+    v                  (JSON) alterna tabela / esquema / texto
     r                  recarrega o arquivo
     q, Esc             sai
 ";
@@ -671,6 +673,15 @@ impl App {
             KeyCode::Char('n') => self.step_match(true),
             KeyCode::Char('N') => self.step_match(false),
             KeyCode::Char('r') => self.reload(),
+                        KeyCode::Char('v') if self.doc.mode == cli::Mode::Json => {
+                            let current = if self.doc.json_view == cli::JsonView::Auto {
+                                data::auto_view_of_text(&self.md, self.doc.json_path.as_deref())
+                            } else {
+                                self.doc.json_view
+                            };
+                            self.doc.json_view = data::next_view(current);
+                            self.dirty = true;
+                        }
             KeyCode::Char('m') => {
                 self.raw = !self.raw;
                 self.dirty = true;
@@ -762,7 +773,17 @@ impl App {
             .saturating_mul(100)
             .checked_div(self.view.max_scroll(total))
             .unwrap_or(100);
-        let mut s = format!(" {}  {pct}%{}", self.name, if self.raw { "  [fonte]" } else { "" });
+                let view = match (self.doc.mode, self.doc.json_view) {
+                    (cli::Mode::Json, cli::JsonView::Text) => "  [texto]",
+                    (cli::Mode::Json, cli::JsonView::Table) => "  [tabela]",
+                    (cli::Mode::Json, cli::JsonView::Schema) => "  [esquema]",
+                    _ => "",
+                };
+                let mut s = format!(
+                    " {}  {pct}%{}{view}",
+                    self.name,
+                    if self.raw { "  [fonte]" } else { "" }
+                );
         let search = &self.search;
         if !search.query.is_empty() {
             if search.matches.is_empty() {
@@ -1013,4 +1034,46 @@ mod tests {
         assert_eq!(app.name, "a.md");
         assert!(!app.dirty);
     }
+
+        fn tecla(app: &mut App, c: char) {
+            app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+
+        #[test]
+        fn v_alterna_as_vistas_do_json() {
+            let mut app = test_app(Source::Stdin, r#"[{"a":1}]"#);
+            app.doc.mode = cli::Mode::Json;
+            tecla(&mut app, 'v'); // Auto já era tabela: o próximo é o esquema
+            assert_eq!(app.doc.json_view, cli::JsonView::Schema);
+            assert!(app.dirty);
+            tecla(&mut app, 'v');
+            assert_eq!(app.doc.json_view, cli::JsonView::Text);
+            tecla(&mut app, 'v');
+            assert_eq!(app.doc.json_view, cli::JsonView::Table);
+        }
+
+        #[test]
+        fn v_em_json_que_nao_e_lista_comeca_pela_tabela() {
+            let mut app = test_app(Source::Stdin, r#"{"a":1}"#);
+            app.doc.mode = cli::Mode::Json;
+            tecla(&mut app, 'v');
+            assert_eq!(app.doc.json_view, cli::JsonView::Table);
+        }
+
+        #[test]
+        fn v_fora_do_modo_json_nao_faz_nada() {
+            let mut app = test_app(Source::Stdin, "# a");
+            app.dirty = false;
+            tecla(&mut app, 'v');
+            assert_eq!(app.doc.json_view, cli::JsonView::Auto);
+            assert!(!app.dirty);
+        }
+
+        #[test]
+        fn barra_mostra_a_vista_do_json_quando_escolhida() {
+            let mut app = test_app(Source::Stdin, r#"[{"a":1}]"#);
+            app.doc.mode = cli::Mode::Json;
+            tecla(&mut app, 'v');
+            assert!(app.status_left().contains("[esquema]"), "{}", app.status_left());
+        }
 }
