@@ -36,6 +36,7 @@ pub struct Cli {
     pub path: Option<String>,
     pub json_path: Option<String>,
     pub json_view: JsonView,
+    pub table: Option<usize>,
     pub head: usize,
     pub cols: Vec<String>,
     pub no_header: bool,
@@ -85,6 +86,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         path: None,
         json_path: None,
         json_view: JsonView::Auto,
+        table: None,
         head: DEFAULT_HEAD,
         cols: Vec::new(),
         no_header: false,
@@ -126,6 +128,13 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
                 cli.width = Some(parse_width(&v)?);
             }
             "--path" => cli.json_path = Some(value(&mut args, &a)?),
+                        "--table" => {
+                            let v = value(&mut args, &a)?;
+                            cli.table = Some(match v.parse::<usize>() {
+                                Ok(n) if n >= 1 => n,
+                                _ => return Err(format!("--table inválido: {v} (esperado um número a partir de 1)")),
+                            });
+                        }
             "--as" => {
                 let v = value(&mut args, &a)?;
                 cli.json_view = match v.as_str() {
@@ -293,4 +302,19 @@ mod tests {
         assert!(matches!(parse(["-h".to_string()]), Ok(Parsed::Help)));
         assert!(matches!(parse(["a.md".to_string(), "-V".to_string()]), Ok(Parsed::Version)));
     }
+
+        #[test]
+        fn table_aceita_numero_a_partir_de_1() {
+            assert_eq!(run(&["--table", "2", "a.md"]).unwrap().table, Some(2));
+            assert_eq!(run(&["a.md"]).unwrap().table, None);
+        }
+
+        #[test]
+        fn table_invalido_e_erro_de_uso() {
+            for v in ["0", "-1", "x", ""] {
+                let e = run(&["--table", v, "a.md"]).unwrap_err();
+                assert!(e.contains("--table"), "{e}");
+            }
+            assert!(run(&["--table"]).is_err());
+        }
 }

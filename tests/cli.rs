@@ -277,3 +277,36 @@ fn as_com_markdown_e_erro_de_uso() {
     assert_eq!(out.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&out.stderr).contains("--as"));
 }
+
+#[test]
+fn csv_com_celula_longa_quebra_em_vez_de_truncar() {
+    let frase = "uma descricao bem longa que precisa quebrar em varias linhas dentro da celula final";
+    let out = mdv(&["csv", "-p", "-w", "40", "-"], &format!("id,texto\n1,{frase}\n"));
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(!text.contains('…'), "{text}");
+    assert!(text.contains("final"), "{text}");
+    assert!(text.lines().all(|l| l.chars().count() <= 40), "{text}");
+}
+
+#[test]
+fn markdown_com_celula_longa_quebra_em_plain() {
+    let md = "| a | b |\n|---|---|\n| 1 | palavra1 palavra2 palavra3 palavra4 palavra5 palavra6 palavra7 |\n";
+    let out = mdv(&["-p", "-w", "30", "-"], md);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("palavra7") && !text.contains('…'), "{text}");
+}
+
+#[test]
+fn table_zero_e_erro_de_uso() {
+    let out = mdv(&["--table", "0", "-"], "# x\n");
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--table"));
+}
+
+#[test]
+fn table_e_ignorado_em_plain() {
+    let out = mdv(&["-p", "--table", "9", "-"], "| a |\n|---|\n| 1 |\n");
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains('┌'));
+}

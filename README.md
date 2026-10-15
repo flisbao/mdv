@@ -22,7 +22,7 @@ mdv json dados.json --path .itens[0]      # só um trecho do JSON
 
 - **Renderização completa.** Títulos, ênfase, ~~tachado~~, `código inline`, links, citações, listas ordenadas, não ordenadas, aninhadas e de tarefas (`- [x]`), réguas e tabelas com alinhamento por coluna.
 - **Código com realce de sintaxe.** Blocos com linguagem declarada saem coloridos (via `syntect`), com moldura e rótulo da linguagem.
-- **Tabelas que cabem na tela.** Colunas se ajustam à largura disponível; células largas são truncadas com `…` em vez de quebrar o layout.
+- **Tabelas que cabem na tela.** Colunas se ajustam à largura disponível; células largas quebram em várias linhas (até 8, depois `…`). Na TUI, `t` abre a tabela na largura inteira do terminal, com cabeçalho e primeira coluna fixos e `h`/`l` para rolar as colunas; `--table N` abre direto numa delas.
 - **Quebra de linha correta.** O texto é quebrado na largura do terminal respeitando caracteres largos: acentos, emojis e CJK (日本語) não desalinham nada.
 - **Leitor interativo.** Rolagem, página, meia página, busca com `/`, `n`/`N` entre ocorrências e `]`/`[` para pular de título em título.
 - **Imagens no terminal.** `![alt](arquivo.png)` e, com `--remote`, imagens por URL, desenhadas em meio-bloco, sem protocolo gráfico. [Detalhes](#imagens).
@@ -85,11 +85,13 @@ OPÇÕES:
         --toc          imprime só o índice de títulos
         --follow       com stdin: acompanha o texto conforme chega
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
+        --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
 OPÇÕES DE JSON:
         --path <p>     mostra só um trecho, ex.: .itens[0].nome
+        --as <vista>   auto (padrão), text, table ou schema
 
 OPÇÕES DE CSV/TSV:
         --head <N>     mostra só as N primeiras linhas (padrão: 1000)
@@ -106,6 +108,8 @@ TECLAS (modo interativo):
     /                  buscar (Enter confirma, Esc cancela)
     n / N              próxima / anterior ocorrência
     m                  alterna entre renderizado e fonte crua
+    v                  (JSON) alterna tabela / esquema / texto
+    t                  zoom da tabela na tela (h/l colunas, Esc volta)
     r                  recarrega o arquivo
     q, Esc             sai
 ```
@@ -151,12 +155,11 @@ mdv csv dados.txt --delimiter ';'
 
 Uma lista de objetos (ou JSONL) abre como **tabela**: uma coluna por chave, objetos aninhados achatados como `endereco.cidade` e listas mostradas de forma compacta. `--head` e `--cols` valem também aqui. Os outros JSONs abrem **indentados**, com um resumo de tipo e tamanho. `--as table|schema|text` força a vista, e na TUI a tecla `v` alterna entre tabela, esquema e texto. O **esquema** mostra o tipo de cada campo (`itens: lista · 120 × objeto`, `tags?: ...` quando o campo falta em alguns itens) a partir de uma amostra dos 1000 primeiros itens.
 
-O formato também é deduzido da extensão (`.json`, `.jsonl`, `.csv`, `.tsv`) e funciona com `-` (stdin). Tabelas mostram até 200 colunas (o rodapé avisa `+N omitidas`) e cortam células com mais de 500 caracteres; use `--cols` para tabelas largas, pois não há rolagem horizontal. CSV/TSV têm colunas numéricas alinhadas à direita e rodapé `N de M linhas · K colunas`. A entrada de dados é limitada a 5 MiB.
+O formato também é deduzido da extensão (`.json`, `.jsonl`, `.csv`, `.tsv`) e funciona com `-` (stdin). Tabelas mostram até 200 colunas (o rodapé avisa `+N omitidas`) e cortam células com mais de 500 caracteres; para tabelas com muitas colunas use `t` (zoom) ou `--cols`. CSV/TSV têm colunas numéricas alinhadas à direita e rodapé `N de M linhas · K colunas`. A entrada de dados é limitada a 5 MiB.
 
 ## Limitações conhecidas
 
 - Linhas de código largas são quebradas na largura da tela, não rolam na horizontal.
-- Células de tabela largas são truncadas com `…`.
 - A busca encontra ocorrências dentro de um mesmo trecho estilizado.
 - Imagens usam meio-bloco (baixa resolução); um protocolo gráfico como Kitty/Sixel seria um refinamento opcional.
 

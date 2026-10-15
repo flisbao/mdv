@@ -57,6 +57,7 @@ OPÇÕES:
         --toc          imprime só o índice de títulos
         --follow       com stdin: acompanha o texto conforme chega
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
+        --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
@@ -80,6 +81,7 @@ TECLAS (modo interativo):
     n / N              próxima / anterior ocorrência
     m                  alterna entre renderizado e fonte crua
     v                  (JSON) alterna tabela / esquema / texto
+    t                  zoom da tabela na tela (h/l colunas, Esc volta)
     r                  recarrega o arquivo
     q, Esc             sai
 ";
@@ -498,6 +500,7 @@ struct App {
     search: SearchState,
     zoom: Option<Zoom>,
     notice: Option<String>,
+    open_table: Option<usize>,
 }
 
 impl App {
@@ -530,6 +533,7 @@ impl App {
             search: SearchState::default(),
             zoom: None,
             notice: None,
+            open_table: cli.table.map(|n| n - 1),
         }
     }
 
@@ -665,7 +669,14 @@ impl App {
         self.goto_match();
     }
 
-        fn open_zoom(&mut self, table: usize) {
+            /// Abre o zoom pedido por `--table`, assim que há um documento renderizado.
+        fn open_pending_table(&mut self) {
+            if let Some(i) = self.open_table.take() {
+                self.open_zoom(i);
+            }
+        }
+
+    fn open_zoom(&mut self, table: usize) {
             if table >= self.rendered.tables.len() {
                 self.notice = Some(format!(
                     "tabela {} não existe (há {})",
@@ -832,6 +843,7 @@ impl App {
         if self.dirty || w != self.render_width {
             self.rerender(w);
         }
+        self.open_pending_table();
                 if self.zoom.is_some() {
                     self.draw_zoom(f, content, status);
                     return;
@@ -1359,5 +1371,32 @@ mod tests {
             assert_eq!(columns_label(&data.draw(20, 0)), "colunas 1 e 2–3 de 12");
             let so_uma = render::render("| a |\n|---|\n| 1 |\n", 20);
             assert_eq!(columns_label(&so_uma.tables[0].data.draw(20, 0)), "1 coluna");
+        }
+
+        fn app_com_cli(args: &[&str], md: &str) -> App {
+            let cli = match cli::parse(args.iter().map(|s| s.to_string())) {
+                Ok(cli::Parsed::Run(c)) => c,
+                _ => panic!("cli de teste"),
+            };
+            App::new(Source::Stdin, md.to_string(), 80, &cli)
+        }
+
+        #[test]
+        fn table_n_abre_o_zoom_na_primeira_renderizacao() {
+            let md = format!("{TABELA}\ntexto\n\n{TABELA}");
+            let mut app = app_com_cli(&["--table", "2", "-"], &md);
+            app.rerender(60);
+            app.open_pending_table();
+            assert_eq!(app.zoom.as_ref().map(|z| z.table), Some(1));
+            assert!(app.open_table.is_none());
+        }
+
+        #[test]
+        fn table_alem_do_que_existe_avisa_e_nao_abre() {
+            let mut app = app_com_cli(&["--table", "5", "-"], TABELA);
+            app.rerender(60);
+            app.open_pending_table();
+            assert!(app.zoom.is_none());
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("tabela 5 não existe (há 1)")));
         }
 }
