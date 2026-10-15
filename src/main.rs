@@ -1,4 +1,5 @@
 mod cli;
+mod clip;
 mod data;
 mod image;
 mod mem;
