@@ -4,7 +4,7 @@ Itens encontrados na revisão final da Fase 6 (v0.2.0) e deixados para depois. N
 
 ## Segurança e robustez
 
-- [ ] **CSV com milhões de colunas em uma linha** (`src/data.rs`). `MAX_DATA_BYTES` (5 MiB) limita o texto, mas não o número de colunas nem de células: uma única linha com ~2,5 M de vírgulas gera uma linha com milhões de colunas. Pôr teto de colunas (e de células) em `render_table_data`, com mensagem em português e teste.
+- [x] **CSV com milhões de colunas em uma linha** (`src/data.rs`). `MAX_DATA_BYTES` (5 MiB) limita o texto, mas não o número de colunas nem de células: uma única linha com ~2,5 M de vírgulas gera uma linha com milhões de colunas. Pôr teto de colunas (e de células) em `render_table_data`, com mensagem em português e teste. Resolvido em F7.6: tetos `MAX_TABLE_COLS` e `MAX_CELL_CHARS`.
 - [ ] **Corrida entre checar e abrir a imagem** (`src/image.rs`, `load_local`). Se o arquivo for trocado por uma FIFO entre a checagem do tipo e o `open`, a leitura trava. Fechar de vez abrindo com `O_NONBLOCK` (precisa da crate `libc`, pois o valor da constante muda entre plataformas).
 - [ ] `mdv --latest` imprime no stderr o nome de arquivo não UTF-8 sem sanitizar (`Failure` sem `sanitize`).
 - [ ] `follow_latest` relê até 16 MiB a cada 250 ms se o arquivo mais novo for ilegível; lembrar a falha (caminho + mtime) e mostrar o erro na barra de status.

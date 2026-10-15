@@ -28,7 +28,7 @@ mdv json dados.json --path .itens[0]      # só um trecho do JSON
 - **Imagens no terminal.** `![alt](arquivo.png)` e, com `--remote`, imagens por URL, desenhadas em meio-bloco, sem protocolo gráfico. [Detalhes](#imagens).
 - **Diagramas Mermaid.** Com `--mermaid`, blocos <code>```mermaid</code> viram imagem via `mmdc`. [Detalhes](#mermaid).
 - **Feito para saída de agentes e LLMs.** Front matter YAML, alertas GFM, notas de rodapé, `<details>` e `<think>` aparecem formatados; `--follow`, `--latest <pasta>` e `--toc` acompanham e resumem. Na TUI, `m` alterna para a fonte crua. [Detalhes](#markdown-de-agentes-e-llms).
-- **JSON, CSV e TSV.** `mdv json|csv|tsv` com `--path`, `--head`, `--cols`, `--no-header` e `--delimiter`. [Detalhes](#json-csv-e-tsv).
+- **JSON, CSV e TSV.** `mdv json|csv|tsv` com `--as table|schema|text`, `--path`, `--head`, `--cols`, `--no-header` e `--delimiter`. [Detalhes](#json-csv-e-tsv).
 - **Live reload.** Edite o arquivo no seu editor e veja o resultado atualizar sozinho no `mdv` ao lado. Ótimo para escrever README.
 - **Funciona em pipe.** Com `-p` ou quando a saída não é um terminal, imprime texto com ANSI. Serve em scripts, `less -R` e CI.
 - **Responsivo.** Redesenha ao redimensionar a janela; `-w` fixa a largura máxima.
@@ -140,13 +140,18 @@ Na TUI, a tecla `m` alterna entre o texto renderizado e a **fonte crua**.
 ## JSON, CSV e TSV
 
 ```bash
-mdv json dados.json --path .itens[0]   # só um trecho; JSONL vira lista
+mdv json itens.json                    # lista de objetos (e JSONL) vira tabela
+mdv json dados.json --as schema        # só chaves e tipos, sem os valores
+mdv json dados.json --as text          # JSON indentado e colorido
+mdv json dados.json --path .itens[0]   # só um trecho
 mdv csv vendas.csv --head 20 --cols produto,total
 mdv tsv planilha.tsv --no-header
 mdv csv dados.txt --delimiter ';'
 ```
 
-O formato também é deduzido da extensão (`.json`, `.jsonl`, `.csv`, `.tsv`) e funciona com `-` (stdin). O JSON sai indentado, com realce e um resumo de tipo e tamanho. CSV/TSV viram tabela com colunas numéricas alinhadas à direita e um rodapé `N de M linhas · K colunas`; use `--cols` para tabelas largas, pois não há rolagem horizontal. A entrada de dados é limitada a 5 MiB.
+Uma lista de objetos (ou JSONL) abre como **tabela**: uma coluna por chave, objetos aninhados achatados como `endereco.cidade` e listas mostradas de forma compacta. `--head` e `--cols` valem também aqui. Os outros JSONs abrem **indentados**, com um resumo de tipo e tamanho. `--as table|schema|text` força a vista, e na TUI a tecla `v` alterna entre tabela, esquema e texto. O **esquema** mostra o tipo de cada campo (`itens: lista · 120 × objeto`, `tags?: ...` quando o campo falta em alguns itens) a partir de uma amostra dos 1000 primeiros itens.
+
+O formato também é deduzido da extensão (`.json`, `.jsonl`, `.csv`, `.tsv`) e funciona com `-` (stdin). Tabelas mostram até 200 colunas (o rodapé avisa `+N omitidas`) e cortam células com mais de 500 caracteres; use `--cols` para tabelas largas, pois não há rolagem horizontal. CSV/TSV têm colunas numéricas alinhadas à direita e rodapé `N de M linhas · K colunas`. A entrada de dados é limitada a 5 MiB.
 
 ## Limitações conhecidas
 

@@ -13,6 +13,7 @@ cat README.md | cargo run --release  # stdin
 cargo run --release -- -p samples/llm.md       # front matter, alertas, <think>...
 cargo run --release -- -p samples/img.md       # imagem local em meio-bloco
 cargo run --release -- -p csv samples/dados.csv   # também: json, tsv
+cargo run --release -- -p json samples/itens.json   # tabela; --as schema para o esquema
 cargo clippy
 ```
 
@@ -31,7 +32,7 @@ Um único pipeline: entrada (Markdown, JSON, CSV/TSV) → `Vec<Line>` do ratatui
 - `src/net.rs`: download HTTP(S) restrito (`--remote`): resolvedor que recusa rede privada/loopback, teto de bytes, redirecionamento manual.
 - `src/mermaid.rs`: executa o `mmdc` (`--mermaid`, binário configurável por `MDV_MMDC`) com timeout.
 - `src/stream.rs`: leitor de stdin em thread (`Utf8Accum`) e `newest_md`.
-- `src/data.rs`: visualizadores de JSON/JSONL (`render_json`, `--path`) e CSV/TSV (`render_table_data`), reaproveitando `render_code_only` e `render_table_only`.
+- `src/data.rs`: visualizadores de dados: JSON/JSONL (`render_json` com as vistas texto, tabela e esquema, escolhidas por `--as`/tecla `v`) e CSV/TSV (`render_table_data`); as duas tabelas passam por `finish_table` (tetos `MAX_TABLE_COLS`/`MAX_CELL_CHARS`), reaproveitando `render_code_only` e `render_table_only`.
 
 **Regra: I/O fica fora de `render.rs`.** Disco, rede e subprocesso vivem em `ImageStore`/`net`/`mermaid`; `render` só consulta o cache. Rede e subprocesso são opt-in (`--remote`, `--mermaid`).
 
