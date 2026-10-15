@@ -47,6 +47,7 @@ pub struct Cli {
     pub no_header: bool,
 }
 
+#[allow(clippy::large_enum_variant)] // um único valor por execução; boxar só espalharia `*` nos testes
 pub enum Parsed {
     Run(Cli),
     Help,

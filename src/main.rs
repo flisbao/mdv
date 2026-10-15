@@ -65,6 +65,10 @@ OPÇÕES:
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
         --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
         --memory-buffer <T>  limite de memória (padrão: 512M; ex.: 256M, 2G; ou $MDV_MEMORY_BUFFER)
+        --extract-code imprime só o texto dos blocos de código (sem cor)
+        --lang <L>     com --extract-code: só os blocos da linguagem L
+    -n <N>             com --extract-code: só o N-ésimo bloco (a partir de 1)
+        --section <T>  imprime só o Markdown da seção de título T
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
@@ -171,6 +175,17 @@ fn run_cli() -> Result<(), Failure> {
         Some(dir) => load_latest(dir)?,
         None => load_source(cli.path.as_deref())?,
     };
+    if cli.wants_extract() {
+        mem::check_parse(md.len()).map_err(|e| Failure::Runtime(e.to_string()))?;
+        let opts = extract::ExtractOpts {
+            code: cli.extract_code,
+            lang: cli.lang.clone(),
+            nth: cli.nth,
+            section: cli.section.clone(),
+        };
+        let text = extract::extract(&md, &opts).map_err(Failure::Runtime)?;
+        return write_stdout(&text);
+    }
     if cli.toc && cli.mode == cli::Mode::Markdown {
         return write_stdout(&render::toc(&render::render(&md, width)));
     }

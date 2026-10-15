@@ -394,3 +394,121 @@ fn json_com_chave_gigante_respeita_o_limite_padrao() {
     let out = mdv(&["json", "-p", "-"], &json);
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
 }
+
+const DOC_EXTRACAO: &str = "intro\n\n# A\n\n```rust\nfn a() {}\n```\n\n## B\n\n```py\nprint('b')\n```\n\n```rust\nfn b() {}\n```\n\n# C\n\n```\nsem lang\n```\n";
+
+fn stdout(o: &Output) -> String {
+    String::from_utf8_lossy(&o.stdout).into_owned()
+}
+
+fn stderr(o: &Output) -> String {
+    String::from_utf8_lossy(&o.stderr).into_owned()
+}
+
+#[test]
+fn extract_code_imprime_todos_os_blocos_sem_cor() {
+    let out = mdv(&["--extract-code", "-"], DOC_EXTRACAO);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "fn a() {}\n\nprint('b')\n\nfn b() {}\n\nsem lang\n");
+    assert!(!stdout(&out).contains('\x1b'));
+}
+
+#[test]
+fn extract_code_filtra_por_linguagem_e_n() {
+    let out = mdv(&["--extract-code", "--lang", "RUST", "-n", "2", "-"], DOC_EXTRACAO);
+    assert_eq!(stdout(&out), "fn b() {}\n");
+}
+
+#[test]
+fn extract_code_n_fora_do_intervalo_sai_com_1() {
+    let out = mdv(&["--extract-code", "--lang", "rust", "-n", "9", "-"], DOC_EXTRACAO);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("fora do intervalo"));
+    assert!(stdout(&out).is_empty());
+}
+
+#[test]
+fn extract_code_sem_bloco_sai_com_1() {
+    let out = mdv(&["--extract-code", "-"], "só texto\n");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("nenhum bloco de código"));
+}
+
+#[test]
+fn section_imprime_o_markdown_cru_com_subsecoes() {
+    let out = mdv(&["--section", "a", "-"], DOC_EXTRACAO);
+    let s = stdout(&out);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(s.starts_with("# A\n") && s.contains("## B") && !s.contains("# C"), "{s}");
+}
+
+#[test]
+fn section_aninhada_para_no_proximo_titulo_do_mesmo_nivel() {
+    let out = mdv(&["--section", "B", "-"], DOC_EXTRACAO);
+    assert!(stdout(&out).starts_with("## B\n") && !stdout(&out).contains("fn a()"));
+}
+
+#[test]
+fn section_ambigua_lista_candidatos_e_sai_com_1() {
+    let out = mdv(&["--section", "passo", "-"], "# Passo um\n\n# Passo dois\n");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("Passo um") && stderr(&out).contains("Passo dois"));
+}
+
+#[test]
+fn section_inexistente_sai_com_1() {
+    let out = mdv(&["--section", "zzz", "-"], DOC_EXTRACAO);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("zzz"));
+}
+
+#[test]
+fn section_com_extract_code_extrai_so_dentro_da_secao() {
+    let out = mdv(&["--section", "B", "--extract-code", "-"], DOC_EXTRACAO);
+    assert_eq!(stdout(&out), "print('b')\n\nfn b() {}\n");
+}
+
+#[test]
+fn extract_code_de_bloco_indentado() {
+    let out = mdv(&["--extract-code", "-"], "texto\n\n    recuado\n");
+    assert_eq!(stdout(&out), "recuado\n");
+}
+
+#[test]
+fn extract_code_nao_deixa_escape_do_documento_passar() {
+    let out = mdv(&["--extract-code", "-"], "```\na\x1b]0;titulo\x07b\n```\n");
+    assert!(out.status.success());
+    assert!(!stdout(&out).contains('\x1b') && !stdout(&out).contains('\x07'));
+}
+
+#[test]
+fn extract_de_arquivo_funciona_como_de_stdin() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("a.md");
+    std::fs::write(&p, DOC_EXTRACAO).unwrap();
+    let out = mdv(&["--extract-code", "--lang", "py", p.to_str().unwrap()], "");
+    assert_eq!(stdout(&out), "print('b')\n");
+}
+
+#[test]
+fn flags_de_extracao_invalidas_sao_erro_de_uso() {
+    for args in [
+        &["--lang", "rust", "-"][..],
+        &["--extract-code", "-n", "0", "-"][..],
+        &["json", "--section", "A", "-"][..],
+        &["--extract-code", "--toc", "-"][..],
+    ] {
+        let out = mdv(args, "# A\n");
+        assert_eq!(out.status.code(), Some(2), "{args:?}: {}", stderr(&out));
+    }
+}
+
+#[test]
+fn section_ambigua_nao_deixa_escape_do_titulo_chegar_ao_stderr() {
+    let out = mdv(&["--section", "passo", "-"], "# Passo ]0;xum
+
+# Passo dois
+");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(!stderr(&out).contains('') && !stderr(&out).contains(''), "{:?}", stderr(&out));
+}

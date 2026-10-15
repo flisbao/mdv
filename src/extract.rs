@@ -89,7 +89,7 @@ pub fn find_section(heads: &[Heading], query: &str) -> Result<usize, String> {
         [] => Err(format!("nenhuma seção com o título \"{}\"", query.trim())),
         [i] => Ok(*i),
         varios => {
-            let nomes: Vec<&str> = varios.iter().map(|&i| heads[i].title.as_str()).collect();
+            let nomes: Vec<String> = varios.iter().map(|&i| sanitize(&heads[i].title).into_owned()).collect();
             Err(format!("o título \"{}\" é ambíguo; candidatos: {}", query.trim(), nomes.join(", ")))
         }
     }
