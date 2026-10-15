@@ -43,6 +43,7 @@ Um único pipeline: entrada (Markdown, JSON, CSV/TSV) → `Vec<Line>` do ratatui
 - `src/stream.rs`: leitor de stdin em thread (`Utf8Accum`) e `newest_md`.
 - `src/mem.rs`: limite de memória do processo (`--memory-buffer`, `MDV_MEMORY_BUFFER`, padrão 512 MiB). `CountingAlloc` é o `#[global_allocator]` (conta bytes vivos, teto duro `limite×1,5+16 MiB`); `check()`/`exceeded()` são os pontos de checagem usados por `render_with`, `layout_table`, `render_code`, `data.rs` e `main.rs`; ao estourar devolvem `error_rendered(MemoryLimit)`. `check_parse` barra antes de analisar o texto cuja árvore do `pulldown-cmark` passaria do limite. Testes unitários **não** alteram o limite global (rodam em paralelo); o estouro real é testado pelo binário em `tests/cli.rs`.
 - `src/clip.rs`: base64 e OSC 52 (`y`/`Y`); a TUI guarda a sequência em `App.pending_osc` e o `event_loop` a escreve.
+- `src/extract.rs`: `--extract-code`/`--section`; trabalha sobre o fonte com `pulldown-cmark` (`render::parse_options`), sem renderizar, e devolve texto saneado.
 - `src/data.rs`: visualizadores de dados: JSON/JSONL (`render_json` com as vistas texto, tabela e esquema, escolhidas por `--as`/tecla `v`) e CSV/TSV (`render_table_data`); as duas tabelas passam por `finish_table` (tetos `MAX_TABLE_COLS`/`MAX_CELL_CHARS`), reaproveitando `render_code_only` e `render_table_only`.
 
 **Regra: I/O fica fora de `render.rs`.** Disco, rede e subprocesso vivem em `ImageStore`/`net`/`mermaid`; `render` só consulta o cache. Rede e subprocesso são opt-in (`--remote`, `--mermaid`).

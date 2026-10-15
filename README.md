@@ -87,6 +87,10 @@ OPÇÕES:
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
         --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
         --memory-buffer <T>  limite de memória (padrão: 512M; ex.: 256M, 2G; ou $MDV_MEMORY_BUFFER)
+        --extract-code imprime só o texto dos blocos de código (sem cor)
+        --lang <L>     com --extract-code: só os blocos da linguagem L
+    -n <N>             com --extract-code: só o N-ésimo bloco (a partir de 1)
+        --section <T>  imprime só o Markdown da seção de título T
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
@@ -142,6 +146,19 @@ mdv --toc relatorio.md         # só o índice de títulos
 ```
 
 Na TUI, a tecla `m` alterna entre o texto renderizado e a **fonte crua**.
+
+## Extrair trechos
+
+Para scripts e prompts, o `mdv` imprime só o que você pede, em texto puro (sem cor):
+
+```bash
+mdv --extract-code plano.md                      # todos os blocos de código
+mdv --extract-code --lang bash -n 2 plano.md     # o 2º bloco bash
+mdv --section "Instalação" plano.md              # o Markdown da seção
+mdv --section "Instalação" --extract-code plano.md | sh
+```
+
+`--lang` não distingue maiúsculas; `-n` conta a partir de 1, depois do filtro. O título casa por igualdade (sem distinguir caixa) ou por trecho único; se for ambíguo, o `mdv` lista os candidatos e sai com código 1, o mesmo código de quando nada é encontrado.
 
 ## JSON, CSV e TSV
 
