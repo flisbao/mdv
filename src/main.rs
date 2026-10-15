@@ -209,7 +209,7 @@ fn run_cli() -> Result<(), Failure> {
             let picker = picker::Picker::scan(dir)
                 .map_err(|e| Failure::Runtime(format!("não consegui ler {}: {e}", dir.display())))?;
             let mut app = App::new(Source::Stdin, String::new(), width, &cli);
-            app.name = dir.display().to_string();
+            app.name = render::sanitize(&dir.display().to_string()).into_owned();
             app.picker = Some(picker);
             app.notice = app.notice.or(mem_warning);
             return run_tui(app);
@@ -709,8 +709,11 @@ impl App {
     fn new(source: Source, md: String, max_width: usize, cli: &cli::Cli) -> Self {
         let (name, mtime) = match &source {
             Source::File(p) => (
-                p.file_name()
-                    .map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into_owned()),
+                render::sanitize(
+                    &p.file_name()
+                        .map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into_owned()),
+                )
+                .into_owned(),
                 file_mtime(p),
             ),
             Source::Stdin => ("stdin".to_string(), None),
@@ -832,9 +835,12 @@ impl App {
             return;
         }
         let Ok(md) = read_markdown_file(&newest) else { return };
-        self.name = newest
-            .file_name()
-            .map_or_else(|| newest.display().to_string(), |n| n.to_string_lossy().into_owned());
+        self.name = render::sanitize(
+            &newest
+                .file_name()
+                .map_or_else(|| newest.display().to_string(), |n| n.to_string_lossy().into_owned()),
+        )
+        .into_owned();
         self.mtime = file_mtime(&newest);
         self.source = Source::File(newest);
         self.md = md;
@@ -1822,6 +1828,21 @@ mod tests {
 
     fn key(app: &mut App, c: KeyCode) {
         app.on_key(KeyEvent::new(c, KeyModifiers::NONE));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn follow_latest_saneia_nome_com_escape() {
+        use std::os::unix::ffi::OsStrExt;
+        let dir = tempfile::tempdir().unwrap();
+        let outro = dir.path().join("outro.txt");
+        fs::write(&outro, "x").unwrap();
+        let nome = std::ffi::OsStr::from_bytes(b"novo\x1b[31m.md");
+        fs::write(dir.path().join(nome), "# Novo\n").unwrap();
+        let mut app = test_app(Source::File(outro), "x");
+        app.latest_dir = Some(dir.path().to_path_buf());
+        app.follow_latest();
+        assert!(!app.name.contains('\u{1b}'), "nome não saneado: {:?}", app.name);
     }
 
     #[test]
