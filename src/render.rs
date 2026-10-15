@@ -126,6 +126,31 @@ pub fn section_range(outline: &[OutlineEntry], idx: usize, total: usize) -> (usi
     (e.line, end)
 }
 
+/// Tarefas feitas e total num trecho do documento.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+pub struct TaskCount {
+    pub done: usize,
+    pub total: usize,
+}
+
+/// Conta as tarefas cujas linhas estão em `[from, to)`.
+pub fn count_tasks(tasks: &[TaskItem], from: usize, to: usize) -> TaskCount {
+    let mut c = TaskCount::default();
+    for t in tasks.iter().filter(|t| t.line >= from && t.line < to) {
+        c.total += 1;
+        if t.done {
+            c.done += 1;
+        }
+    }
+    c
+}
+
+/// Tarefas da seção `idx`, contando as subseções.
+pub fn section_tasks(r: &Rendered, idx: usize) -> TaskCount {
+    let (start, end) = section_range(&r.outline, idx, r.lines.len());
+    count_tasks(&r.tasks, start, end)
+}
+
 /// Título mais profundo que começa em `line` ou antes (a seção que contém a linha).
 pub fn section_at(outline: &[OutlineEntry], line: usize) -> Option<usize> {
     outline.iter().rposition(|e| e.line <= line)
@@ -229,8 +254,13 @@ impl TableData {
 /// Índice dos títulos, um por linha, indentado conforme o nível.
 pub fn toc(r: &Rendered) -> String {
     let mut out = String::new();
-    for e in &r.outline {
-        let _ = writeln!(out, "{}{}", "  ".repeat(usize::from(e.level.saturating_sub(1))), e.title);
+    for (i, e) in r.outline.iter().enumerate() {
+        let _ = write!(out, "{}{}", "  ".repeat(usize::from(e.level.saturating_sub(1))), e.title);
+        let c = section_tasks(r, i);
+        if c.total > 0 {
+            let _ = write!(out, " [{}/{}]", c.done, c.total);
+        }
+        out.push('\n');
     }
     out
 }
@@ -2226,6 +2256,64 @@ mod tests {
     fn fonte_crua_mostra_markdown_literal() {
         let t = joined_text(&render_code_only("# a\n**b**\n", "md", 40));
         assert!(t.contains("# a") && t.contains("**b**") && t.contains("md"), "{t}");
+    }
+
+    fn todas(r: &Rendered) -> TaskCount {
+        count_tasks(&r.tasks, 0, usize::MAX)
+    }
+
+    #[test]
+    fn conta_tarefas_em_lista_aninhada() {
+        let r = render("- [x] a\n- [ ] b\n  - [x] c\n", 40);
+        assert_eq!(todas(&r), TaskCount { done: 2, total: 3 });
+    }
+
+    #[test]
+    fn conta_tarefa_marcada_dentro_de_citacao() {
+        let r = render("> - [x] q\n> - [ ] w\n", 40);
+        assert_eq!(todas(&r), TaskCount { done: 1, total: 2 });
+    }
+
+    #[test]
+    fn nao_conta_colchetes_em_codigo_nem_em_texto_corrido() {
+        let r = render("```\n- [x] falso\n```\n\ntexto [ ] solto\n\n[x] sem lista\n", 40);
+        assert_eq!(todas(&r), TaskCount::default());
+    }
+
+    #[test]
+    fn count_tasks_usa_intervalo_fechado_aberto() {
+        let tasks = [TaskItem { line: 2, done: true }, TaskItem { line: 5, done: false }];
+        assert_eq!(count_tasks(&tasks, 2, 5), TaskCount { done: 1, total: 1 });
+        assert_eq!(count_tasks(&tasks, 2, 6), TaskCount { done: 1, total: 2 });
+        assert_eq!(count_tasks(&tasks, 3, 5), TaskCount::default());
+    }
+
+    #[test]
+    fn secao_sem_tarefas_conta_zero() {
+        let r = render("# A\n\n- [x] a\n\n# B\n\ntexto\n", 40);
+        assert_eq!(section_tasks(&r, 0), TaskCount { done: 1, total: 1 });
+        assert_eq!(section_tasks(&r, 1), TaskCount::default());
+    }
+
+    #[test]
+    fn contagem_do_titulo_inclui_as_subsecoes() {
+        let r = render("# A\n\n- [x] a\n\n## B\n\n- [ ] b\n\n## C\n\n- [x] c\n", 40);
+        assert_eq!(section_tasks(&r, 0), TaskCount { done: 2, total: 3 });
+        assert_eq!(section_tasks(&r, 1), TaskCount { done: 0, total: 1 });
+        assert_eq!(section_tasks(&r, 2), TaskCount { done: 1, total: 1 });
+    }
+
+    #[test]
+    fn tarefa_antes_do_primeiro_titulo_conta_so_no_documento() {
+        let r = render("- [x] solta\n\n# A\n\ntexto\n", 40);
+        assert_eq!(todas(&r), TaskCount { done: 1, total: 1 });
+        assert_eq!(section_tasks(&r, 0), TaskCount::default());
+    }
+
+    #[test]
+    fn toc_acrescenta_a_contagem_aos_titulos_com_tarefas() {
+        let r = render("# A\n\n- [x] a\n\n## B\n\n- [ ] b\n\n# C\n\ntexto\n", 40);
+        assert_eq!(toc(&r), "A [1/2]\n  B [0/1]\nC\n");
     }
 
     #[test]
