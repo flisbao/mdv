@@ -131,42 +131,38 @@ fn is_numeric_column(rows: &[Vec<String>], c: usize, skip_header: bool) -> bool 
     !cells.is_empty() && cells.iter().all(|s| s.trim().parse::<f64>().is_ok())
 }
 
-pub fn render_table_data(text: &str, o: &TableOpts, width: usize) -> Rendered {
-    if text.len() > MAX_DATA_BYTES {
-        return error_rendered("entrada grande demais para o modo tabela (limite de 5 MiB)");
-    }
-    let text = text.trim_start_matches('\u{feff}');
-    let mut rdr = csv::ReaderBuilder::new()
-        .delimiter(o.delimiter)
-        .has_headers(false)
-        .flexible(true)
-        .from_reader(text.as_bytes());
+/// Teto de colunas de uma tabela; o resto é só contado (`+N omitidas`).
+pub const MAX_TABLE_COLS: usize = 200;
+/// Teto de caracteres por célula; o excesso vira `…`.
+pub const MAX_CELL_CHARS: usize = 500;
 
-    let keep = o.head + usize::from(!o.no_header);
-    let (mut rows, mut total): (Vec<Vec<String>>, usize) = (Vec::new(), 0);
-    for rec in rdr.records() {
-        let rec = match rec {
-            Ok(r) => r,
-            Err(e) => return error_rendered(&format!("CSV inválido: {e}")),
-        };
-        total += 1;
-        if rows.len() < keep {
-            rows.push(rec.iter().map(str::to_string).collect());
-        }
+fn clip_cell(s: &str) -> String {
+    if s.chars().count() <= MAX_CELL_CHARS {
+        return s.to_string();
     }
-    if rows.is_empty() {
-        return error_rendered("arquivo vazio");
-    }
-    let has_header = !o.no_header;
-    let data_total = total - usize::from(has_header);
+    let mut cut: String = s.chars().take(MAX_CELL_CHARS).collect();
+    cut.push('…');
+    cut
+}
 
-    if !o.cols.is_empty() {
+/// Fim comum de CSV/TSV e JSON em tabela: seleção de colunas (`--cols`), alinhamento
+/// numérico, desenho e rodapé. `rows[0]` é o cabeçalho quando `has_header`.
+fn finish_table(
+    mut rows: Vec<Vec<String>>,
+    has_header: bool,
+    data_total: usize,
+    omitted_cols: usize,
+    cols: &[String],
+    width: usize,
+    unit: &str,
+) -> Rendered {
+    if !cols.is_empty() {
         if !has_header {
             return error_rendered("--cols precisa de cabeçalho (remova --no-header)");
         }
         let header = rows[0].clone();
         let mut idx = Vec::new();
-        for name in &o.cols {
+        for name in cols {
             if let Some(i) = header.iter().position(|h| h == name) {
                 idx.push(i);
             } else {
@@ -188,11 +184,44 @@ pub fn render_table_data(text: &str, o: &TableOpts, width: usize) -> Rendered {
         .collect();
     let shown = rows.len() - usize::from(has_header);
     let mut r = render_table_only(rows, has_header, aligns, width);
+    let omitted = if omitted_cols > 0 { format!(" (+{omitted_cols} omitidas)") } else { String::new() };
     r.lines.push(Line::from(Span::styled(
-        format!("{shown} de {data_total} linhas · {ncols} colunas"),
+        format!("{shown} de {data_total} {unit} · {ncols} colunas{omitted}"),
         Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
     )));
     r
+}
+
+pub fn render_table_data(text: &str, o: &TableOpts, width: usize) -> Rendered {
+    if text.len() > MAX_DATA_BYTES {
+        return error_rendered("entrada grande demais para o modo tabela (limite de 5 MiB)");
+    }
+    let text = text.trim_start_matches('\u{feff}');
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(o.delimiter)
+        .has_headers(false)
+        .flexible(true)
+        .from_reader(text.as_bytes());
+
+    let keep = o.head + usize::from(!o.no_header);
+    let (mut rows, mut total, mut omitted_cols): (Vec<Vec<String>>, usize, usize) = (Vec::new(), 0, 0);
+    for rec in rdr.records() {
+        let rec = match rec {
+            Ok(r) => r,
+            Err(e) => return error_rendered(&format!("CSV inválido: {e}")),
+        };
+        total += 1;
+        omitted_cols = omitted_cols.max(rec.len().saturating_sub(MAX_TABLE_COLS));
+        if rows.len() < keep {
+            rows.push(rec.iter().take(MAX_TABLE_COLS).map(clip_cell).collect());
+        }
+    }
+    if rows.is_empty() {
+        return error_rendered("arquivo vazio");
+    }
+    let has_header = !o.no_header;
+    let data_total = total - usize::from(has_header);
+    finish_table(rows, has_header, data_total, omitted_cols, &o.cols, width, "linhas")
 }
 
 #[cfg(test)]
@@ -369,4 +398,27 @@ mod tests {
         let big = format!("[{}]", "1,".repeat(MAX_DATA_BYTES));
         assert!(text(&render_json(&big, None, 60)).contains("grande"));
     }
+        #[test]
+        fn celula_gigante_e_cortada_com_reticencias() {
+            assert_eq!(clip_cell("curto"), "curto");
+            let cortada = clip_cell(&"é".repeat(MAX_CELL_CHARS + 50));
+            assert_eq!(cortada.chars().count(), MAX_CELL_CHARS + 1);
+            assert!(cortada.ends_with('…'));
+        }
+
+        #[test]
+        fn csv_com_milhares_de_colunas_e_limitado() {
+            let header = (0..5000).map(|i| format!("c{i}")).collect::<Vec<_>>().join(",");
+            let t = text(&render_table_data(&format!("{header}\n1\n"), &opts(), 80));
+            assert!(t.contains("200 colunas") && t.contains("+4800 omitidas"), "{t}");
+        }
+
+        #[test]
+        fn linha_de_csv_com_milhoes_de_colunas_e_rapida() {
+            let csv = format!("{}\n", ",".repeat(2_000_000));
+            let t0 = std::time::Instant::now();
+            let t = text(&render_table_data(&csv, &opts(), 80));
+            assert!(t.contains("omitidas"), "{}", &t[..t.len().min(200)]);
+            assert!(t0.elapsed() < std::time::Duration::from_secs(3), "levou {:?}", t0.elapsed());
+        }
 }
