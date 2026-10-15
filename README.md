@@ -45,15 +45,15 @@ Baixe o binário da última release, extraia e coloque `mdv` no seu `PATH`:
 <!-- mdv:install:start -->
 | Plataforma | Download |
 |------------|----------|
-| Linux x86_64 (glibc 2.35+) | [`mdv-v0.4.0-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.0/mdv-v0.4.0-linux-x86_64.tar.gz) |
-| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.4.0-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.0/mdv-v0.4.0-linux-x86_64-musl.tar.gz) |
-| Linux aarch64 | [`mdv-v0.4.0-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.0/mdv-v0.4.0-linux-aarch64.tar.gz) |
-| macOS Apple Silicon | [`mdv-v0.4.0-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.0/mdv-v0.4.0-macos-aarch64.tar.gz) |
-| macOS Intel | [`mdv-v0.4.0-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.0/mdv-v0.4.0-macos-x86_64.tar.gz) |
-| Windows x86_64 | [`mdv-v0.4.0-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.4.0/mdv-v0.4.0-windows-x86_64.zip) |
-| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.4.0) |
+| Linux x86_64 (glibc 2.35+) | [`mdv-v0.4.1-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.1/mdv-v0.4.1-linux-x86_64.tar.gz) |
+| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.4.1-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.1/mdv-v0.4.1-linux-x86_64-musl.tar.gz) |
+| Linux aarch64 | [`mdv-v0.4.1-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.1/mdv-v0.4.1-linux-aarch64.tar.gz) |
+| macOS Apple Silicon | [`mdv-v0.4.1-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.1/mdv-v0.4.1-macos-aarch64.tar.gz) |
+| macOS Intel | [`mdv-v0.4.1-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.1/mdv-v0.4.1-macos-x86_64.tar.gz) |
+| Windows x86_64 | [`mdv-v0.4.1-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.4.1/mdv-v0.4.1-windows-x86_64.zip) |
+| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.4.1) |
 
-Versão atual: **v0.4.0**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
+Versão atual: **v0.4.1**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
 <!-- mdv:install:end -->
 
 Os binários de macOS e Windows **não são assinados**, então o sistema pode avisar na primeira execução:
@@ -261,6 +261,21 @@ Defina `MDV_AI_CMD` com um comando que lê o texto no stdin e responde no stdout
 ## Changelog
 
 <!-- mdv:changelog:start -->
+### v0.4.1
+
+_2026-10-15_
+
+- fix(main): saneia o nome de pasta/arquivo mais novo na barra de status
+- docs: registra as correções do review da Fase 8 no CLAUDE.md e no PLANO.md
+- fix(setup): drena a saída da sonda de versão para o filho não morrer de SIGPIPE
+- fix(chat): neutraliza tags think/details/summary soltas nas falas
+- fix(render): cabeçalho @@ ou diff encerra o hunk anterior no --split
+- fix(mermaid): gancho de pânico instalado uma vez e mudo só na thread do render
+- fix(browse): saneia URL, âncora e nomes de arquivo antes de exibir
+- fix(browse): seguir link .md no chat abre como Markdown e voltar restaura o modo
+- fix(ai): Esc mata o subprocesso, leitura com prazo e stderr drenado
+- fix(links): is_confined recusa .. para links não saírem da pasta do documento
+
 ### v0.4.0
 
 _2026-10-15_
