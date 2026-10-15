@@ -39,7 +39,7 @@ impl Picker {
         let mut truncated = false;
         for e in fs::read_dir(dir)? {
             let Ok(e) = e else { continue };
-            let name = e.file_name().to_string_lossy().into_owned();
+            let name = crate::render::sanitize(&e.file_name().to_string_lossy()).into_owned();
             if !is_markdown(&name) {
                 continue;
             }
@@ -170,6 +170,18 @@ mod tests {
         let p = Picker::scan(d.path()).unwrap();
         let names: Vec<_> = p.entries.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, ["novo.md", "velho.md"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nome_com_controle_e_saneado_mas_o_caminho_fica_intacto() {
+        let d = tempfile::tempdir().unwrap();
+        let nome = "a\u{1b}[31mb.md";
+        fs::write(d.path().join(nome), "x").unwrap();
+        let p = Picker::scan(d.path()).unwrap();
+        assert_eq!(p.entries.len(), 1);
+        assert!(!p.entries[0].name.contains('\u{1b}'), "{:?}", p.entries[0].name);
+        assert!(p.entries[0].path.exists(), "o caminho real continua utilizável");
     }
 
     #[test]

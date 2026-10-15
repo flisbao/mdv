@@ -78,7 +78,7 @@ impl App {
             self.scroll_to(pos.saturating_sub(self.view.height / 3));
         }
         let url = self.rendered.links.get(id).map_or("", String::as_str);
-        self.notice = Some(format!("link: {url}  (Enter abre, Esc cancela)"));
+        self.notice = Some(format!("link: {}  (Enter abre, Esc cancela)", render::sanitize(url)));
     }
 
     /// `Enter` com um link selecionado: segue o destino.
@@ -127,7 +127,7 @@ impl App {
                 self.recompute_display();
                 self.scroll_to_line(line);
             }
-            None => self.notice = Some(format!("âncora não encontrada: #{anchor}")),
+            None => self.notice = Some(format!("âncora não encontrada: #{}", render::sanitize(anchor))),
         }
     }
 
@@ -136,7 +136,9 @@ impl App {
         let md = match read_markdown_file(&path) {
             Ok(md) => md,
             Err(e) => {
-                self.notice = Some(format!("não consegui abrir {}: {e}", path.display()));
+                self.notice = Some(
+                    render::sanitize(&format!("não consegui abrir {}: {e}", path.display())).into_owned(),
+                );
                 return;
             }
         };
@@ -148,9 +150,12 @@ impl App {
                 self.back.push(Back::File { path: cur.clone(), line: self.ref_line(), mode: self.doc.mode });
             }
         }
-        self.name = path
-            .file_name()
-            .map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
+        self.name = render::sanitize(
+            &path
+                .file_name()
+                .map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned()),
+        )
+        .into_owned();
         self.mtime = file_mtime(&path);
         self.source = Source::File(path);
         self.images = image_store(&self.source, &self.cli, false);
@@ -245,7 +250,7 @@ impl App {
         let width = usize::from(body.width);
         let mut lines = vec![
             Line::from(Span::styled(
-                format!(" {}", p.dir.display()),
+                format!(" {}", render::sanitize(&p.dir.display().to_string())),
                 Style::default().fg(Color::Rgb(121, 192, 255)),
             )),
             Line::from(format!(" > {}█", p.query)),
