@@ -14,10 +14,12 @@ cargo run --release -- -p samples/llm.md       # front matter, alertas, <think>.
 cargo run --release -- -p samples/img.md       # imagem local em meio-bloco
 cargo run --release -- -p csv samples/dados.csv   # também: json, tsv
 cargo run --release -- -p json samples/itens.json   # tabela; --as schema para o esquema
+cargo run --release -- -p --mermaid sample.md   # diagramas Mermaid (renderizador embutido)
+cargo run --release -- --setup-mermaid        # diagnóstico do ambiente Mermaid
 cargo clippy
 ```
 
-`cargo test` roda os testes unitários (`render.rs`, `main.rs`, `cli.rs`, `image.rs`, `net.rs`, `mermaid.rs`, `stream.rs`, `data.rs`) e `tests/cli.rs` (executa o binário). Para validar mudanças de renderização, também use `-p` com `sample.md` ou com `samples/` — funciona sem terminal interativo.
+`cargo test` roda os testes unitários (`render.rs`, `main.rs`, `cli.rs`, `image.rs`, `net.rs`, `mermaid.rs`, `mermaid_native.rs`, `setup.rs`, `stream.rs`, `data.rs`) e `tests/cli.rs` (executa o binário). Para validar mudanças de renderização, também use `-p` com `sample.md` ou com `samples/` — funciona sem terminal interativo.
 
 O projeto, README e mensagens de erro/ajuda são em português.
 
@@ -40,7 +42,9 @@ Um único pipeline: entrada (Markdown, JSON, CSV/TSV) → `Vec<Line>` do ratatui
 - `src/image.rs`: decodificação com limites (10 MiB, 8192 px), `halfblock` (imagem → linhas de `▀`) e `ImageStore`, o cache compartilhado de imagens locais, remotas e diagramas Mermaid (`get`, `get_mermaid`, `get_job`; jobs remotos rodam em thread e incrementam `version`).
 - `src/graphics.rs`: protocolo gráfico do Kitty por placeholders Unicode (`cell_size`, `placeholder_rows`, `transmit`, `supports_kitty`); só funções puras. `ImageStore::graphic` dá o `id`/PNG (cache limitado por `MAX_GRAPHICS`), `render.rs` desenha os placeholders e registra `Rendered.graphics`, e `App::prepare` renderiza antes do quadro e escreve `pending_gfx` no terminal (`--graphics`, só no modo interativo).
 - `src/net.rs`: download HTTP(S) restrito (`--remote`): resolvedor que recusa rede privada/loopback, teto de bytes, redirecionamento manual.
-- `src/mermaid.rs`: executa o `mmdc` (`--mermaid`, binário configurável por `MDV_MMDC`) com timeout.
+- `src/mermaid.rs`: `render_png_auto` tenta o renderizador nativo e, se falhar, executa o `mmdc` (`--mermaid`, binário configurável por `MDV_MMDC`) com timeout.
+- `src/mermaid_native.rs`: Mermaid → SVG (`mermaid-rs-renderer`) → PNG (`resvg`) em memória; tetos (`MAX_LINES`, `MAX_SVG_BYTES`, 1200×3000 px), erro claro sem fontes do sistema (`font_count`) e `guarded` (pânico vira erro, com o gancho mudo para não sujar a TUI).
+- `src/setup.rs`: `--setup-mermaid`, diagnóstico que só lê o ambiente (Node, `mmdc`, Chromium, fontes, terminal) e nunca instala nada.
 - `src/stream.rs`: leitor de stdin em thread (`Utf8Accum`) e `newest_md`.
 - `src/mem.rs`: limite de memória do processo (`--memory-buffer`, `MDV_MEMORY_BUFFER`, padrão 512 MiB). `CountingAlloc` é o `#[global_allocator]` (conta bytes vivos, teto duro `limite×1,5+16 MiB`); `check()`/`exceeded()` são os pontos de checagem usados por `render_with`, `layout_table`, `render_code`, `data.rs` e `main.rs`; ao estourar devolvem `error_rendered(MemoryLimit)`. `check_parse` barra antes de analisar o texto cuja árvore do `pulldown-cmark` passaria do limite. Testes unitários **não** alteram o limite global (rodam em paralelo); o estouro real é testado pelo binário em `tests/cli.rs`.
 - `src/fold.rs`: dobra de seções. `App.display` lista as linhas renderizadas visíveis e `Viewport.scroll` indexa `display`, não `rendered.lines`; use `ref_line`/`window_display`/`scroll_to_line`/`pos_of` para converter. Chave da dobra = (título, ocorrência).
