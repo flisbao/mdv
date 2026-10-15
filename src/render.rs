@@ -81,6 +81,8 @@ pub struct Rendered {
     pub headings: Vec<usize>,
     /// Títulos com nível e texto, para o `--toc`.
     pub outline: Vec<OutlineEntry>,
+        /// Tabelas desenhadas, em ordem, com o intervalo de linhas de cada uma (zoom `t`).
+        pub tables: Vec<TableSpan>,
 }
 
 #[allow(dead_code)] // `line` será usado pela navegação do sumário
@@ -88,6 +90,45 @@ pub struct OutlineEntry {
     pub line: usize,
     pub level: u8,
     pub title: String,
+}
+
+/// Tabela guardada para ser desenhada de novo em outra largura (zoom).
+#[derive(Clone)]
+pub struct TableData {
+    rows: Vec<Vec<Vec<Piece>>>,
+    aligns: Vec<Alignment>,
+    has_header: bool,
+}
+
+/// Onde uma tabela está em `Rendered.lines` (`start..end`) e como redesenhá-la.
+pub struct TableSpan {
+    pub start: usize,
+    pub end: usize,
+    pub data: TableData,
+}
+
+/// Tabela desenhada numa largura: as linhas, quantas ficam fixas no topo e quais colunas aparecem.
+pub struct TableView {
+    pub lines: Vec<Line<'static>>,
+    /// Linhas fixas no topo (borda, cabeçalho e separador; só a borda sem cabeçalho).
+    pub pinned: usize,
+    /// Índice (0-based) da primeira coluna rolável mostrada, já limitado ao intervalo válido.
+    pub first_col: usize,
+    /// Colunas desenhadas, contando a primeira (fixa).
+    pub shown_cols: usize,
+    pub total_cols: usize,
+}
+
+impl TableData {
+    pub fn total_cols(&self) -> usize {
+        self.rows.iter().map(Vec::len).max().unwrap_or(0)
+    }
+
+    /// Desenha a tabela em `width` colunas, sem recuo. A coluna 0 fica sempre;
+    /// as demais começam em `first_col`.
+    pub fn draw(&self, width: usize, first_col: usize) -> TableView {
+        layout_table(self, &[], &[], width, first_col)
+    }
 }
 
 /// Índice dos títulos, um por linha, indentado conforme o nível.
@@ -127,7 +168,7 @@ pub fn render_table_only(
         })
         .collect();
     let mut r = Renderer::new(width, None);
-    r.render_table(&TableBuilder { aligns, rows, cur: Vec::new(), has_header: header, in_head: false });
+        r.render_table(TableBuilder { aligns, rows, cur: Vec::new(), has_header: header, in_head: false });
     r.out
 }
 
@@ -757,7 +798,7 @@ impl<'a> Renderer<'a> {
             }
             TagEnd::Table => {
                 if let Some(t) = self.table.take() {
-                    self.render_table(&t);
+                    self.render_table(t);
                 }
                 self.push_blank();
             }
@@ -1009,48 +1050,84 @@ impl<'a> Renderer<'a> {
         self.out.lines.push(Line::from(v));
     }
 
-    fn render_table(&mut self, t: &TableBuilder) {
-        let (first, cont) = self.prefixes();
-        let avail = self.width.saturating_sub(spans_width(&cont));
-        let total_cols = t.rows.iter().map(Vec::len).max().unwrap_or(0);
-        if total_cols == 0 {
-            return;
-        }
-        self.take_marker();
-        // Colunas além do que cabe (cada uma precisa de MIN_COL_WIDTH + borda) são omitidas.
-        let ncols = total_cols.min((avail.saturating_sub(1) / (CELL_OVERHEAD + MIN_COL_WIDTH)).max(1));
-        let hidden = total_cols - ncols;
-        let widths = compute_column_widths(&natural_widths(&t.rows, ncols), avail);
-
-        let mut out: Vec<Line<'static>> = vec![table_border(&first, &widths, ["┌", "┬", "┐"])];
-        for (ri, row) in t.rows.iter().enumerate() {
-            out.extend(draw_table_row(&cont, row, &widths, &t.aligns));
-            if ri == 0 && t.has_header {
-                out.push(table_border(&cont, &widths, ["├", "┼", "┤"]));
+        fn render_table(&mut self, t: TableBuilder) {
+            let (first, cont) = self.prefixes();
+            let avail = self.width.saturating_sub(spans_width(&cont));
+            let data = TableData { rows: t.rows, aligns: t.aligns, has_header: t.has_header };
+            if data.total_cols() == 0 {
+                return;
             }
+            self.take_marker();
+            let view = layout_table(&data, &first, &cont, avail, 0);
+            let start = self.out.lines.len();
+            let end = start + view.lines.len();
+            self.out.lines.extend(view.lines);
+            self.out.tables.push(TableSpan { start, end, data });
         }
-        out.push(table_border(&cont, &widths, ["└", "┴", "┘"]));
-        if hidden > 0 {
-            let note = [Piece::Text(format!("… +{hidden} colunas"), Style::default().fg(DIM))];
-            let mut v = cont;
-            v.extend(fit(&note, avail).0);
-            out.push(Line::from(v));
+}
+
+/// Desenha a tabela em `avail` colunas. A coluna 0 fica sempre; as colunas roláveis mostradas
+/// começam em `first_col` (limitado para a última coluna caber no máximo). Colunas que não
+/// cabem (cada uma precisa de `MIN_COL_WIDTH` mais a borda) ficam de fora e são contadas no aviso.
+fn layout_table(
+    t: &TableData,
+    first: &[Span<'static>],
+    cont: &[Span<'static>],
+    avail: usize,
+    first_col: usize,
+) -> TableView {
+    let total = t.total_cols();
+    let fit_cols = (avail.saturating_sub(1) / (CELL_OVERHEAD + MIN_COL_WIDTH)).max(1);
+    let shown = total.min(fit_cols);
+    let scrollable = shown.saturating_sub(1);
+    let first_col = if total <= shown {
+        usize::from(total > 1)
+    } else {
+        first_col.clamp(1, total - scrollable)
+    };
+    let idx: Vec<usize> = std::iter::once(0).chain(first_col..first_col + scrollable).collect();
+    let aligns: Vec<Alignment> =
+        idx.iter().map(|&c| t.aligns.get(c).copied().unwrap_or(Alignment::None)).collect();
+    let widths = compute_column_widths(&natural_widths(&t.rows, &idx), avail);
+
+    let mut lines: Vec<Line<'static>> = vec![table_border(first, &widths, ["┌", "┬", "┐"])];
+    let mut pinned = 1;
+    for (ri, row) in t.rows.iter().enumerate() {
+        let cells: Vec<&[Piece]> =
+            idx.iter().map(|&c| row.get(c).map_or(&[][..], Vec::as_slice)).collect();
+        let drawn = draw_table_row(cont, &cells, &widths, &aligns);
+        let is_head = ri == 0 && t.has_header;
+        if is_head {
+            pinned += drawn.len() + 1;
         }
-        self.out.lines.extend(out);
+        lines.extend(drawn);
+        if is_head {
+            lines.push(table_border(cont, &widths, ["├", "┼", "┤"]));
+        }
     }
+    lines.push(table_border(cont, &widths, ["└", "┴", "┘"]));
+    let hidden = total - shown;
+    if hidden > 0 {
+        let note = [Piece::Text(format!("… +{hidden} colunas"), Style::default().fg(DIM))];
+        let mut v = cont.to_vec();
+        v.extend(fit(&note, avail).0);
+        lines.push(Line::from(v));
+    }
+    TableView { lines, pinned, first_col, shown_cols: shown, total_cols: total }
 }
 
 fn spans_width(spans: &[Span<'_>]) -> usize {
     spans.iter().map(|s| s.content.width()).sum()
 }
 
-/// Maior largura de conteúdo de cada uma das `ncols` primeiras colunas (mínimo 1).
-fn natural_widths(rows: &[Vec<Vec<Piece>>], ncols: usize) -> Vec<usize> {
-    let mut natural = vec![1usize; ncols];
+/// Maior largura de conteúdo de cada coluna de `idx` (mínimo 1).
+fn natural_widths(rows: &[Vec<Vec<Piece>>], idx: &[usize]) -> Vec<usize> {
+    let mut natural = vec![1usize; idx.len()];
     for row in rows {
-        for (i, cell) in row.iter().take(ncols).enumerate() {
-            let w: usize = cell.iter().map(Piece::width).sum();
-            natural[i] = natural[i].max(w);
+        for (n, &c) in natural.iter_mut().zip(idx) {
+            if let Some(cell) = row.get(c) {
+                *n = (*n).max(cell.iter().map(Piece::width).sum());
+            }
         }
     }
     natural
@@ -1073,7 +1150,7 @@ fn table_border(prefix: &[Span<'static>], widths: &[usize], corners: [&str; 3]) 
 /// a linha da tabela tem a altura da maior célula.
 fn draw_table_row(
     prefix: &[Span<'static>],
-    row: &[Vec<Piece>],
+    row: &[&[Piece]],
     widths: &[usize],
     aligns: &[Alignment],
 ) -> Vec<Line<'static>> {
@@ -1081,7 +1158,7 @@ fn draw_table_row(
     let cells: Vec<Vec<(Vec<Span<'static>>, usize)>> = widths
         .iter()
         .enumerate()
-        .map(|(c, &width)| wrap_cell(row.get(c).map_or(&[][..], Vec::as_slice), width))
+                .map(|(c, &width)| wrap_cell(row.get(c).copied().unwrap_or(&[]), width))
         .collect();
     let height = cells.iter().map(Vec::len).max().unwrap_or(1);
     (0..height)
@@ -2053,4 +2130,102 @@ mod tests {
         let t = joined_text(&render("![logo](a.png)", 40));
         assert_eq!(t.trim(), "[imagem: logo]");
     }
+
+        fn tabela_de_n_colunas(n: usize) -> String {
+            let header: String = (1..=n).map(|i| format!(" c{i} |")).collect();
+            let sep = "---|".repeat(n);
+            let row: String = (1..=n).map(|i| format!(" v{i} |")).collect();
+            format!("|{header}\n|{sep}\n|{row}\n")
+        }
+
+        #[test]
+        fn render_registra_o_intervalo_de_cada_tabela() {
+            let md = "antes\n\n| x | y |\n|---|---|\n| 1 | 2 |\n\ndepois\n";
+            let out = render(md, 40);
+            assert_eq!(out.tables.len(), 1);
+            let t = &out.tables[0];
+            assert!(line_to_string(&out.lines[t.start]).starts_with('┌'));
+            assert!(line_to_string(&out.lines[t.end - 1]).starts_with('└'));
+            assert_eq!(t.data.total_cols(), 2);
+        }
+
+        #[test]
+        fn tabela_em_citacao_e_lista_registra_o_intervalo_com_recuo() {
+            let out = render("> | x |\n> |---|\n> | 1 |\n", 40);
+            assert_eq!(out.tables.len(), 1);
+            let t = &out.tables[0];
+            assert!(line_to_string(&out.lines[t.start]).contains('┌'));
+            let out = render("- item\n\n  | x |\n  |---|\n  | 1 |\n", 40);
+            assert_eq!(out.tables.len(), 1);
+            assert!(out.tables[0].end <= out.lines.len());
+        }
+
+        #[test]
+        fn duas_tabelas_ficam_em_ordem_e_sem_sobreposicao() {
+            let md = "| a |\n|---|\n| 1 |\n\ntexto\n\n| b |\n|---|\n| 2 |\n";
+            let out = render(md, 40);
+            assert_eq!(out.tables.len(), 2);
+            assert!(out.tables[0].end <= out.tables[1].start);
+        }
+
+        #[test]
+        fn render_table_only_registra_a_tabela() {
+            let out = render_table_only(vec![vec!["a".into(), "b".into()]], false, vec![Alignment::Left; 2], 40);
+            assert_eq!(out.tables.len(), 1);
+            assert_eq!((out.tables[0].start, out.tables[0].end), (0, out.lines.len()));
+        }
+
+        #[test]
+        fn draw_nao_tem_recuo_e_fixa_cabecalho() {
+            let out = render("> | x | y |\n> |---|---|\n> | 1 | 2 |\n", 40);
+            let v = out.tables[0].data.draw(40, 0);
+            assert!(line_to_string(&v.lines[0]).starts_with('┌'), "sem o '▎ ' da citação");
+            assert_eq!(v.pinned, 3, "borda, cabeçalho e separador");
+            assert_eq!((v.first_col, v.shown_cols, v.total_cols), (1, 2, 2));
+        }
+
+        #[test]
+        fn draw_sem_cabecalho_fixa_so_a_borda() {
+            let out = render_table_only(vec![vec!["a".into()]], false, vec![Alignment::Left], 40);
+            assert_eq!(out.tables[0].data.draw(40, 0).pinned, 1);
+        }
+
+        #[test]
+        fn draw_com_uma_coluna_nao_estoura_o_indice() {
+            let out = render("| só |\n|---|\n| 1 |\n", 40);
+            let v = out.tables[0].data.draw(20, usize::MAX);
+            assert_eq!((v.first_col, v.shown_cols, v.total_cols), (0, 1, 1));
+        }
+
+        #[test]
+        fn draw_rola_por_coluna_e_mantem_a_primeira() {
+            let out = render(&tabela_de_n_colunas(12), 20);
+            let data = &out.tables[0].data;
+
+            let v = data.draw(20, 0);
+            assert_eq!((v.first_col, v.shown_cols), (1, 3));
+            let cab = line_to_string(&v.lines[1]);
+            assert!(cab.contains("│ c1 ") && cab.contains("c2"), "{cab}");
+            assert!(line_to_string(v.lines.last().unwrap()).contains("+9 colunas"));
+
+            let v = data.draw(20, 5);
+            assert_eq!(v.first_col, 5);
+            let cab = line_to_string(&v.lines[1]);
+            assert!(cab.contains("│ c1 ") && cab.contains("c6") && !cab.contains("c2 "), "{cab}");
+
+            let v = data.draw(20, usize::MAX);
+            assert_eq!(v.first_col + v.shown_cols - 1, v.total_cols, "última coluna à vista");
+            assert!(line_to_string(&v.lines[1]).contains("c12"));
+        }
+
+        #[test]
+        fn draw_cabe_em_qualquer_largura_pedida() {
+            let out = render(&tabela_de_n_colunas(30), 80);
+            for w in [20, 33, 80, 200] {
+                for first in [0, 3, usize::MAX] {
+                    let v = out.tables[0].data.draw(w, first);
+                    assert!(v.lines.iter().all(|l| l.width() <= w), "largura {w}, coluna {first}");
+                }
+            }
+        }
 }
