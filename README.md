@@ -45,15 +45,15 @@ Baixe o binário da última release, extraia e coloque `mdv` no seu `PATH`:
 <!-- mdv:install:start -->
 | Plataforma | Download |
 |------------|----------|
-| Linux x86_64 (glibc 2.35+) | [`mdv-v0.3.0-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.3.0/mdv-v0.3.0-linux-x86_64.tar.gz) |
-| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.3.0-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.3.0/mdv-v0.3.0-linux-x86_64-musl.tar.gz) |
-| Linux aarch64 | [`mdv-v0.3.0-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.3.0/mdv-v0.3.0-linux-aarch64.tar.gz) |
-| macOS Apple Silicon | [`mdv-v0.3.0-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.3.0/mdv-v0.3.0-macos-aarch64.tar.gz) |
-| macOS Intel | [`mdv-v0.3.0-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.3.0/mdv-v0.3.0-macos-x86_64.tar.gz) |
-| Windows x86_64 | [`mdv-v0.3.0-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.3.0/mdv-v0.3.0-windows-x86_64.zip) |
-| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.3.0) |
+| Linux x86_64 (glibc 2.35+) | [`mdv-v0.4.0-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.0/mdv-v0.4.0-linux-x86_64.tar.gz) |
+| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.4.0-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.0/mdv-v0.4.0-linux-x86_64-musl.tar.gz) |
+| Linux aarch64 | [`mdv-v0.4.0-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.0/mdv-v0.4.0-linux-aarch64.tar.gz) |
+| macOS Apple Silicon | [`mdv-v0.4.0-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.0/mdv-v0.4.0-macos-aarch64.tar.gz) |
+| macOS Intel | [`mdv-v0.4.0-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.0/mdv-v0.4.0-macos-x86_64.tar.gz) |
+| Windows x86_64 | [`mdv-v0.4.0-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.4.0/mdv-v0.4.0-windows-x86_64.zip) |
+| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.4.0) |
 
-Versão atual: **v0.3.0**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
+Versão atual: **v0.4.0**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
 <!-- mdv:install:end -->
 
 Os binários de macOS e Windows **não são assinados**, então o sistema pode avisar na primeira execução:
@@ -96,6 +96,7 @@ OPÇÕES:
         --remote       baixa imagens de http(s):// (nunca de rede privada)
         --mermaid      diagramas Mermaid: se o renderizador embutido falhar, tenta o `mmdc` (ou $MDV_MMDC)
         --setup-mermaid  verifica o ambiente dos diagramas e mostra como instalar o mmdc
+        --graphics <G> imagens em alta resolução: off (padrão), kitty ou auto (Kitty/Ghostty; só no modo interativo)
         --toc          imprime só o índice de títulos
         --check-links  confere offline links relativos, âncoras e cercas sem fechar; sai com 1 se houver problema
         --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
@@ -133,6 +134,7 @@ TECLAS (modo interativo):
     Tab / Shift-Tab    seleciona o próximo / anterior link; Enter segue (âncora, .md relativo ou URL http(s)/mailto com confirmação `y`), Esc cancela
     Backspace / H      volta ao documento anterior (pilha de até 100)
     m                  alterna entre renderizado e fonte crua
+    w                  código sem quebra: h/l (ou ←/→) rolam 8 colunas, 0/$ início/fim; w de novo volta a quebrar
     v                  (JSON) alterna tabela / esquema / texto
     t                  zoom da tabela na tela (h/l colunas, Esc volta)
     } / {              próxima / anterior mudança marcada no reload; c limpa as marcas
@@ -259,6 +261,43 @@ Defina `MDV_AI_CMD` com um comando que lê o texto no stdin e responde no stdout
 ## Changelog
 
 <!-- mdv:changelog:start -->
+### v0.4.0
+
+_2026-10-15_
+
+- feat(ai): tecla ? envia a seção ao MDV_AI_CMD e mostra a resposta (F8.7)
+- feat(chat): mdv chat renderiza transcrição JSONL de agente (F8.1)
+- feat(picker): mdv <pasta> abre seletor de .md com filtro fuzzy; mailto só com campos de texto (F8.6)
+- feat(tui): Tab seleciona links; Enter segue âncora, .md local ou URL externa com confirmação; Backspace volta (F8.6)
+- feat(diff): mdv diff, blocos diff coloridos e --split em duas colunas (F8.2)
+- feat(follow): --idle avisa com sino quando a atividade para (F8.5)
+- fix(links): nunca consultar caminho absoluto, UNC ou com unidade no --check-links
+- feat(links): --check-links valida offline links relativos, âncoras e cercas sem fechar (F8.4)
+- feat(mermaid): renderizador nativo vira o padrão; --mermaid acrescenta o mmdc como reserva
+- fix(deps): atualiza rustls para 0.23.46 (RUSTSEC-2026-0346, 0347, 0348, 0349)
+- fix(mermaid): teto de 100 conexões no renderizador nativo; probe_version lê stdout em thread
+- docs: amostra de diagramas Mermaid
+- docs: Mermaid nativo, --setup-mermaid e tabela de terminais (F8.8)
+- feat(cli): --setup-mermaid diagnostica o ambiente dos diagramas e lista terminais suportados
+- feat(mermaid): --mermaid tenta o renderizador nativo e cai no mmdc
+- feat(mermaid): tetos de tamanho, erro claro sem fontes e proteção contra pânico no renderizador nativo
+- feat(mermaid): renderizador nativo (mermaid-rs-renderer + resvg) devolve PNG em memória
+- feat(stats): --stats mostra palavras, blocos de código e tokens estimados por seção (F8.3)
+- refactor: refinamentos pós-code review em base64, cell_size e terminal control
+- feat(tui): --graphics kitty|auto envia imagens em alta resolução ao terminal (F6.R4)
+- feat(imagem): cache gráfico e placeholders Kitty no render (F6.R4)
+- feat(graphics): protocolo Kitty com placeholders Unicode, funções puras (F6.R4)
+- feat(render): imagem em célula de tabela vira figura numerada abaixo da tabela (F6.R3)
+- feat(imagem): data:image/...;base64 vira imagem (F6.R3)
+- feat(tui): w liga código sem quebra e h/l rolam na horizontal (F6.R2)
+- fix(tui): realce da busca atravessa trechos estilizados (F6.R1)
+- fix(tui): Z mantém o título da seção e --latest zera dobras e marcas ao trocar de arquivo
+- docs: marcação de mudanças no reload (F7.1)
+- feat(tui): marca na margem o que mudou no reload, com } { e c (F7.1)
+- feat(diff): linhas novas entre duas versões do fonte, mapeadas para as linhas renderizadas (F7.1)
+- feat(tui): z dobra a seção e Z dobra ou abre todas (F7.3)
+- feat(fold): linhas visíveis com seções dobradas, chave estável por título (F7.3)
+
 ### v0.3.0
 
 _2026-10-13_
