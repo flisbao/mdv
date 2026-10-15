@@ -498,9 +498,9 @@ impl SearchState {
         if self.query.is_empty() {
             return;
         }
-        let q = self.query.to_lowercase();
+        let q = fold(&self.query);
         for (i, l) in lines.iter().enumerate() {
-            if line_text(l).to_lowercase().contains(&q) {
+            if find_from(&fold(&line_text(l)), &q, 0).is_some() {
                 self.matches.push(i);
             }
         }
@@ -845,12 +845,12 @@ impl App {
 
     /// As linhas da janela como serão desenhadas: destaque da busca e sufixo nos títulos dobrados.
     fn screen_lines(&self) -> Vec<Line<'static>> {
-        let q = self.search.query.to_lowercase();
+        let q = self.search.query.as_str();
         self.window_display()
             .iter()
             .map(|&i| {
                 let l = &self.rendered.lines[i];
-                let mut l = if q.is_empty() { l.clone() } else { highlight_line(l, &q) };
+                let mut l = if q.is_empty() { l.clone() } else { highlight_line(l, q) };
                 if let Some(n) = self.fold_hidden.get(&i) {
                     l.spans.push(Span::styled(
                         format!(" ▸ {n} linhas"),
@@ -1329,44 +1329,68 @@ fn line_text(l: &Line<'_>) -> String {
     l.spans.iter().map(|s| s.content.as_ref()).collect()
 }
 
-/// Destaca as ocorrências da busca (`q` já em minúsculas) dentro de cada trecho da linha.
+/// Minúscula caractere a caractere (um `char` vira um `char`): índices de `Vec<char>` continuam
+/// alinhados com a linha original mesmo onde `to_lowercase` mudaria o tamanho (ex.: `İ`).
+fn fold_char(c: char) -> char {
+    let mut it = c.to_lowercase();
+    match (it.next(), it.next()) {
+        (Some(l), None) => l,
+        _ => c,
+    }
+}
+
+fn fold(s: &str) -> Vec<char> {
+    s.chars().map(fold_char).collect()
+}
+
+/// Primeira posição de `needle` em `hay` a partir de `from`. `needle` vazio nunca casa.
+fn find_from(hay: &[char], needle: &[char], from: usize) -> Option<usize> {
+    if needle.is_empty() || hay.len() < needle.len() {
+        return None;
+    }
+    (from..=hay.len() - needle.len()).find(|&i| hay[i..i + needle.len()] == *needle)
+}
+
+/// Destaca as ocorrências da busca `q` (sem diferenciar caixa) na linha, inclusive as que
+/// atravessam trechos de estilos diferentes: cada caractere guarda o estilo do seu trecho.
 fn highlight_line(line: &Line<'static>, q: &str) -> Line<'static> {
-    if q.is_empty() {
+    let needle = fold(q);
+    if needle.is_empty() {
+        return line.clone();
+    }
+    let cells: Vec<(char, Style)> = line
+        .spans
+        .iter()
+        .flat_map(|s| s.content.chars().map(move |c| (c, s.style)))
+        .collect();
+    let hay: Vec<char> = cells.iter().map(|&(c, _)| fold_char(c)).collect();
+    let mut marked = vec![false; cells.len()];
+    let mut start = 0;
+    let mut any = false;
+    while let Some(i) = find_from(&hay, &needle, start) {
+        marked[i..i + needle.len()].fill(true);
+        start = i + needle.len();
+        any = true;
+    }
+    if !any {
         return line.clone();
     }
     let hl = Style::default().bg(Color::Rgb(255, 213, 79)).fg(Color::Black);
     let mut out: Vec<Span<'static>> = Vec::new();
-    for span in &line.spans {
-        let text = span.content.as_ref();
-        let lower = text.to_lowercase();
-        if lower.len() != text.len() || !lower.contains(q) {
-            out.push(span.clone());
-            continue;
-        }
-        let mut start = 0;
-        let mut ok = true;
-        let mut parts: Vec<Span<'static>> = Vec::new();
-        while let Some(pos) = lower[start..].find(q) {
-            let s = start + pos;
-            let e = s + q.len();
-            if !text.is_char_boundary(s) || !text.is_char_boundary(e) {
-                ok = false;
-                break;
+    let mut buf = String::new();
+    let mut cur: Option<Style> = None;
+    for (&(c, st), &m) in cells.iter().zip(&marked) {
+        let style = if m { st.patch(hl) } else { st };
+        if cur != Some(style) {
+            if let Some(prev) = cur {
+                out.push(Span::styled(std::mem::take(&mut buf), prev));
             }
-            if s > start {
-                parts.push(Span::styled(text[start..s].to_string(), span.style));
-            }
-            parts.push(Span::styled(text[s..e].to_string(), span.style.patch(hl)));
-            start = e;
+            cur = Some(style);
         }
-        if !ok {
-            out.push(span.clone());
-            continue;
-        }
-        if start < text.len() {
-            parts.push(Span::styled(text[start..].to_string(), span.style));
-        }
-        out.extend(parts);
+        buf.push(c);
+    }
+    if let Some(prev) = cur {
+        out.push(Span::styled(buf, prev));
     }
     Line::from(out)
 }
@@ -1465,6 +1489,50 @@ mod tests {
             .collect();
         assert_eq!(marked, ["a", "a"]);
         assert_eq!(line_text(&out), "a-b-a");
+    }
+
+    #[test]
+    fn destaque_atravessa_trechos_estilizados() {
+        let bold = Style::default().add_modifier(ratatui::style::Modifier::BOLD);
+        let line = Line::from(vec![Span::raw("foo"), Span::styled("bar", bold), Span::raw(" baz")]);
+        let out = highlight_line(&line, "foobar");
+        assert_eq!(line_text(&out), "foobar baz");
+        let marked: String = out
+            .spans
+            .iter()
+            .filter(|s| s.style.bg.is_some())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert_eq!(marked, "foobar");
+        // o trecho em negrito continua em negrito, agora também destacado
+        assert!(out.spans.iter().any(|s| s.content == "bar"
+            && s.style.add_modifier.contains(ratatui::style::Modifier::BOLD)
+            && s.style.bg.is_some()));
+    }
+
+    #[test]
+    fn destaque_ignora_caixa_e_nao_desalinha_com_i_turco() {
+        let line = Line::from("İx e X");
+        let out = highlight_line(&line, "x");
+        assert_eq!(line_text(&out), "İx e X");
+        let marked: Vec<&str> = out
+            .spans
+            .iter()
+            .filter(|s| s.style.bg.is_some())
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert_eq!(marked, ["x", "X"]);
+    }
+
+    #[test]
+    fn busca_acha_linha_com_texto_dividido_entre_trechos() {
+        let lines = vec![
+            Line::from(vec![Span::raw("foo"), Span::raw("bar")]),
+            Line::from("outra"),
+        ];
+        let mut s = SearchState::default();
+        s.commit("FooBar".to_string(), &lines, 0);
+        assert_eq!(s.matches, [0]);
     }
 
     fn test_app(source: Source, md: &str) -> App {

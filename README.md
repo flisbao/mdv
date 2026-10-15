@@ -193,7 +193,7 @@ Aceita `256M`, `1G`, `512MiB`, `65536K` (múltiplos de 1024); o mínimo é 32 Mi
 ## Limitações conhecidas
 
 - Linhas de código largas são quebradas na largura da tela, não rolam na horizontal.
-- A busca encontra ocorrências dentro de um mesmo trecho estilizado.
+- A busca opera nas linhas já renderizadas: acha texto que atravessa trechos estilizados (`foo**bar**`), mas não uma frase que a largura da tela quebrou em duas linhas.
 - Imagens usam meio-bloco (baixa resolução); um protocolo gráfico como Kitty/Sixel seria um refinamento opcional.
 - A memória livre do computador só é informada no Linux.
 - Quando o arquivo muda, as linhas novas ou alteradas ganham uma barra amarela `▌` na margem esquerda, relativa à versão imediatamente anterior. Remoções não são marcadas. Acima de 20 000 linhas o `mdv` não calcula a diferença. No `--plain` não há marcas.
