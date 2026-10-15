@@ -139,6 +139,13 @@ pub fn check_input(len: u64) -> Result<(), MemoryLimit> {
     check_against(need, limit())
 }
 
+/// Estimativa do pico do `pulldown-cmark`, que monta a árvore do documento inteiro antes de
+/// emitir o primeiro evento (medido: ~24× o texto no pior caso, parágrafos de uma letra).
+/// Barra, antes de analisar, o texto cuja árvore passaria do limite.
+pub fn check_parse(len: usize) -> Result<(), MemoryLimit> {
+    check_against(used().saturating_add(len.saturating_mul(24)), limit())
+}
+
 /// Interpreta `256M`, `1G`, `512MiB`, `65536K` ou um número de bytes (múltiplos de 1024).
 pub fn parse_size(s: &str) -> Result<usize, String> {
     let bad = || format!("tamanho inválido: {s} (exemplos: 256M, 1G)");
@@ -177,7 +184,7 @@ pub fn fmt_size(bytes: u64) -> String {
     const GI: u64 = 1 << 30;
     if bytes >= GI {
         let tenths = (bytes as f64 / GI as f64 * 10.0).round() as u64;
-        if tenths % 10 == 0 {
+        if tenths.is_multiple_of(10) {
             format!("{} GiB", tenths / 10)
         } else {
             format!("{},{} GiB", tenths / 10, tenths % 10)
@@ -391,6 +398,13 @@ mod tests {
         let v = vec![1u8; 8 * MI];
         std::hint::black_box(&v);
         assert!(used() >= 8 * MI, "usado: {}", used());
+    }
+
+    #[test]
+    fn check_parse_conta_a_arvore_do_parser() {
+        assert!(check_parse(1024).is_ok());
+        assert!(check_parse(usize::MAX).is_err());
+        assert!(check_parse(limit() / 24 + 1).is_err());
     }
 
     #[test]

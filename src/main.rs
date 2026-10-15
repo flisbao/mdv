@@ -341,12 +341,15 @@ fn read_stdin() -> io::Result<String> {
 
 /// Lê um arquivo regular (nunca dispositivo, FIFO ou diretório) respeitando o teto.
 fn read_markdown_file(path: &Path) -> io::Result<String> {
-    if !fs::metadata(path)?.is_file() {
+    let meta = fs::metadata(path)?;
+    if !meta.is_file() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "não é um arquivo regular",
         ));
     }
+    mem::check_input(meta.len())
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
     read_limited(fs::File::open(path)?, MAX_INPUT_BYTES)
 }
 
@@ -588,6 +591,7 @@ impl App {
                 }
             }
         }
+        self.stop_stream_for_memory(mem::check().err());
         if finished {
             self.stream = None;
             self.images.set_mermaid_hold(false);
@@ -596,6 +600,17 @@ impl App {
         if got {
             self.stick_bottom |= was_at_bottom;
             self.dirty = true;
+        }
+    }
+
+    /// Para de acumular o stdin quando a memória passou do limite (`--follow`).
+    fn stop_stream_for_memory(&mut self, over: Option<mem::MemoryLimit>) {
+        if let Some(e) = over {
+            if self.stream.take().is_some() {
+                self.images.set_mermaid_hold(false);
+                self.notice = Some(format!("leitura interrompida: {e}"));
+                self.dirty = true;
+            }
         }
     }
 
@@ -1053,6 +1068,18 @@ mod tests {
     fn read_limited_rejeita_utf8_invalido() {
         let err = read_limited(&[0xff, 0xfe][..], 16).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn stdin_para_de_acumular_quando_a_memoria_acaba() {
+        let (_tx, rx) = std::sync::mpsc::channel::<String>();
+        let mut app = test_app(Source::Stdin, "").with_stream(rx);
+        app.stop_stream_for_memory(None);
+        assert!(app.stream.is_some(), "sem estouro, segue lendo");
+        app.stop_stream_for_memory(Some(mem::MemoryLimit { used: 2, limit: 1 }));
+        assert!(app.stream.is_none());
+        assert!(app.notice.as_deref().is_some_and(|n| n.contains("leitura interrompida")));
+        assert!(!app.images.mermaid_held(), "libera os diagramas");
     }
 
     #[test]

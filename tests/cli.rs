@@ -354,3 +354,34 @@ fn limite_maior_que_a_memoria_livre_avisa_no_stderr_e_segue() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("aviso: o limite de memória"));
     assert!(String::from_utf8_lossy(&out.stdout).contains('x'));
 }
+
+#[test]
+fn markdown_que_expande_alem_do_limite_para_com_mensagem() {
+    // 4 MiB de parágrafos de uma letra: ~1,4 milhão de parágrafos, centenas de MiB renderizados.
+    let md = "a\n\n".repeat(4 * 1024 * 1024 / 3);
+    let out = mdv(&["-p", "--memory-buffer", "32M", "-"], &md);
+    assert!(out.status.success(), "não pode abortar: {}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("limite de memória de 32 MiB atingido"), "{}", &text[..text.len().min(300)]);
+    assert!(text.contains("--memory-buffer"), "{}", &text[..text.len().min(300)]);
+    assert!(text.lines().count() < 5, "o documento parcial é descartado");
+}
+
+#[test]
+fn arquivo_grande_demais_para_o_limite_e_recusado_antes_de_ler() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("grande.md");
+    std::fs::write(&p, "x".repeat(9 * 1024 * 1024)).unwrap();
+    let out = mdv(&["-p", "--memory-buffer", "32M", p.to_str().unwrap()], "");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("limite de memória de 32 MiB"));
+}
+
+#[test]
+fn json_com_chave_gigante_respeita_o_limite_padrao() {
+    // ~1 MiB de chave com 100 mil filhos: o flatten antigo copiava a chave para cada filho.
+    let filhos: String = (0..100_000).map(|i| format!("\"k{i}\":0")).collect::<Vec<_>>().join(",");
+    let json = format!("[{{\"{}\":{{{filhos}}}}}]", "A".repeat(1_000_000));
+    let out = mdv(&["json", "-p", "-"], &json);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+}

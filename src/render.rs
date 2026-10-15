@@ -16,6 +16,7 @@ use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+use crate::mem;
 use crate::image::{halfblock, ImageState, ImageStore, MAX_IMAGE_COLS, MAX_IMAGE_ROWS};
 
 const H1: Color = Color::Rgb(210, 168, 255);
@@ -144,7 +145,7 @@ pub fn toc(r: &Rendered) -> String {
 pub fn render_code_only(code: &str, lang: &str, width: usize) -> Rendered {
     let mut r = Renderer::new(width, None);
     r.render_code(&CodeBlock { lang: lang.to_string(), buf: sanitize(code).into_owned() });
-    r.out
+    memory_error().unwrap_or(r.out)
 }
 
 /// Desenha só uma tabela já em células de texto (CSV/TSV); `header` estiliza a primeira linha.
@@ -169,7 +170,12 @@ pub fn render_table_only(
         .collect();
     let mut r = Renderer::new(width, None);
         r.render_table(TableBuilder { aligns, rows, cur: Vec::new(), has_header: header, in_head: false });
-    r.out
+    memory_error().unwrap_or(r.out)
+}
+
+/// Erro de memória como documento, se o limite foi passado.
+pub fn memory_error() -> Option<Rendered> {
+    mem::check().err().map(|e| error_rendered(&e.to_string()))
 }
 
 /// Uma linha vermelha com a mensagem de erro (saneada).
@@ -229,9 +235,15 @@ pub fn render_with(md: &str, opts: &RenderOpts) -> Rendered {
         | Options::ENABLE_FOOTNOTES
         | Options::ENABLE_GFM
         | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS;
+    if let Err(e) = mem::check_parse(md.len()) {
+        return error_rendered(&e.to_string());
+    }
     let mut r = Renderer::new(opts.width, opts.images);
     for ev in Parser::new_ext(md, parse_opts) {
         r.handle(sanitize_event(ev));
+        if let Some(err) = memory_error() {
+            return err;
+        }
     }
     r.finish()
 }
@@ -1019,6 +1031,9 @@ impl<'a> Renderer<'a> {
         self.out.lines.push(Line::from(v));
 
         for line in LinesWithEndings::from(&block.buf) {
+            if mem::exceeded() {
+                break;
+            }
             let pieces: Vec<Styled> = match h.highlight_line(line, ss) {
                 Ok(regions) => regions
                     .iter()
@@ -1093,6 +1108,9 @@ fn layout_table(
     let mut lines: Vec<Line<'static>> = vec![table_border(first, &widths, ["┌", "┬", "┐"])];
     let mut pinned = 1;
     for (ri, row) in t.rows.iter().enumerate() {
+        if mem::exceeded() {
+            break;
+        }
         let cells: Vec<&[Piece]> =
             idx.iter().map(|&c| row.get(c).map_or(&[][..], Vec::as_slice)).collect();
         let drawn = draw_table_row(cont, &cells, &widths, &aligns);

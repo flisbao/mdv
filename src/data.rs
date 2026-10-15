@@ -5,7 +5,8 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use serde_json::Value;
 
-use crate::render::{error_rendered, render_code_only, render_table_only, Rendered, DIM};
+use crate::mem;
+use crate::render::{error_rendered, memory_error, render_code_only, render_table_only, Rendered, DIM};
 
 use std::collections::{HashMap, HashSet};
 
@@ -224,6 +225,7 @@ fn records_to_rows(items: &[Value], head: usize) -> (Vec<Vec<String>>, usize) {
     let flat: Vec<Vec<(usize, String)>> = items
         .iter()
         .take(head)
+        .take_while(|_| !mem::exceeded())
         .map(|item| {
             let mut pairs = Vec::new();
             flatten(&mut tree, KEY_ROOT, item, 0, &mut pairs);
@@ -404,16 +406,20 @@ pub fn render_json(text: &str, o: &JsonOpts, width: usize) -> Rendered {
         Ok(v) => v,
         Err(e) => return error_rendered(&e),
     };
+    if let Some(err) = memory_error() {
+        return err;
+    }
     let sel = match select(&root, o.path.as_deref().unwrap_or("")) {
         Ok(v) => v,
         Err(e) => return error_rendered(&e),
     };
     let view = if o.view == JsonView::Auto { auto_view(sel) } else { o.view };
-    match view {
+    let out = match view {
         JsonView::Table => render_json_table(sel, o, width),
         JsonView::Schema => render_json_schema(sel, width),
         JsonView::Text | JsonView::Auto => render_json_text(sel, width),
-    }
+    };
+    memory_error().unwrap_or(out)
 }
 
 pub struct TableOpts {
@@ -508,6 +514,9 @@ pub fn render_table_data(text: &str, o: &TableOpts, width: usize) -> Rendered {
     let keep = o.head + usize::from(!o.no_header);
     let (mut rows, mut total, mut omitted_cols): (Vec<Vec<String>>, usize, usize) = (Vec::new(), 0, 0);
     for rec in rdr.records() {
+        if let Some(err) = memory_error() {
+            return err;
+        }
         let rec = match rec {
             Ok(r) => r,
             Err(e) => return error_rendered(&format!("CSV inválido: {e}")),
@@ -523,7 +532,8 @@ pub fn render_table_data(text: &str, o: &TableOpts, width: usize) -> Rendered {
     }
     let has_header = !o.no_header;
     let data_total = total - usize::from(has_header);
-    finish_table(rows, has_header, data_total, omitted_cols, &o.cols, width, "linhas")
+    let out = finish_table(rows, has_header, data_total, omitted_cols, &o.cols, width, "linhas");
+    memory_error().unwrap_or(out)
 }
 
 #[cfg(test)]
