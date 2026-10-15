@@ -111,6 +111,7 @@ TECLAS (modo interativo):
     m                  alterna entre renderizado e fonte crua
     v                  (JSON) alterna tabela / esquema / texto
     t                  zoom da tabela na tela (h/l colunas, Esc volta)
+    y / Y              copia o bloco de código da tela / o Markdown da seção (OSC 52, até 64 KiB)
     r                  recarrega o arquivo
     q, Esc             sai
 ```
@@ -175,6 +176,7 @@ Aceita `256M`, `1G`, `512MiB`, `65536K` (múltiplos de 1024); o mínimo é 32 Mi
 - A busca encontra ocorrências dentro de um mesmo trecho estilizado.
 - Imagens usam meio-bloco (baixa resolução); um protocolo gráfico como Kitty/Sixel seria um refinamento opcional.
 - A memória livre do computador só é informada no Linux.
+- `y`/`Y` dependem de o terminal aceitar OSC 52 (no tmux, `set -g set-clipboard on`); terminais sem suporte ignoram em silêncio.
 
 ## Changelog
 
