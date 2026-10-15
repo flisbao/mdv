@@ -291,7 +291,7 @@ impl ImageStore {
         }
         let (bin, src) = (bin.clone(), source.to_string());
         self.get_job(&key, !*blocking, move || {
-            decode(&crate::mermaid::render_png(&src, &bin, crate::mermaid::MMDC_TIMEOUT)?)
+            decode(&crate::mermaid::render_png_auto(&src, &bin, crate::mermaid::MMDC_TIMEOUT)?)
         })
     }
 
@@ -615,10 +615,10 @@ mod tests {
     fn mermaid_em_espera_nao_dispara_o_mmdc() {
         let store = ImageStore::new(None).with_mermaid("/nao/existe/mmdc".into(), true);
         store.set_mermaid_hold(true);
-        assert!(matches!(store.get_mermaid("graph TD; A-->B"), ImageState::Loading));
+        assert!(matches!(store.get_mermaid("isto não é mermaid"), ImageState::Loading));
         // nada foi registrado: ao liberar, o job roda (e falha, pois o binário não existe)
         store.set_mermaid_hold(false);
-        assert!(matches!(store.get_mermaid("graph TD; A-->B"), ImageState::Failed(_)));
+        assert!(matches!(store.get_mermaid("isto não é mermaid"), ImageState::Failed(_)));
     }
 
     #[test]

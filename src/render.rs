@@ -2394,7 +2394,7 @@ mod tests {
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
 
         let store = ImageStore::new(None).with_mermaid(bin.to_string_lossy().into_owned(), true);
-        let r = render_with("```mermaid\ngraph TD; A-->B\n```", &RenderOpts { width: 40, images: Some(&store), ..Default::default() });
+        let r = render_with("```mermaid\nisto não é mermaid\n```", &RenderOpts { width: 40, images: Some(&store), ..Default::default() });
         assert!(joined_text(&r).contains('▀'));
     }
 
@@ -2407,9 +2407,9 @@ mod tests {
     #[test]
     fn mermaid_com_falha_mostra_codigo_e_motivo() {
         let store = ImageStore::new(None).with_mermaid("/nao/existe/mmdc".into(), true);
-        let r = render_with("```mermaid\ngraph TD; A-->B\n```", &RenderOpts { width: 60, images: Some(&store), ..Default::default() });
+        let r = render_with("```mermaid\nisto não é mermaid\n```", &RenderOpts { width: 60, images: Some(&store), ..Default::default() });
         let t = joined_text(&r);
-        assert!(t.contains("A-->B") && t.contains("erro"), "{t}");
+        assert!(t.contains("isto não é mermaid") && t.contains("erro"), "{t}");
     }
 
     fn t60(md: &str) -> String {

@@ -72,6 +72,25 @@ pub fn render_png(source: &str, bin: &str, timeout: Duration) -> Result<Vec<u8>,
     with_slot(|| run_mmdc(source, bin, timeout))
 }
 
+/// Tenta o renderizador nativo e, se ele falhar, o `mmdc`. Sem nenhum dos dois, o erro junta os
+/// motivos (e, sem `mmdc` instalado, aponta o `--setup-mermaid`).
+pub fn render_png_auto(source: &str, mmdc: &str, timeout: Duration) -> Result<Vec<u8>, String> {
+    let native = match crate::mermaid_native::render_png(source) {
+        Ok(png) => return Ok(png),
+        Err(e) => e,
+    };
+    if source.len() > MAX_MERMAID_BYTES {
+        return Err(native);
+    }
+    match render_png(source, mmdc, timeout) {
+        Ok(png) => Ok(png),
+        Err(e) if e.contains("não consegui executar mmdc") => {
+            Err(format!("{native} (sem mmdc para tentar; veja `mdv --setup-mermaid`)"))
+        }
+        Err(e) => Err(format!("{native}; {e}")),
+    }
+}
+
 fn run_mmdc(source: &str, bin: &str, timeout: Duration) -> Result<Vec<u8>, String> {
     let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
     let (input, output) = (dir.path().join("in.mmd"), dir.path().join("out.png"));
@@ -190,5 +209,48 @@ mod tests {
         let bin = fake(dir.path(), "echo 'Parse error on line 1' >&2; exit 1");
         let e = render_png("x", &bin, Duration::from_secs(5)).unwrap_err();
         assert!(e.contains("Parse error"), "{e}");
+    }
+
+    #[test]
+    fn auto_usa_o_nativo_sem_precisar_do_mmdc() {
+        if !crate::mermaid_native::fonts_available() {
+            return;
+        }
+        let png = render_png_auto("graph TD\n A-->B\n", "/nao/existe/mmdc", Duration::from_secs(2)).unwrap();
+        assert_eq!(&png[1..4], b"PNG");
+    }
+
+    #[test]
+    fn auto_sem_mmdc_manda_rodar_o_setup() {
+        let e = render_png_auto("isto não é mermaid", "/nao/existe/mmdc", Duration::from_secs(2)).unwrap_err();
+        assert!(e.contains("--setup-mermaid"), "{e}");
+    }
+
+    #[test]
+    fn auto_fonte_grande_nao_repete_a_mensagem() {
+        let src = "A".repeat(MAX_MERMAID_BYTES + 1);
+        let e = render_png_auto(&src, "mmdc", Duration::from_secs(2)).unwrap_err();
+        assert_eq!(e.matches("grande demais").count(), 1, "{e}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn auto_cai_no_mmdc_quando_o_nativo_falha() {
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("fixture.png");
+        std::fs::write(&png, b"PNGDATA").unwrap();
+        let bin = fake(dir.path(), &format!("cp {} \"$4\"", png.display()));
+        // sintaxe que o nativo recusa; o "mmdc" de mentira gera o PNG
+        let out = render_png_auto("isto não é mermaid", &bin, Duration::from_secs(5)).unwrap();
+        assert_eq!(out, b"PNGDATA");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn auto_junta_os_dois_erros_quando_ambos_falham() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = fake(dir.path(), "echo 'Parse error on line 1' >&2; exit 1");
+        let e = render_png_auto("isto não é mermaid", &bin, Duration::from_secs(5)).unwrap_err();
+        assert!(e.contains("Parse error") && e.contains(';'), "{e}");
     }
 }
