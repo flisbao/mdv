@@ -1,6 +1,7 @@
 mod cli;
 mod clip;
 mod data;
+mod diff;
 mod extract;
 mod fold;
 mod image;
