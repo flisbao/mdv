@@ -62,6 +62,7 @@ OPÇÕES:
         --follow       com stdin: acompanha o texto conforme chega
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
         --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
+        --memory-buffer <T>  limite de memória (padrão: 512M; ex.: 256M, 2G; ou $MDV_MEMORY_BUFFER)
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
@@ -133,6 +134,11 @@ fn run_cli() -> Result<(), Failure> {
         }
         cli::Parsed::Run(cli) => cli,
     };
+    let limit = mem::resolve(cli.memory_buffer, std::env::var("MDV_MEMORY_BUFFER").ok().as_deref())
+        .map_err(Failure::Usage)?;
+    mem::set_limit(limit);
+    mem::init();
+    let mem_warning = mem::warn_if_above(limit, mem::available());
     let latest_dir = if cli.latest {
         let dir = cli
             .path
@@ -145,11 +151,18 @@ fn run_cli() -> Result<(), Failure> {
     let stdout_tty = io::stdout().is_terminal();
     let interactive = !cli.plain && stdout_tty;
     let width = cli.width.unwrap_or(DEFAULT_WIDTH);
+    if !interactive {
+        if let Some(w) = &mem_warning {
+            eprintln!("mdv: {w}");
+        }
+    }
 
     // `--follow` com stdin: a TUI abre na hora e o texto vai chegando aos poucos.
     if cli.follow && interactive && !cli.toc && latest_dir.is_none() && reads_stdin(cli.path.as_deref()) {
         let rx = stream::spawn_stdin_reader(usize::try_from(MAX_INPUT_BYTES).unwrap_or(usize::MAX));
-        return run_tui(App::new(Source::Stdin, String::new(), width, &cli).with_stream(rx));
+        let mut app = App::new(Source::Stdin, String::new(), width, &cli).with_stream(rx);
+        app.notice = app.notice.or(mem_warning);
+        return run_tui(app);
     }
 
     let (source, md) = match &latest_dir {
@@ -161,6 +174,7 @@ fn run_cli() -> Result<(), Failure> {
     }
     if interactive {
         let mut app = App::new(source, md, width, &cli);
+        app.notice = app.notice.or(mem_warning);
         if let Some(dir) = latest_dir {
             app = app.with_latest(dir);
         }

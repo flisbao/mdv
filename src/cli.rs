@@ -1,6 +1,6 @@
 //! Interpretação manual dos argumentos da linha de comando (sem dependência extra).
 
-use crate::render;
+use crate::{mem, render};
 
 pub const DEFAULT_HEAD: usize = 1000;
 pub const MAX_HEAD: usize = 100_000;
@@ -37,6 +37,7 @@ pub struct Cli {
     pub json_path: Option<String>,
     pub json_view: JsonView,
     pub table: Option<usize>,
+    pub memory_buffer: Option<usize>,
     pub head: usize,
     pub cols: Vec<String>,
     pub no_header: bool,
@@ -87,6 +88,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         json_path: None,
         json_view: JsonView::Auto,
         table: None,
+        memory_buffer: None,
         head: DEFAULT_HEAD,
         cols: Vec::new(),
         no_header: false,
@@ -135,6 +137,11 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
                                 _ => return Err(format!("--table inválido: {v} (esperado um número a partir de 1)")),
                             });
                         }
+            "--memory-buffer" => {
+                let v = value(&mut args, &a)?;
+                cli.memory_buffer =
+                    Some(mem::parse_size(&v).map_err(|e| format!("--memory-buffer: {e}"))?);
+            }
             "--as" => {
                 let v = value(&mut args, &a)?;
                 cli.json_view = match v.as_str() {
@@ -302,6 +309,22 @@ mod tests {
         assert!(matches!(parse(["-h".to_string()]), Ok(Parsed::Help)));
         assert!(matches!(parse(["a.md".to_string(), "-V".to_string()]), Ok(Parsed::Version)));
     }
+
+        #[test]
+        fn memory_buffer_aceita_tamanhos() {
+            assert_eq!(run(&["--memory-buffer", "256M", "a.md"]).unwrap().memory_buffer, Some(256 * 1024 * 1024));
+            assert_eq!(run(&["--memory-buffer", "1g", "a.md"]).unwrap().memory_buffer, Some(1024 * 1024 * 1024));
+            assert_eq!(run(&["a.md"]).unwrap().memory_buffer, None);
+        }
+
+        #[test]
+        fn memory_buffer_invalido_e_erro_de_uso() {
+            for v in ["0", "-1", "1.5G", "abc", "", "16M", "999999999999999999999G"] {
+                let e = run(&["--memory-buffer", v, "a.md"]).unwrap_err();
+                assert!(e.contains("--memory-buffer"), "{v:?}: {e}");
+            }
+            assert!(run(&["--memory-buffer"]).is_err());
+        }
 
         #[test]
         fn table_aceita_numero_a_partir_de_1() {

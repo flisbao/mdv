@@ -310,3 +310,47 @@ fn table_e_ignorado_em_plain() {
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains('┌'));
 }
+
+#[test]
+fn memory_buffer_invalido_e_erro_de_uso() {
+    let out = mdv(&["--memory-buffer", "abc", "-"], "# x\n");
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--memory-buffer"));
+}
+
+fn mdv_env(args: &[&str], stdin: &str, env: Option<&str>) -> Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_mdv"));
+    cmd.args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    if let Some(v) = env {
+        cmd.env("MDV_MEMORY_BUFFER", v);
+    } else {
+        cmd.env_remove("MDV_MEMORY_BUFFER");
+    }
+    let mut child = cmd.spawn().expect("mdv deve iniciar");
+    let _ = child.stdin.take().expect("stdin").write_all(stdin.as_bytes());
+    child.wait_with_output().expect("mdv deve terminar")
+}
+
+#[test]
+fn variavel_de_ambiente_invalida_e_erro_de_uso_que_cita_a_variavel() {
+    let out = mdv_env(&["-p", "-"], "# x\n", Some("muito"));
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("MDV_MEMORY_BUFFER"));
+}
+
+#[test]
+fn flag_valida_vence_variavel_invalida() {
+    let out = mdv_env(&["-p", "--memory-buffer", "256M", "-"], "# x\n", Some("muito"));
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+#[test]
+fn limite_maior_que_a_memoria_livre_avisa_no_stderr_e_segue() {
+    if !std::path::Path::new("/proc/meminfo").exists() {
+        return;
+    }
+    let out = mdv(&["-p", "--memory-buffer", "999999G", "-"], "# x\n");
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("aviso: o limite de memória"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains('x'));
+}
