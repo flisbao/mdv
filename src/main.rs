@@ -733,7 +733,7 @@ impl App {
             Some(buf) => format!(" /{buf}█"),
             None => self.status_left(),
         };
-        let right = "j/k rolar  [ ] títulos  / buscar  m fonte  q sair ";
+        let right = "j/k rolar  [ ] pular título  / buscar  m fonte  q sair ";
         let (lw, rw) = (left.width(), right.width());
         let text = if lw + rw < width {
             format!("{left}{}{right}", " ".repeat(width - lw - rw))
@@ -934,6 +934,13 @@ mod tests {
         app.drain_stream();
         assert!(!app.images.mermaid_held(), "entrada terminou: libera os diagramas");
         assert!(app.dirty, "redesenha para os diagramas aparecerem");
+    }
+
+    #[test]
+    fn barra_de_status_explica_que_as_teclas_pulam_de_titulo() {
+        let app = test_app(Source::Stdin, "# a");
+        let barra: String = app.status_line(120).spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(barra.contains("[ ] pular título"), "{barra}");
     }
 
     #[test]
