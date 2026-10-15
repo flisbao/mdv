@@ -23,7 +23,7 @@ use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::mpsc::{Receiver, TryRecvError};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::crossterm::terminal;
@@ -74,6 +74,7 @@ OPÇÕES:
         --check-links  confere offline links relativos, âncoras e cercas sem fechar; sai com 1 se houver problema
         --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
         --follow       com stdin: acompanha o texto conforme chega
+        --idle <S>     com --follow ou --latest: toca o sino quando nada muda por S segundos
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
         --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
         --memory-buffer <T>  limite de memória (padrão: 512M; ex.: 256M, 2G; ou $MDV_MEMORY_BUFFER)
@@ -469,7 +470,38 @@ fn event_loop(term: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
         } else {
             app.drain_stream();
             app.check_reload();
+            app.check_idle();
+            if let Some(seq) = app.pending_osc.take() {
+                emit_terminal_control(&seq);
+            }
         }
+    }
+}
+
+/// Vigia de inatividade (`--idle`): avisa uma vez quando passa `after` sem atividade.
+struct IdleWatch {
+    after: Duration,
+    last: Instant,
+    alerted: bool,
+}
+
+impl IdleWatch {
+    fn new(after: Duration) -> Self {
+        IdleWatch { after, last: Instant::now(), alerted: false }
+    }
+
+    fn activity(&mut self, now: Instant) {
+        self.last = now;
+        self.alerted = false;
+    }
+
+    /// `true` na primeira chamada depois do prazo sem atividade.
+    fn poll(&mut self, now: Instant) -> bool {
+        if self.alerted || now.duration_since(self.last) < self.after {
+            return false;
+        }
+        self.alerted = true;
+        true
     }
 }
 
@@ -616,6 +648,8 @@ struct App {
     display: Vec<usize>,
     fold_hidden: HashMap<usize, usize>,
     pending_osc: Option<String>,
+    /// Aviso de fim de atividade (`--idle`).
+    idle: Option<IdleWatch>,
     /// Ids gráficos (Kitty) já enviados ao terminal.
     sent_graphics: HashSet<u32>,
     /// Sequências Kitty ainda não escritas no terminal.
@@ -659,6 +693,7 @@ impl App {
             notice: None,
             open_table: cli.table.map(|n| n - 1),
             pending_osc: None,
+            idle: cli.idle.map(|s| IdleWatch::new(Duration::from_secs(s))),
             sent_graphics: HashSet::new(),
             pending_gfx: String::new(),
         }
@@ -751,6 +786,7 @@ impl App {
         self.folded.clear();
         self.dirty = true;
         self.view.scroll = 0;
+        self.note_activity();
     }
 
     fn total_lines(&self) -> usize {
@@ -819,6 +855,7 @@ impl App {
         }
         self.md = new;
         self.dirty = true;
+        self.note_activity();
     }
 
     /// Acrescenta um pedaço de stdin (`--follow`) marcando só as linhas que acabaram de chegar.
@@ -826,6 +863,7 @@ impl App {
         let first_new = self.md.matches('\n').count();
         let was_empty = self.md.is_empty();
         self.md.push_str(chunk);
+        self.note_activity();
         let total = self.md.matches('\n').count() + usize::from(!self.md.ends_with('\n'));
         if was_empty || total.saturating_sub(first_new) > diff::MAX_DIFF_LINES {
             self.changed.clear();
@@ -1039,6 +1077,22 @@ impl App {
         let mtime = file_mtime(p);
         if mtime.is_some() && mtime != self.mtime {
             self.reload();
+        }
+    }
+
+    fn note_activity(&mut self) {
+        if let Some(w) = &mut self.idle {
+            w.activity(Instant::now());
+        }
+    }
+
+    /// Passou o prazo sem atividade: sino no terminal e aviso na barra (uma vez por pausa).
+    fn check_idle(&mut self) {
+        let Some(w) = &mut self.idle else { return };
+        if w.poll(Instant::now()) {
+            self.pending_osc = Some("\x07".to_string());
+            self.notice = Some(format!("sem atividade há {}s", w.after.as_secs()));
+            self.dirty = true;
         }
     }
 
@@ -1668,6 +1722,28 @@ mod tests {
             _ => panic!("cli de teste"),
         };
         App::new(source, md.to_string(), 80, &cli)
+    }
+
+    #[test]
+    fn idle_avisa_uma_vez_e_rearma_com_atividade() {
+        let t0 = Instant::now();
+        let mut w = IdleWatch { after: Duration::from_secs(5), last: t0, alerted: false };
+        assert!(!w.poll(t0 + Duration::from_secs(4)));
+        assert!(w.poll(t0 + Duration::from_secs(5)));
+        assert!(!w.poll(t0 + Duration::from_secs(60)), "só uma vez por pausa");
+        w.activity(t0 + Duration::from_secs(70));
+        assert!(!w.poll(t0 + Duration::from_secs(74)));
+        assert!(w.poll(t0 + Duration::from_secs(75)));
+    }
+
+    #[test]
+    fn idle_toca_o_sino_depois_do_prazo() {
+        let (_tx, rx) = std::sync::mpsc::channel::<String>();
+        let mut app = test_app(Source::Stdin, "").with_stream(rx);
+        app.idle = Some(IdleWatch { after: Duration::from_secs(1), last: Instant::now() - Duration::from_secs(2), alerted: false });
+        app.check_idle();
+        assert_eq!(app.pending_osc.as_deref(), Some("\x07"));
+        assert_eq!(app.notice.as_deref(), Some("sem atividade há 1s"));
     }
 
     #[test]

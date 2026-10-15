@@ -88,6 +88,7 @@ OPÇÕES:
         --check-links  confere offline links relativos, âncoras e cercas sem fechar; sai com 1 se houver problema
         --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
         --follow       com stdin: acompanha o texto conforme chega
+        --idle <S>     com --follow ou --latest: toca o sino quando nada muda por S segundos
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
         --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
         --memory-buffer <T>  limite de memória (padrão: 512M; ex.: 256M, 2G; ou $MDV_MEMORY_BUFFER)
@@ -164,6 +165,7 @@ Construções comuns em saídas de LLMs aparecem formatadas, sem tags cruas: fro
 
 ```bash
 agente | mdv --follow          # o texto cresce ao vivo e a tela acompanha o fim
+agente | mdv --follow --idle 30  # sino e aviso quando nada chega por 30 s
 mdv --latest ./respostas       # abre e segue o .md mais novo da pasta
 mdv --toc relatorio.md         # só o índice de títulos
 ```
