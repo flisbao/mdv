@@ -26,7 +26,7 @@ mdv json dados.json --path .itens[0]      # só um trecho do JSON
 - **Quebra de linha correta.** O texto é quebrado na largura do terminal respeitando caracteres largos: acentos, emojis e CJK (日本語) não desalinham nada.
 - **Leitor interativo.** Rolagem, página, meia página, busca com `/`, `n`/`N` entre ocorrências e `]`/`[` para pular de título em título.
 - **Imagens no terminal.** `![alt](arquivo.png)` e, com `--remote`, imagens por URL, desenhadas em meio-bloco, sem protocolo gráfico. [Detalhes](#imagens).
-- **Diagramas Mermaid.** Com `--mermaid`, blocos <code>```mermaid</code> viram imagem com o renderizador embutido, sem instalar nada (o `mmdc` é a alternativa para casos complexos). [Detalhes](#mermaid).
+- **Diagramas Mermaid.** Blocos <code>```mermaid</code> viram imagem com o renderizador embutido, sem instalar nada e sem flag; `--mermaid` acrescenta o `mmdc` para os casos complexos. [Detalhes](#mermaid).
 - **Andamento de tarefas.** Listas `- [x]`/`- [ ]` mostram o progresso: o rodapé da leitura traz `☑ feitas/total` do documento e da seção atual, e o `--toc` acrescenta `[feitas/total]` aos títulos. Sem tarefas no documento (e no modo fonte, JSON e CSV) nada disso aparece.
 - **Feito para saída de agentes e LLMs.** Front matter YAML, alertas GFM, notas de rodapé, `<details>` e `<think>` aparecem formatados; `--follow`, `--latest <pasta>` e `--toc` acompanham e resumem. Na TUI, `m` alterna para a fonte crua. [Detalhes](#markdown-de-agentes-e-llms).
 - **JSON, CSV e TSV.** `mdv json|csv|tsv` com `--as table|schema|text`, `--path`, `--head`, `--cols`, `--no-header` e `--delimiter`. [Detalhes](#json-csv-e-tsv).
@@ -82,7 +82,7 @@ OPÇÕES:
     -p, --plain        imprime no terminal (sem TUI), como `cat` com cores
     -w, --width <N>    largura máxima do texto (padrão: 100)
         --remote       baixa imagens de http(s):// (nunca de rede privada)
-        --mermaid      renderiza blocos ```mermaid (renderizador embutido; `mmdc` ou $MDV_MMDC se precisar)
+        --mermaid      diagramas Mermaid: se o renderizador embutido falhar, tenta o `mmdc` (ou $MDV_MMDC)
         --setup-mermaid  verifica o ambiente dos diagramas e mostra como instalar o mmdc
         --toc          imprime só o índice de títulos
         --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
@@ -137,14 +137,15 @@ Imagens `![alt](caminho)` aparecem desenhadas no próprio terminal, em **meio-bl
 
 ## Mermaid
 
-Com `--mermaid`, blocos <code>```mermaid</code> viram imagem **sem instalar nada**: o `mdv` traz um renderizador embutido (flowchart, sequence, class, state, ER, pie, Gantt, timeline, journey, mindmap e outros). Ele precisa de ao menos uma fonte instalada no sistema para desenhar o texto.
+Blocos <code>```mermaid</code> viram imagem **sem instalar nada e sem flag**: o `mdv` traz um renderizador embutido (flowchart, sequence, class, state, ER, pie, Gantt, timeline, journey, mindmap e outros). Ele precisa de ao menos uma fonte instalada no sistema para desenhar o texto.
 
 ```bash
-mdv --mermaid doc.md           # diagramas como imagem
+mdv doc.md                     # diagramas como imagem (renderizador embutido)
+mdv --mermaid doc.md           # idem, e tenta o mmdc se o embutido falhar
 mdv --setup-mermaid            # verifica o ambiente e mostra como instalar o mmdc
 ```
 
-Se o renderizador embutido não conseguir desenhar um diagrama (muito complexo, ou sintaxe que ele não conhece), o `mdv` tenta o [`mmdc`](https://github.com/mermaid-js/mermaid-cli) (`npm install -g @mermaid-js/mermaid-cli`; binário trocável com `MDV_MMDC`), que exige Node e baixa um Chromium. `mdv --setup-mermaid` diz o que falta e o comando de instalação do seu sistema; ele **não instala nada sozinho**. Sem nenhum dos dois, ou sem a flag, o bloco continua aparecendo como código, com o motivo no cabeçalho. Limites: 64 KiB, 400 linhas e 100 conexões (setas `>` e `&`) por diagrama para o renderizador embutido, imagem de até 1200×3000 px, 20 s no `mmdc`. Diagramas acima desse teto de conexões vão direto para o `mmdc`, se estiver instalado.
+Se o renderizador embutido não conseguir desenhar um diagrama (muito complexo, ou sintaxe que ele não conhece), o bloco aparece como código com o motivo e, **com `--mermaid`** (a rede de segurança), o `mdv` tenta o [`mmdc`](https://github.com/mermaid-js/mermaid-cli) (`npm install -g @mermaid-js/mermaid-cli`; binário trocável com `MDV_MMDC`), que exige Node e baixa um Chromium. `mdv --setup-mermaid` diz o que falta e o comando de instalação do seu sistema; ele **não instala nada sozinho**. Sem nenhum dos dois, o bloco continua aparecendo como código, com o motivo no cabeçalho. Limites: 64 KiB, 400 linhas e 100 conexões (setas `>` e `&`) por diagrama para o renderizador embutido, imagem de até 1200×3000 px, 20 s no `mmdc`. Diagramas acima desse teto de conexões só saem com `--mermaid` e o `mmdc` instalado.
 
 Onde o diagrama aparece:
 
@@ -154,7 +155,7 @@ Onde o diagrama aparece:
 | WezTerm, iTerm2, Warp, Konsole | varia | meio-bloco; `--graphics kitty` por sua conta (suporte a *placeholders* Unicode não confirmado) |
 | Windows Terminal, demais terminais com cores 24 bits | Windows, Linux, macOS | meio-bloco (baixa resolução, funciona em qualquer um) |
 
-> O `mmdc` abre um Chromium headless: use-o só com documentos em que você confia. O renderizador embutido roda dentro do próprio `mdv`, sem processos externos.
+> O `mmdc` abre um Chromium headless: só `--mermaid` o aciona, então use-o apenas com documentos em que você confia. O renderizador embutido roda dentro do próprio `mdv`, sem processos externos, com tetos de tamanho, conexões e memória.
 
 ## Markdown de agentes e LLMs
 

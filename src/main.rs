@@ -66,7 +66,7 @@ OPÇÕES:
     -p, --plain        imprime no terminal (sem TUI), como `cat` com cores
     -w, --width <N>    largura máxima do texto (padrão: 100)
         --remote       baixa imagens de http(s):// (nunca de rede privada)
-        --mermaid      renderiza blocos ```mermaid (renderizador embutido; `mmdc` ou $MDV_MMDC se precisar)
+        --mermaid      diagramas Mermaid: se o renderizador embutido falhar, tenta o `mmdc` (ou $MDV_MMDC)
         --setup-mermaid  verifica o ambiente dos diagramas e mostra como instalar o mmdc
         --graphics <G> imagens em alta resolução: off (padrão), kitty ou auto (Kitty/Ghostty; só no modo interativo)
         --toc          imprime só o índice de títulos
@@ -254,7 +254,8 @@ fn load_source(path: Option<&str>) -> Result<(Source, String), Failure> {
 }
 
 /// Imagens relativas são resolvidas a partir da pasta do arquivo (ou do diretório atual, com stdin).
-/// `--remote` baixa imagens de URLs e `--mermaid` renderiza diagramas (`blocking`: espera, como no `--plain`).
+/// `--remote` baixa imagens de URLs; os diagramas Mermaid usam o renderizador nativo e `--mermaid` acrescenta o `mmdc`
+/// (`blocking`: espera, como no `--plain`).
 fn image_store(source: &Source, cli: &cli::Cli, blocking: bool) -> image::ImageStore {
     let base = match source {
         Source::File(p) => p
@@ -273,10 +274,13 @@ fn image_store(source: &Source, cli: &cli::Cli, blocking: bool) -> image::ImageS
     if cli.remote {
         store = store.with_remote(net::FetchPolicy::default(), blocking);
     }
-    if cli.mermaid {
+    // Diagramas Mermaid saem do renderizador nativo; `--mermaid` acrescenta o `mmdc` como reserva.
+    store = if cli.mermaid {
         let bin = std::env::var("MDV_MMDC").unwrap_or_else(|_| "mmdc".to_string());
-        store = store.with_mermaid(bin, blocking);
-    }
+        store.with_mermaid(bin, blocking)
+    } else {
+        store.with_native_mermaid(blocking)
+    };
     store
 }
 

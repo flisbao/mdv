@@ -169,10 +169,21 @@ const MERMAID_MD: &str = "```mermaid\ngraph TD; A-->B\n```\n";
 const MERMAID_INVALIDO_MD: &str = "```mermaid\nisto não é mermaid\n```\n";
 
 #[test]
-fn mermaid_sem_flag_mostra_codigo() {
+fn mermaid_sem_flag_usa_o_nativo_e_sugere_a_flag_quando_falha() {
+    let out = mdv(&["-p", "-"], MERMAID_INVALIDO_MD);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("mermaid (erro:") && text.contains("isto não é mermaid"), "{text}");
+    assert!(text.contains("--mermaid"), "{text}");
+}
+
+#[test]
+fn mermaid_sem_flag_desenha_com_o_nativo() {
     let out = mdv(&["-p", "-"], MERMAID_MD);
     let text = String::from_utf8_lossy(&out.stdout);
-    assert!(text.contains("╭─ mermaid") && text.contains("A-->B"), "{text}");
+    if text.contains("nenhuma fonte instalada") {
+        return; // máquina sem fontes: o nativo não consegue desenhar texto
+    }
+    assert!(text.contains('▀'), "{text}");
 }
 
 #[test]

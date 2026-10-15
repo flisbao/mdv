@@ -14,7 +14,8 @@ cargo run --release -- -p samples/llm.md       # front matter, alertas, <think>.
 cargo run --release -- -p samples/img.md       # imagem local em meio-bloco
 cargo run --release -- -p csv samples/dados.csv   # também: json, tsv
 cargo run --release -- -p json samples/itens.json   # tabela; --as schema para o esquema
-cargo run --release -- -p --mermaid sample.md   # diagramas Mermaid (renderizador embutido)
+cargo run --release -- -p sample.md              # diagramas Mermaid saem do renderizador embutido
+cargo run --release -- -p --mermaid sample.md   # idem, com o mmdc como reserva
 cargo run --release -- --setup-mermaid        # diagnóstico do ambiente Mermaid
 cargo clippy
 ```
@@ -42,7 +43,7 @@ Um único pipeline: entrada (Markdown, JSON, CSV/TSV) → `Vec<Line>` do ratatui
 - `src/image.rs`: decodificação com limites (10 MiB, 8192 px), `halfblock` (imagem → linhas de `▀`) e `ImageStore`, o cache compartilhado de imagens locais, remotas e diagramas Mermaid (`get`, `get_mermaid`, `get_job`; jobs remotos rodam em thread e incrementam `version`).
 - `src/graphics.rs`: protocolo gráfico do Kitty por placeholders Unicode (`cell_size`, `placeholder_rows`, `transmit`, `supports_kitty`); só funções puras. `ImageStore::graphic` dá o `id`/PNG (cache limitado por `MAX_GRAPHICS`), `render.rs` desenha os placeholders e registra `Rendered.graphics`, e `App::prepare` renderiza antes do quadro e escreve `pending_gfx` no terminal (`--graphics`, só no modo interativo).
 - `src/net.rs`: download HTTP(S) restrito (`--remote`): resolvedor que recusa rede privada/loopback, teto de bytes, redirecionamento manual.
-- `src/mermaid.rs`: `render_png_auto` tenta o renderizador nativo e, se falhar, executa o `mmdc` (`--mermaid`, binário configurável por `MDV_MMDC`) com timeout.
+- `src/mermaid.rs`: `render_png_auto` tenta o renderizador nativo e, se falhar, executa o `mmdc` (só com `--mermaid`, binário configurável por `MDV_MMDC`) com timeout. Sem a flag, `ImageStore::with_native_mermaid` usa só o nativo (padrão).
 - `src/mermaid_native.rs`: Mermaid → SVG (`mermaid-rs-renderer`) → PNG (`resvg`) em memória; tetos (`MAX_LINES` 400 linhas, `MAX_CONNECTIONS` 100 conexões contadas por `>` e `&`, `MAX_SVG_BYTES`, 1200×3000 px), erro claro sem fontes do sistema (`font_count`) e `guarded` (pânico vira erro, com o gancho mudo para não sujar a TUI).
 - `src/setup.rs`: `--setup-mermaid`, diagnóstico que só lê o ambiente (Node, `mmdc`, Chromium, fontes, terminal) e nunca instala nada.
 - `src/stream.rs`: leitor de stdin em thread (`Utf8Accum`) e `newest_md`.
@@ -53,7 +54,7 @@ Um único pipeline: entrada (Markdown, JSON, CSV/TSV) → `Vec<Line>` do ratatui
 - `src/extract.rs`: `--extract-code`/`--section`; trabalha sobre o fonte com `pulldown-cmark` (`render::parse_options`), sem renderizar, e devolve texto saneado.
 - `src/data.rs`: visualizadores de dados: JSON/JSONL (`render_json` com as vistas texto, tabela e esquema, escolhidas por `--as`/tecla `v`) e CSV/TSV (`render_table_data`); as duas tabelas passam por `finish_table` (tetos `MAX_TABLE_COLS`/`MAX_CELL_CHARS`), reaproveitando `render_code_only` e `render_table_only`.
 
-**Regra: I/O fica fora de `render.rs`.** Disco, rede e subprocesso vivem em `ImageStore`/`net`/`mermaid`; `render` só consulta o cache. Rede e subprocesso são opt-in (`--remote`, `--mermaid`).
+**Regra: I/O fica fora de `render.rs`.** Disco, rede e subprocesso vivem em `ImageStore`/`net`/`mermaid`; `render` só consulta o cache. Rede e subprocesso são opt-in (`--remote`, `--mermaid`); o Mermaid nativo roda em processo e é o padrão.
 
 Qualquer recurso novo de formatação entra em `render.rs` e vale automaticamente para TUI e `--plain`.
 

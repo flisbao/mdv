@@ -130,10 +130,10 @@ pub fn format(f: &Findings) -> String {
             f.fonts
         ));
         o.push_str("  Desenha flowchart, sequence, class, state, ER, pie, Gantt, timeline, journey, mindmap e outros.\n");
-        o.push_str("  Diagramas muito complexos podem sair diferentes do mermaid.js; nesses casos o mdv tenta o mmdc.\n");
+        o.push_str("  Diagramas muito complexos podem sair diferentes do mermaid.js; com --mermaid o mdv tenta o mmdc nesses casos.\n");
     } else {
         o.push_str("  ✘ nenhuma fonte encontrada: sem fontes o texto dos diagramas não pode ser desenhado.\n");
-        o.push_str("  Instale ao menos uma fonte (por exemplo, DejaVu ou Noto) ou use o mmdc abaixo.\n");
+        o.push_str("  Instale ao menos uma fonte (por exemplo, DejaVu ou Noto) ou use o mmdc abaixo (com --mermaid).\n");
     }
 
     o.push_str("\nmmdc (opcional, para o que o nativo não desenha)\n");
