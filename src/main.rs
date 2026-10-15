@@ -1,4 +1,5 @@
 mod browse;
+mod chat;
 mod cli;
 mod clip;
 mod data;
@@ -65,6 +66,7 @@ USO:
     mdv json [opções] <arquivo|->
     mdv csv|tsv [opções] <arquivo|->
     mdv <pasta>            (seletor: .md da pasta por data, filtro ao digitar)
+    mdv chat <transcricao.jsonl|->   (conversa de agente: papéis, ferramentas e raciocínio recolhidos)
     git diff | mdv diff    (ou mdv diff <arquivo.diff|.patch>)
     (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
 
@@ -364,6 +366,10 @@ fn render_doc(doc: &DocOpts, text: &str, width: usize, images: &image::ImageStor
                 &render::RenderOpts { width, images: Some(images), code_scroll: doc.code_scroll },
             )
         }
+        cli::Mode::Chat => render::render_with(
+            &chat::to_markdown(text),
+            &render::RenderOpts { width, images: Some(images), code_scroll: doc.code_scroll },
+        ),
         cli::Mode::Diff if doc.split => render::render_diff_split(text, width),
         cli::Mode::Diff => render::render_code_only_at(text, "diff", width, doc.code_scroll),
         cli::Mode::Json => {
@@ -393,6 +399,7 @@ fn raw_lang(mode: cli::Mode) -> &'static str {
         cli::Mode::Markdown => "md",
         cli::Mode::Json => "json",
         cli::Mode::Diff => "diff",
+        cli::Mode::Chat => "json",
         cli::Mode::Table { .. } => "text",
     }
 }

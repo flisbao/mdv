@@ -16,6 +16,7 @@ curl -s https://exemplo/doc.md | mdv    # lê da entrada padrão
 agente | mdv --follow         # acompanha um texto que ainda está chegando
 mdv csv vendas.csv --cols produto,total   # CSV como tabela
 git diff | mdv diff --split              # diff colorido, em duas colunas
+mdv chat samples/conversa.jsonl          # transcrição de agente: papéis, ferramentas e raciocínio recolhidos
 mdv json dados.json --path .itens[0]      # só um trecho do JSON
 ```
 
@@ -78,6 +79,7 @@ USO:
     mdv json [opções] <arquivo|->
     mdv csv|tsv [opções] <arquivo|->
     mdv <pasta>            (seletor: .md da pasta por data, filtro ao digitar)
+    mdv chat <transcricao.jsonl|->   (conversa de agente: papéis, ferramentas e raciocínio recolhidos)
     git diff | mdv diff    (ou mdv diff <arquivo.diff|.patch>)
     (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
 

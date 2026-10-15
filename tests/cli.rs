@@ -630,3 +630,12 @@ fn diff_split_le_do_stdin() {
     let txt = String::from_utf8_lossy(&out.stdout);
     assert!(txt.contains("velho") && txt.contains("│ novo"), "{txt}");
 }
+
+#[test]
+fn chat_renderiza_papeis_e_ferramentas() {
+    let t = "{\"role\":\"user\",\"content\":\"oi\"}\n{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"ls\"}}]}\n";
+    let out = mdv(&["chat", "-p", "-"], t);
+    assert!(out.status.success());
+    let txt = String::from_utf8_lossy(&out.stdout);
+    assert!(txt.contains("Usuário") && txt.contains("Assistente") && txt.contains("Bash"), "{txt}");
+}
