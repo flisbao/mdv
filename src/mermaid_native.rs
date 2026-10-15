@@ -44,16 +44,35 @@ pub(crate) fn font_count() -> usize {
 
 static PANIC_LOCK: Mutex<()> = Mutex::new(());
 
-/// Roda `f` e transforma pânico em erro. Enquanto roda, o gancho de pânico fica mudo para a
-/// mensagem não sujar a TUI; por isso as chamadas são serializadas por `PANIC_LOCK`.
-/// Nenhum outro código do `mdv` deve instalar um gancho de pânico (`set_hook`/`take_hook`),
-/// pois a troca aqui não é segura contra isso.
+thread_local! {
+    /// Verdadeiro só na thread que está dentro de `guarded`: nela a mensagem de pânico fica muda.
+    static SILENT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+static HOOK_ONCE: std::sync::Once = std::sync::Once::new();
+
+/// Instala (uma vez) um gancho que delega ao anterior, exceto na thread marcada em `SILENT`.
+/// Assim um pânico em outra thread (a da TUI, por exemplo) continua passando pelo gancho do
+/// `ratatui`, que restaura o terminal.
+fn install_hook() {
+    HOOK_ONCE.call_once(|| {
+        let prev = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            if !SILENT.with(std::cell::Cell::get) {
+                prev(info);
+            }
+        }));
+    });
+}
+
+/// Roda `f` e transforma pânico em erro. Enquanto roda, a mensagem de pânico desta thread fica
+/// muda para não sujar a TUI; as chamadas continuam serializadas por `PANIC_LOCK`.
 fn guarded<T>(f: impl FnOnce() -> T) -> Result<T, String> {
     let _g = PANIC_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
-    let prev = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
+    install_hook();
+    SILENT.with(|s| s.set(true));
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
-    std::panic::set_hook(prev);
+    SILENT.with(|s| s.set(false));
     res.map_err(|_| "o renderizador nativo falhou neste diagrama".to_string())
 }
 
@@ -250,5 +269,18 @@ mod tests {
     fn bloco_incompleto_vira_erro_e_nao_panico() {
         let e = render_png("flowchart TD\n  A --> ").unwrap_err();
         assert!(!e.trim().is_empty());
+    }
+
+    #[test]
+    fn guarded_transforma_panico_em_erro() {
+        let r: Result<(), String> = guarded(|| panic!("boom"));
+        assert!(r.is_err());
+        assert_eq!(guarded(|| 7).unwrap(), 7);
+    }
+
+    #[test]
+    fn guarded_nao_deixa_a_thread_muda_depois_de_sair() {
+        let _ = guarded(|| panic!("boom"));
+        assert!(!SILENT.with(std::cell::Cell::get), "a flag precisa voltar a false");
     }
 }
