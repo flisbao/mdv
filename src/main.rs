@@ -11,7 +11,7 @@ mod net;
 mod stream;
 mod render;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
@@ -552,6 +552,8 @@ struct App {
     zoom: Option<Zoom>,
     notice: Option<String>,
     open_table: Option<usize>,
+    changed: BTreeSet<usize>,
+    marks: Vec<bool>,
     folded: HashSet<fold::FoldKey>,
     display: Vec<usize>,
     fold_hidden: HashMap<usize, usize>,
@@ -587,6 +589,8 @@ impl App {
             view: Viewport::default(),
             search: SearchState::default(),
             zoom: None,
+            changed: BTreeSet::new(),
+            marks: Vec::new(),
             folded: HashSet::new(),
             display: Vec::new(),
             fold_hidden: HashMap::new(),
@@ -616,10 +620,11 @@ impl App {
         let was_at_bottom = self.view.scroll >= self.view.max_scroll(self.total_lines());
         let mut got = false;
         let mut finished = false;
+        let mut chunks = String::new();
         loop {
             match rx.try_recv() {
                 Ok(chunk) => {
-                    self.md.push_str(&chunk);
+                    chunks.push_str(&chunk);
                     got = true;
                 }
                 Err(TryRecvError::Empty) => break,
@@ -628,6 +633,9 @@ impl App {
                     break;
                 }
             }
+        }
+        if !chunks.is_empty() {
+            self.append_md(&chunks);
         }
         self.stop_stream_for_memory(mem::check().err());
         if finished {
@@ -674,6 +682,7 @@ impl App {
         self.mtime = file_mtime(&newest);
         self.source = Source::File(newest);
         self.md = md;
+        self.changed.clear();
         self.dirty = true;
         self.view.scroll = 0;
     }
@@ -727,6 +736,90 @@ impl App {
     /// Rola para que a linha renderizada `line` (ou a próxima visível) fique no topo.
     fn scroll_to_line(&mut self, line: usize) {
         self.scroll_to(self.pos_of(line));
+    }
+
+    /// Troca o texto do documento (reload) marcando as linhas novas em relação ao anterior.
+    fn set_md(&mut self, new: String) {
+        if self.md.is_empty() {
+            self.changed.clear();
+        } else {
+            match diff::changed_lines(&self.md, &new) {
+                Some(set) => self.changed = set,
+                None => {
+                    self.changed.clear();
+                    self.notice = Some("documento grande: sem marcação de mudanças".to_string());
+                }
+            }
+        }
+        self.md = new;
+        self.dirty = true;
+    }
+
+    /// Acrescenta um pedaço de stdin (`--follow`) marcando só as linhas que acabaram de chegar.
+    fn append_md(&mut self, chunk: &str) {
+        let first_new = self.md.matches('\n').count();
+        let was_empty = self.md.is_empty();
+        self.md.push_str(chunk);
+        let total = self.md.matches('\n').count() + usize::from(!self.md.ends_with('\n'));
+        if was_empty || total.saturating_sub(first_new) > diff::MAX_DIFF_LINES {
+            self.changed.clear();
+        } else {
+            self.changed = (first_new..total).collect();
+        }
+    }
+
+    /// Marcas por linha renderizada; linhas em branco nunca são pintadas.
+    fn recompute_marks(&mut self) {
+        let mut m = diff::marks(&self.rendered.line_src, &self.changed);
+        for (i, mark) in m.iter_mut().enumerate() {
+            if *mark && self.rendered.lines.get(i).is_none_or(|l| line_text(l).trim().is_empty()) {
+                *mark = false;
+            }
+        }
+        self.marks = m;
+    }
+
+    fn is_marked(&self, line: usize) -> bool {
+        self.marks.get(line).copied().unwrap_or(false)
+    }
+
+    /// Quantos trechos contíguos marcados existem.
+    fn change_runs(&self) -> usize {
+        (0..self.marks.len()).filter(|&i| self.is_marked(i) && (i == 0 || !self.is_marked(i - 1))).count()
+    }
+
+    /// A coluna de margem da janela: `▌` amarelo nas linhas marcadas.
+    fn margin_lines(&self) -> Vec<Line<'static>> {
+        self.window_display()
+            .iter()
+            .map(|&l| {
+                if self.is_marked(l) {
+                    Line::from(Span::styled("▌", Style::default().fg(Color::Yellow)))
+                } else {
+                    Line::from(" ")
+                }
+            })
+            .collect()
+    }
+
+    /// `}` / `{`: vai ao início do próximo / anterior trecho marcado.
+    fn jump_change(&mut self, forward: bool) {
+        if self.change_runs() == 0 {
+            self.notice = Some("nenhuma mudança marcada".to_string());
+            return;
+        }
+        let top = self.ref_line();
+        let starts = (0..self.marks.len()).filter(|&i| self.is_marked(i) && (i == 0 || !self.is_marked(i - 1)));
+        let alvo = if forward { starts.into_iter().find(|&i| i > top) } else { starts.into_iter().filter(|&i| i < top).last() };
+        match alvo {
+            Some(line) => {
+                self.reveal(line);
+                self.scroll_to_line(line);
+            }
+            None => {
+                self.notice = Some(if forward { "sem mais mudanças adiante" } else { "sem mais mudanças atrás" }.to_string());
+            }
+        }
     }
 
     /// Abre as dobras que escondem `line` (busca, saltos).
@@ -854,6 +947,7 @@ impl App {
         self.dirty = false;
         self.search.refresh(&self.rendered.lines);
         self.recompute_display();
+        self.recompute_marks();
         let n = self.rendered.tables.len();
         if self.zoom.as_ref().is_some_and(|z| z.table >= n) {
             self.zoom = None;
@@ -884,9 +978,8 @@ impl App {
         // Mtime lido antes do conteúdo: uma escrita no meio da leitura é detectada na próxima volta.
         let mtime = file_mtime(p);
         if let Ok(md) = read_markdown_file(p) {
-            self.md = md;
+            self.set_md(md);
             self.mtime = mtime;
-            self.dirty = true;
         }
     }
 
@@ -1022,6 +1115,12 @@ impl App {
                     self.scroll_to_line(h);
                 }
             }
+            KeyCode::Char('}') => self.jump_change(true),
+            KeyCode::Char('{') => self.jump_change(false),
+            KeyCode::Char('c') => {
+                self.changed.clear();
+                self.marks.clear();
+            }
             KeyCode::Char('z') => self.toggle_fold(),
             KeyCode::Char('Z') => self.toggle_fold_all(),
             KeyCode::Char('/') => self.search.input = Some(String::new()),
@@ -1096,6 +1195,10 @@ impl App {
         };
         let visible = self.screen_lines();
         f.render_widget(Paragraph::new(visible), inner);
+        if !self.marks.is_empty() && inner.x > content.x {
+            let margem = Rect { x: inner.x - 1, y: inner.y, width: 1, height: inner.height };
+            f.render_widget(Paragraph::new(self.margin_lines()), margem);
+        }
 
         let bar = Style::default()
             .bg(Color::Rgb(59, 66, 82))
@@ -1202,6 +1305,10 @@ impl App {
         }
         if let Some(t) = self.task_summary() {
             let _ = write!(s, "  {t}");
+        }
+        let runs = self.change_runs();
+        if runs > 0 {
+            let _ = write!(s, "  ▌ {runs} mudança{} (c limpa)", if runs == 1 { "" } else { "s" });
         }
         if let Some(n) = &self.notice {
             let _ = write!(s, "  {n}");
@@ -1718,6 +1825,181 @@ mod tests {
             json.view.height = 10;
             json.on_key(ev(KeyCode::Char('Z')));
             assert!(json.folded.is_empty());
+        }
+
+        const V1: &str = "primeiro\n\nsegundo\n\nterceiro\n";
+
+        fn linha_com(app: &App, trecho: &str) -> usize {
+            (0..app.rendered.lines.len())
+                .find(|&i| line_text(&app.rendered.lines[i]).contains(trecho))
+                .unwrap_or_else(|| panic!("sem linha com {trecho:?}"))
+        }
+
+        fn marcada(app: &App, trecho: &str) -> bool {
+            app.marks.get(linha_com(app, trecho)).copied().unwrap_or(false)
+        }
+
+        #[test]
+        fn carga_inicial_nao_tem_marcas() {
+            let app = app_com_texto(V1);
+            assert!(app.changed.is_empty());
+            assert!(app.marks.iter().all(|&m| !m));
+        }
+
+        #[test]
+        fn reload_marca_so_as_linhas_novas() {
+            let mut app = app_com_texto(V1);
+            app.set_md("primeiro\n\nsegundo EDITADO\n\nterceiro\n\nquarto\n".to_string());
+            app.rerender(60);
+            assert!(marcada(&app, "EDITADO") && marcada(&app, "quarto"));
+            assert!(!marcada(&app, "primeiro") && !marcada(&app, "terceiro"));
+        }
+
+        #[test]
+        fn linhas_em_branco_entre_blocos_nao_sao_pintadas() {
+            let mut app = app_com_texto(V1);
+            app.set_md("primeiro\n\nsegundo\n\nterceiro\n\nA\n\nB\n".to_string());
+            app.rerender(60);
+            for (i, m) in app.marks.iter().enumerate() {
+                if *m {
+                    assert!(!line_text(&app.rendered.lines[i]).trim().is_empty(), "linha {i} em branco pintada");
+                }
+            }
+            assert_eq!(app.change_runs(), 2, "A e B são trechos separados pela linha em branco");
+        }
+
+        #[test]
+        fn reload_duplo_so_marca_a_diferenca_para_a_versao_anterior() {
+            let mut app = app_com_texto(V1);
+            app.set_md("primeiro\n\nsegundo\n\nterceiro\n\nquarto\n".to_string());
+            app.set_md("primeiro\n\nsegundo\n\nterceiro\n\nquarto\n\nquinto\n".to_string());
+            app.rerender(60);
+            assert!(marcada(&app, "quinto"));
+            assert!(!marcada(&app, "quarto"), "quarto já estava na versão anterior");
+        }
+
+        #[test]
+        fn reload_sem_diferenca_limpa_as_marcas() {
+            let mut app = app_com_texto(V1);
+            app.set_md(format!("{V1}\nnovo\n"));
+            assert!(!app.changed.is_empty());
+            app.set_md(format!("{V1}\nnovo\n"));
+            app.rerender(60);
+            assert!(app.changed.is_empty() && app.marks.iter().all(|&m| !m));
+        }
+
+        #[test]
+        fn remocao_nao_marca_nada() {
+            let mut app = app_com_texto(V1);
+            app.set_md("primeiro\n\nterceiro\n".to_string());
+            app.rerender(60);
+            assert!(app.marks.iter().all(|&m| !m));
+        }
+
+        #[test]
+        fn paragrafo_quebrado_em_varias_linhas_fica_todo_marcado() {
+            let longo = "palavra ".repeat(30);
+            let mut app = app_com_texto(&format!("{longo}\n\nfim\n"));
+            app.set_md(format!("{longo}\n{longo}\n\nfim\n"));
+            app.rerender(30);
+            let linhas: Vec<usize> = (0..app.rendered.lines.len())
+                .filter(|&i| line_text(&app.rendered.lines[i]).contains("palavra"))
+                .collect();
+            assert!(linhas.len() > 2);
+            assert!(linhas.iter().all(|&i| app.marks[i]));
+            assert!(!marcada(&app, "fim"));
+        }
+
+        #[test]
+        fn documento_grande_nao_calcula_diff_e_avisa() {
+            let mut app = app_com_texto("a\n");
+            app.set_md("x\n".repeat(diff::MAX_DIFF_LINES + 1));
+            assert!(app.changed.is_empty());
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("documento grande")), "{:?}", app.notice);
+            assert_eq!(app.md.lines().count(), diff::MAX_DIFF_LINES + 1, "o texto novo é adotado mesmo assim");
+        }
+
+        #[test]
+        fn c_limpa_as_marcas() {
+            let mut app = app_com_texto(V1);
+            app.set_md(format!("{V1}\nnovo\n"));
+            app.rerender(60);
+            assert!(app.marks.iter().any(|&m| m));
+            app.on_key(ev(KeyCode::Char('c')));
+            assert!(app.changed.is_empty() && app.marks.iter().all(|&m| !m));
+        }
+
+        #[test]
+        fn chaves_saltam_entre_trechos_alterados() {
+            let base: String = (1..=12).map(|i| format!("par{i}\n\n")).collect();
+            let mut app = app_com_texto(&base);
+            app.view.height = 3;
+            let novo = base.replace("par4\n", "par4 mudou\n").replace("par9\n", "par9 mudou\n");
+            app.set_md(novo);
+            app.rerender(60);
+            app.view.scroll = 0;
+            app.on_key(ev(KeyCode::Char('}')));
+            assert_eq!(app.ref_line(), linha_com(&app, "par4 mudou"));
+            app.on_key(ev(KeyCode::Char('}')));
+            assert_eq!(app.ref_line(), linha_com(&app, "par9 mudou"));
+            app.on_key(ev(KeyCode::Char('}')));
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("mais")), "{:?}", app.notice);
+            app.on_key(ev(KeyCode::Char('{')));
+            assert_eq!(app.ref_line(), linha_com(&app, "par4 mudou"));
+        }
+
+        #[test]
+        fn salto_sem_marcas_avisa() {
+            let mut app = app_com_texto(V1);
+            app.on_key(ev(KeyCode::Char('}')));
+            assert!(app.notice.as_deref().is_some_and(|n| n.contains("nenhuma mudança")));
+        }
+
+        #[test]
+        fn margem_desenha_a_barra_amarela_nas_linhas_marcadas() {
+            let mut app = app_com_texto(V1);
+            app.set_md(format!("{V1}\nnovo\n"));
+            app.rerender(60);
+            let margem = app.margin_lines();
+            let i = linha_com(&app, "novo") - app.view.scroll;
+            assert_eq!(line_text(&margem[i]), "▌");
+            assert_eq!(margem[i].spans[0].style.fg, Some(Color::Yellow));
+            assert_eq!(line_text(&margem[0]), " ");
+        }
+
+        #[test]
+        fn barra_de_status_conta_os_trechos_alterados() {
+            let mut app = app_com_texto(V1);
+            app.set_md(format!("{V1}\nnovo\n"));
+            app.rerender(60);
+            assert!(app.status_left().contains("1 mudança"), "{}", app.status_left());
+        }
+
+        #[test]
+        fn recarregar_o_arquivo_marca_o_que_mudou() {
+            let dir = tempfile::tempdir().unwrap();
+            let p = dir.path().join("a.md");
+            std::fs::write(&p, V1).unwrap();
+            let mut app = test_app(Source::File(p.clone()), V1);
+            app.rerender(60);
+            app.view.height = 10;
+            std::fs::write(&p, format!("{V1}\nnovo\n")).unwrap();
+            app.reload();
+            app.rerender(60);
+            assert!(marcada(&app, "novo"));
+        }
+
+        #[test]
+        fn stream_marca_so_o_que_acabou_de_chegar_e_nao_o_primeiro_pedaco() {
+            let mut app = test_app(Source::Stdin, "");
+            app.append_md("a\n");
+            assert!(app.changed.is_empty(), "documento vazio antes: nada de marcar tudo");
+            app.append_md("b\nc\n");
+            assert_eq!(app.changed.iter().copied().collect::<Vec<_>>(), vec![1, 2]);
+            app.append_md("d");
+            assert_eq!(app.changed.iter().copied().collect::<Vec<_>>(), vec![3]);
+            app.append_md("e\n");
+            assert_eq!(app.changed.iter().copied().collect::<Vec<_>>(), vec![3], "a linha parcial foi completada");
         }
 
         fn copiado(app: &App) -> Option<String> {

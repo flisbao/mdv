@@ -11,7 +11,7 @@ pub const MAX_DIFF_LINES: usize = 20_000;
 /// Prazo do diff: passado dele, `similar` devolve um resultado grosseiro mas válido.
 const DIFF_TIMEOUT: Duration = Duration::from_millis(300);
 
-/// Linhas (0-based) de `new` que são inserções ou substituições em relação a `old`.
+/// Linhas (0-based) de `new`, não vazias, que são inserções ou substituições em relação a `old`.
 /// `None` se alguma das versões passa de `MAX_DIFF_LINES` linhas.
 pub fn changed_lines(old: &str, new: &str) -> Option<BTreeSet<usize>> {
     if old.lines().count() > MAX_DIFF_LINES || new.lines().count() > MAX_DIFF_LINES {
@@ -23,7 +23,8 @@ pub fn changed_lines(old: &str, new: &str) -> Option<BTreeSet<usize>> {
         .diff_lines(old, new);
     let mut out = BTreeSet::new();
     for change in diff.iter_all_changes() {
-        if change.tag() == ChangeTag::Insert {
+        // Linha em branco nova não é conteúdo: marcá-la pintaria o bloco vizinho sem motivo.
+        if change.tag() == ChangeTag::Insert && !change.value().trim().is_empty() {
             out.extend(change.new_index());
         }
     }
@@ -61,6 +62,11 @@ mod tests {
     #[test]
     fn edicao_marca_a_linha_substituida() {
         assert_eq!(changed_lines("a\nb\nc\n", "a\nB\nc\n").unwrap(), set(&[1]));
+    }
+
+    #[test]
+    fn linha_em_branco_nova_nao_marca() {
+        assert_eq!(changed_lines("a\n", "a\n\nb\n").unwrap(), set(&[2]));
     }
 
     #[test]
