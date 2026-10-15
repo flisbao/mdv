@@ -84,6 +84,9 @@ impl Piece {
 #[derive(Default)]
 pub struct Rendered {
     pub lines: Vec<Line<'static>>,
+    /// Destino de cada link do documento, na ordem em que aparecem; o texto do link carrega o
+    /// índice na cor do sublinhado (`link_id`). A TUI tira a marca antes de desenhar.
+    pub links: Vec<String>,
     /// Índices (em `lines`) onde cada título começa.
     pub headings: Vec<usize>,
     /// Títulos com nível e texto, para o `--toc`.
@@ -274,6 +277,32 @@ pub fn toc(r: &Rendered) -> String {
         out.push('\n');
     }
     out
+}
+
+/// Teto de links marcados por documento (o índice cabe em 16 bits).
+const MAX_LINKS: usize = 5000;
+const LINK_MARK_R: u8 = 0xFE;
+
+fn link_mark(id: usize) -> Color {
+    let id = u16::try_from(id).unwrap_or(u16::MAX);
+    Color::Rgb(LINK_MARK_R, (id >> 8) as u8, (id & 0xFF) as u8)
+}
+
+/// Índice (em `Rendered.links`) do link a que o estilo pertence, se for texto de link.
+pub fn link_id(style: &Style) -> Option<usize> {
+    match style.underline_color {
+        Some(Color::Rgb(LINK_MARK_R, hi, lo)) => Some((usize::from(hi) << 8) | usize::from(lo)),
+        _ => None,
+    }
+}
+
+/// Tira a marca de link da linha (a marca só serve à navegação, não deve chegar ao terminal).
+pub fn strip_link_marks(line: &mut Line<'static>) {
+    for sp in &mut line.spans {
+        if link_id(&sp.style).is_some() {
+            sp.style.underline_color = None;
+        }
+    }
 }
 
 /// Blocos ```diff e ```patch recebem cores de diff em vez do realce de sintaxe.
@@ -1024,8 +1053,12 @@ impl<'a> Renderer<'a> {
                 .push_style(Style::default().add_modifier(Modifier::CROSSED_OUT)),
             Tag::Link { dest_url, .. } => {
                 self.inline.links.push(dest_url.to_string());
-                self.inline
-                    .push_style(Style::default().fg(LINK).add_modifier(Modifier::UNDERLINED));
+                let mut style = Style::default().fg(LINK).add_modifier(Modifier::UNDERLINED);
+                if !dest_url.is_empty() && self.out.links.len() < MAX_LINKS {
+                    style = style.underline_color(link_mark(self.out.links.len()));
+                    self.out.links.push(dest_url.to_string());
+                }
+                self.inline.push_style(style);
             }
             Tag::Image { dest_url, .. } => {
                 self.inline.push_style(Style::default().add_modifier(Modifier::ITALIC));

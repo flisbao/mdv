@@ -1,3 +1,4 @@
+mod browse;
 mod cli;
 mod clip;
 mod data;
@@ -10,6 +11,7 @@ mod links;
 mod mem;
 mod mermaid;
 mod mermaid_native;
+mod nav;
 mod net;
 mod stats;
 mod stream;
@@ -105,6 +107,8 @@ TECLAS (modo interativo):
     ] / [              próximo / título anterior
     /                  buscar (Enter confirma, Esc cancela)
     n / N              próxima / anterior ocorrência
+    Tab / Shift-Tab    seleciona o próximo / anterior link; Enter segue (âncora, .md relativo ou URL http(s)/mailto com confirmação `y`), Esc cancela
+    Backspace / H      volta ao documento anterior (pilha de até 100)
     m                  alterna entre renderizado e fonte crua
     w                  código sem quebra: h/l (ou ←/→) rolam 8 colunas, 0/$ início/fim; w de novo volta a quebrar
     v                  (JSON) alterna tabela / esquema / texto
@@ -655,6 +659,13 @@ struct App {
     display: Vec<usize>,
     fold_hidden: HashMap<usize, usize>,
     pending_osc: Option<String>,
+    cli: cli::Cli,
+    /// Link selecionado: (linha renderizada, índice em `Rendered.links`).
+    link_at: Option<(usize, usize)>,
+    /// URL externa esperando confirmação (`y`).
+    pending_open: Option<String>,
+    back: Vec<browse::Back>,
+    pending_jump: Option<browse::Jump>,
     /// Aviso de fim de atividade (`--idle`).
     idle: Option<IdleWatch>,
     /// Ids gráficos (Kitty) já enviados ao terminal.
@@ -700,6 +711,11 @@ impl App {
             notice: None,
             open_table: cli.table.map(|n| n - 1),
             pending_osc: None,
+            cli: cli.clone(),
+            link_at: None,
+            pending_open: None,
+            back: Vec::new(),
+            pending_jump: None,
             idle: cli.idle.map(|s| IdleWatch::new(Duration::from_secs(s))),
             sent_graphics: HashSet::new(),
             pending_gfx: String::new(),
@@ -957,6 +973,7 @@ impl App {
             .map(|&i| {
                 let l = &self.rendered.lines[i];
                 let mut l = if q.is_empty() { l.clone() } else { highlight_line(l, q) };
+                self.decorate_links(&mut l);
                 if let Some(n) = self.fold_hidden.get(&i) {
                     l.spans.push(Span::styled(
                         format!(" ▸ {n} linhas"),
@@ -1059,6 +1076,9 @@ impl App {
         };
         self.render_width = w;
         self.dirty = false;
+        if self.link_at.is_some_and(|(l, id)| l >= self.rendered.lines.len() || id >= self.rendered.links.len()) {
+            self.link_at = None;
+        }
         self.search.refresh(&self.rendered.lines);
         self.recompute_display();
         self.recompute_marks();
@@ -1241,6 +1261,10 @@ impl App {
                     self.on_zoom_key(k.code);
                     return false;
                 }
+                if self.pending_open.is_some() {
+                    self.confirm_open(k.code == KeyCode::Char('y'));
+                    return false;
+                }
                 self.notice = None;
         if let Some(buf) = self.search.input.take() {
             self.on_search_key(k.code, buf);
@@ -1253,11 +1277,18 @@ impl App {
         match k.code {
             KeyCode::Char('q') => return true,
             KeyCode::Esc => {
-                if self.search.query.is_empty() {
+                if self.link_at.is_some() {
+                    self.link_at = None;
+                } else if self.search.query.is_empty() {
                     return true;
+                } else {
+                    self.search.clear();
                 }
-                self.search.clear();
             }
+            KeyCode::Tab => self.step_link(true),
+            KeyCode::BackTab => self.step_link(false),
+            KeyCode::Enter if self.link_at.is_some() => self.follow_link(),
+            KeyCode::Backspace | KeyCode::Char('H') => self.go_back(),
             KeyCode::Char('j') | KeyCode::Down | KeyCode::Enter => self.scroll_by(1),
             KeyCode::Char('k') | KeyCode::Up => self.scroll_by(-1),
             KeyCode::Char(' ' | 'f') | KeyCode::PageDown => self.scroll_by(page),
@@ -1371,6 +1402,7 @@ impl App {
             self.rerender(w);
         }
         self.open_pending_table();
+        self.apply_pending_jump();
                 if self.zoom.is_some() {
                     self.draw_zoom(f, content, status);
                     return;
@@ -1407,7 +1439,7 @@ impl App {
             Some(buf) => format!(" /{buf}█"),
             None => self.status_left(),
         };
-        let right = "j/k rolar  [ ] título  / buscar  z dobrar  t tabela  y/Y copiar  m fonte  q sair ";
+        let right = "j/k rolar  [ ] título  / buscar  Tab link  ⌫ voltar  z dobrar  t tabela  y/Y copiar  q sair ";
         let (lw, rw) = (left.width(), right.width());
         let text = if lw + rw < width {
             format!("{left}{}{right}", " ".repeat(width - lw - rw))
@@ -1430,6 +1462,7 @@ impl App {
             let end = (start + z.view.height).min(tv.lines.len());
             let mut visible: Vec<Line<'static>> = tv.lines[..pinned].to_vec();
             visible.extend_from_slice(&tv.lines[start..end]);
+            visible.iter_mut().for_each(render::strip_link_marks);
             f.render_widget(Paragraph::new(visible), content);
 
             let bar = Style::default().bg(Color::Rgb(59, 66, 82)).fg(Color::Rgb(229, 233, 240));
@@ -1729,6 +1762,62 @@ mod tests {
             _ => panic!("cli de teste"),
         };
         App::new(source, md.to_string(), 80, &cli)
+    }
+
+    fn key(app: &mut App, c: KeyCode) {
+        app.on_key(KeyEvent::new(c, KeyModifiers::NONE));
+    }
+
+    #[test]
+    fn tab_enter_segue_link_md_e_backspace_volta() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.md");
+        fs::write(&a, "# A\n\n[ir](b.md#segundo)\n").unwrap();
+        fs::write(dir.path().join("b.md"), "# B\n\ntexto\n\n## Segundo\n\nfim\n").unwrap();
+        let mut app = test_app(Source::File(a.clone()), "# A\n\n[ir](b.md#segundo)\n");
+        app.view.height = 3;
+        app.rerender(60);
+        key(&mut app, KeyCode::Tab);
+        assert!(app.link_at.is_some());
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.name, "b.md");
+        app.rerender(60);
+        app.apply_pending_jump();
+        let seg = app.rendered.outline[1].line;
+        assert!(app.view.scroll <= app.pos_of(seg) && app.pos_of(seg) < app.view.scroll + 3, "rolou até a âncora");
+        key(&mut app, KeyCode::Backspace);
+        assert_eq!(app.name, "a.md");
+        assert!(app.back.is_empty());
+        key(&mut app, KeyCode::Backspace);
+        assert_eq!(app.notice.as_deref(), Some("nada para voltar"));
+    }
+
+    #[test]
+    fn link_externo_so_abre_com_y_e_link_fora_da_pasta_e_recusado() {
+        let md = "[x](https://exemplo.org) e [y](/etc/passwd.md)\n";
+        let mut app = test_app(Source::Stdin, md);
+        app.view.height = 5;
+        app.rerender(60);
+        key(&mut app, KeyCode::Tab);
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.pending_open.as_deref(), Some("https://exemplo.org"));
+        key(&mut app, KeyCode::Char('n'));
+        assert!(app.pending_open.is_none());
+        key(&mut app, KeyCode::Tab);
+        key(&mut app, KeyCode::Enter);
+        assert!(app.pending_open.is_none());
+        assert!(app.notice.as_deref().unwrap_or("").starts_with("não abri o link"), "{:?}", app.notice);
+    }
+
+    #[test]
+    fn marcas_de_link_nao_chegam_a_tela() {
+        let mut app = test_app(Source::Stdin, "[x](#a)\n\n# a\n");
+        app.view.height = 5;
+        app.rerender(60);
+        key(&mut app, KeyCode::Tab);
+        let lines = app.screen_lines();
+        assert!(lines.iter().flat_map(|l| &l.spans).all(|s| s.style.underline_color.is_none()));
+        assert!(lines.iter().flat_map(|l| &l.spans).any(|s| s.style.add_modifier.contains(ratatui::style::Modifier::REVERSED)));
     }
 
     #[test]

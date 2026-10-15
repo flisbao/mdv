@@ -59,7 +59,7 @@ fn anchors_of(md: &str) -> HashSet<String> {
 }
 
 /// Decodifica `%XX` (bytes inválidos viram U+FFFD).
-fn percent_decode(s: &str) -> String {
+pub fn percent_decode(s: &str) -> String {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
@@ -79,7 +79,7 @@ fn percent_decode(s: &str) -> String {
 }
 
 /// Esquema (`https:`, `mailto:`, `data:`...) ou `//host`: não é conferido (nada de rede).
-fn is_external(dest: &str) -> bool {
+pub fn is_external(dest: &str) -> bool {
     if dest.starts_with("//") {
         return true;
     }
@@ -97,7 +97,7 @@ fn is_external(dest: &str) -> bool {
 /// O caminho (já decodificado) é relativo e sem unidade/UNC? Só esses são consultados no disco:
 /// um caminho absoluto substituiria a base no `join` (oráculo de existência de qualquer arquivo) e
 /// um `\\\\servidor\\pasta` abriria conexão de rede no Windows (vazaria credenciais).
-fn is_confined(p: &str) -> bool {
+pub fn is_confined(p: &str) -> bool {
     use std::path::Component;
     if p.starts_with(['/', '\\']) || p.contains(':') {
         return false;

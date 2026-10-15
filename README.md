@@ -120,6 +120,8 @@ TECLAS (modo interativo):
     ] / [              próximo / título anterior
     /                  buscar (Enter confirma, Esc cancela)
     n / N              próxima / anterior ocorrência
+    Tab / Shift-Tab    seleciona o próximo / anterior link; Enter segue (âncora, .md relativo ou URL http(s)/mailto com confirmação `y`), Esc cancela
+    Backspace / H      volta ao documento anterior (pilha de até 100)
     m                  alterna entre renderizado e fonte crua
     v                  (JSON) alterna tabela / esquema / texto
     t                  zoom da tabela na tela (h/l colunas, Esc volta)

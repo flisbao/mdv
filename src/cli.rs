@@ -32,7 +32,7 @@ pub enum Graphics {
 }
 
 /// Opções da linha de comando para exibir um documento.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct Cli {
     pub plain: bool,
