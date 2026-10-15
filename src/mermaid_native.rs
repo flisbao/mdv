@@ -8,6 +8,9 @@ use crate::mermaid::MAX_MERMAID_BYTES;
 
 /// Mais linhas que isso é recusado antes de qualquer trabalho (o layout cresce com o grafo).
 pub const MAX_LINES: usize = 400;
+/// Mais conexões (`>` para setas, `&` para cada ponto extra) que isso é recusado: o custo do
+/// layout cresce mais que linearmente com as arestas (399 arestas levaram 44 s).
+pub const MAX_CONNECTIONS: usize = 100;
 /// Teto do SVG intermediário.
 pub const MAX_SVG_BYTES: usize = 2 * 1024 * 1024;
 /// Teto da imagem final: 1200×3000 px = 14,4 MB de RGBA, sempre.
@@ -43,6 +46,8 @@ static PANIC_LOCK: Mutex<()> = Mutex::new(());
 
 /// Roda `f` e transforma pânico em erro. Enquanto roda, o gancho de pânico fica mudo para a
 /// mensagem não sujar a TUI; por isso as chamadas são serializadas por `PANIC_LOCK`.
+/// Nenhum outro código do `mdv` deve instalar um gancho de pânico (`set_hook`/`take_hook`),
+/// pois a troca aqui não é segura contra isso.
 fn guarded<T>(f: impl FnOnce() -> T) -> Result<T, String> {
     let _g = PANIC_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     let prev = std::panic::take_hook();
@@ -57,12 +62,20 @@ pub fn render_png(source: &str) -> Result<Vec<u8>, String> {
     render_png_with(source, system_fonts())
 }
 
+/// Conta setas (`>`) e pontos extra de `&` (cada `&` multiplica as conexões).
+fn connections(source: &str) -> usize {
+    source.matches('>').count() + source.matches('&').count()
+}
+
 fn render_png_with(source: &str, fonts: &Fonts) -> Result<Vec<u8>, String> {
     if source.len() > MAX_MERMAID_BYTES {
         return Err("diagrama grande demais".into());
     }
     if source.lines().count() > MAX_LINES {
         return Err(format!("diagrama com mais de {MAX_LINES} linhas"));
+    }
+    if connections(source) > MAX_CONNECTIONS {
+        return Err(format!("diagrama complexo demais (mais de {MAX_CONNECTIONS} conexões)"));
     }
     guarded(|| {
         let svg = mermaid_rs_renderer::render(source)
@@ -136,6 +149,46 @@ mod tests {
         let src = format!("graph TD\n{}", "A-->B\n".repeat(MAX_LINES + 1));
         let e = render_png(&src).unwrap_err();
         assert!(e.contains("linhas"), "{e}");
+    }
+
+    #[test]
+    fn diagrama_com_conexoes_demais_e_recusado_sem_rodar_o_layout() {
+        let src = format!(
+            "flowchart LR\n{}",
+            (0..=MAX_CONNECTIONS).map(|i| format!("N{i}-->N{}\n", i + 1)).collect::<String>()
+        );
+        let t = std::time::Instant::now();
+        let e = render_png(&src).unwrap_err();
+        assert!(e.contains("conexões"), "{e}");
+        assert!(t.elapsed() < std::time::Duration::from_secs(1), "{:?}", t.elapsed());
+    }
+
+    #[test]
+    fn conexoes_em_uma_linha_so_tambem_contam() {
+        let src = format!(
+            "flowchart LR\n{}Z",
+            (0..=MAX_CONNECTIONS).map(|i| format!("N{i}-->")).collect::<String>()
+        );
+        let e = render_png(&src).unwrap_err();
+        assert!(e.contains("conexões"), "{e}");
+    }
+
+    #[test]
+    fn ecomercial_conta_como_conexao() {
+        let src = format!(
+            "flowchart LR\n{} --> Z\n",
+            (0..=MAX_CONNECTIONS).map(|i| format!("N{i}")).collect::<Vec<_>>().join(" & ")
+        );
+        let e = render_png(&src).unwrap_err();
+        assert!(e.contains("conexões"), "{e}");
+    }
+
+    #[test]
+    fn diagrama_normal_continua_dentro_do_teto() {
+        // Pode falhar por outro motivo (sem fontes); o que não pode é ser o teto de conexões.
+        if let Err(e) = render_png(FLOW) {
+            assert!(!e.contains("conexões"), "{e}");
+        }
     }
 
     #[test]

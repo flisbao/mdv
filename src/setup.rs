@@ -36,6 +36,15 @@ fn probe_version(bin: &str, arg: &str) -> Option<String> {
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
+    let stdout = child.stdout.take()?;
+    // Lido numa thread: um filho com muita saída não trava, e um neto que herde o stdout
+    // não prende a leitura sem prazo.
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout.take(1024).read_to_end(&mut buf);
+        let _ = tx.send(buf);
+    });
     let start = Instant::now();
     let status = loop {
         match child.try_wait().ok()? {
@@ -51,9 +60,8 @@ fn probe_version(bin: &str, arg: &str) -> Option<String> {
     if !status.success() {
         return None;
     }
-    let mut out = String::new();
-    child.stdout.take()?.take(1024).read_to_string(&mut out).ok()?;
-    let line = first_line(&out);
+    let buf = rx.recv_timeout(Duration::from_millis(500)).ok()?;
+    let line = first_line(&String::from_utf8_lossy(&buf));
     (!line.is_empty()).then_some(line)
 }
 
@@ -256,6 +264,18 @@ mod tests {
         let t = std::time::Instant::now();
         assert!(probe_version("/nao/existe/node", "--version").is_none());
         assert!(t.elapsed() < std::time::Duration::from_secs(2));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn versao_longa_cortada_no_meio_de_caractere_nao_vira_none() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("longo");
+        // 1201 bytes numa linha; o corte em 1024 cai no meio de um 'é' (2 bytes em UTF-8).
+        std::fs::write(&p, "#!/bin/sh\nprintf 'a'\nprintf 'é%.0s' $(seq 1 600)\n").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(probe_version(p.to_str().unwrap(), "--version").is_some());
     }
 
     #[cfg(unix)]

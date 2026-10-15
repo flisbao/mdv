@@ -144,7 +144,7 @@ mdv --mermaid doc.md           # diagramas como imagem
 mdv --setup-mermaid            # verifica o ambiente e mostra como instalar o mmdc
 ```
 
-Se o renderizador embutido não conseguir desenhar um diagrama (muito complexo, ou sintaxe que ele não conhece), o `mdv` tenta o [`mmdc`](https://github.com/mermaid-js/mermaid-cli) (`npm install -g @mermaid-js/mermaid-cli`; binário trocável com `MDV_MMDC`), que exige Node e baixa um Chromium. `mdv --setup-mermaid` diz o que falta e o comando de instalação do seu sistema; ele **não instala nada sozinho**. Sem nenhum dos dois, ou sem a flag, o bloco continua aparecendo como código, com o motivo no cabeçalho. Limites: 64 KiB e 400 linhas por diagrama, imagem de até 1200×3000 px, 20 s no `mmdc`.
+Se o renderizador embutido não conseguir desenhar um diagrama (muito complexo, ou sintaxe que ele não conhece), o `mdv` tenta o [`mmdc`](https://github.com/mermaid-js/mermaid-cli) (`npm install -g @mermaid-js/mermaid-cli`; binário trocável com `MDV_MMDC`), que exige Node e baixa um Chromium. `mdv --setup-mermaid` diz o que falta e o comando de instalação do seu sistema; ele **não instala nada sozinho**. Sem nenhum dos dois, ou sem a flag, o bloco continua aparecendo como código, com o motivo no cabeçalho. Limites: 64 KiB, 400 linhas e 100 conexões (setas `>` e `&`) por diagrama para o renderizador embutido, imagem de até 1200×3000 px, 20 s no `mmdc`. Diagramas acima desse teto de conexões vão direto para o `mmdc`, se estiver instalado.
 
 Onde o diagrama aparece:
 
