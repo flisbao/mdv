@@ -29,6 +29,11 @@ const LINK: Color = Color::Rgb(88, 166, 255);
 const INLINE_CODE_FG: Color = Color::Rgb(255, 166, 87);
 const INLINE_CODE_BG: Color = Color::Rgb(47, 52, 60);
 const CODE_BG: Color = Color::Rgb(40, 44, 52);
+const DIFF_ADD_FG: Color = Color::Rgb(126, 231, 135);
+const DIFF_ADD_BG: Color = Color::Rgb(35, 64, 45);
+const DIFF_DEL_FG: Color = Color::Rgb(255, 123, 114);
+const DIFF_DEL_BG: Color = Color::Rgb(74, 38, 42);
+const DIFF_HUNK_FG: Color = Color::Rgb(121, 192, 255);
 const QUOTE: Color = Color::Rgb(139, 148, 158);
 const BULLET: Color = Color::Rgb(126, 231, 135);
 const QUOTE_BAR_COLOR: Color = Color::Rgb(63, 185, 80);
@@ -271,6 +276,27 @@ pub fn toc(r: &Rendered) -> String {
     out
 }
 
+/// Blocos ```diff e ```patch recebem cores de diff em vez do realce de sintaxe.
+fn is_diff_lang(lang: &str) -> bool {
+    lang.eq_ignore_ascii_case("diff") || lang.eq_ignore_ascii_case("patch")
+}
+
+/// Estilo de uma linha de diff unificado, pelo primeiro caractere.
+fn diff_style(line: &str) -> Style {
+    let base = Style::default().bg(CODE_BG);
+    if line.starts_with("+++") || line.starts_with("---") || line.starts_with("diff ") || line.starts_with("index ") {
+        base.fg(H4).add_modifier(Modifier::BOLD)
+    } else if line.starts_with("@@") {
+        base.fg(DIFF_HUNK_FG)
+    } else if line.starts_with('+') {
+        Style::default().fg(DIFF_ADD_FG).bg(DIFF_ADD_BG)
+    } else if line.starts_with('-') {
+        Style::default().fg(DIFF_DEL_FG).bg(DIFF_DEL_BG)
+    } else {
+        base.fg(QUOTE)
+    }
+}
+
 /// Mostra `code` como um bloco de código com a linguagem `lang` (usado para a fonte crua).
 pub fn render_code_only(code: &str, lang: &str, width: usize) -> Rendered {
     render_code_only_at(code, lang, width, None)
@@ -282,6 +308,105 @@ pub fn render_code_only_at(code: &str, lang: &str, width: usize, scroll: Option<
     r.code_scroll = scroll;
     r.render_code(&CodeBlock { lang: lang.to_string(), buf: sanitize(code).into_owned() });
     memory_error().unwrap_or(r.out)
+}
+
+/// Corta `s` para `w` colunas (com "…" ao cortar) e completa com espaços até `w`.
+fn cell_exact(s: &str, w: usize) -> String {
+    let mut out = String::new();
+    let mut used = 0;
+    if s.width() <= w {
+        out.push_str(s);
+        used = s.width();
+    } else {
+        for c in s.chars() {
+            let cw = c.width().unwrap_or(0);
+            if used + cw + 1 > w {
+                break;
+            }
+            out.push(c);
+            used += cw;
+        }
+        out.push('…');
+        used += 1;
+    }
+    out.push_str(&" ".repeat(w.saturating_sub(used)));
+    out
+}
+
+/// Lê `a,b` ou `a` de um trecho `-a,b` / `+c,d` do cabeçalho `@@`; devolve o total de linhas.
+fn hunk_count(part: &str) -> usize {
+    let n = part.trim_start_matches(['-', '+']);
+    match n.split_once(',') {
+        Some((_, c)) => c.parse().unwrap_or(1),
+        None => 1,
+    }
+}
+
+/// Diff unificado em duas colunas: removidas à esquerda, adicionadas à direita.
+pub fn render_diff_split(text: &str, width: usize) -> Rendered {
+    let half = width.saturating_sub(3).max(2) / 2;
+    let mut out = Rendered::default();
+    let dim = Style::default().fg(DIM);
+    let blank = Style::default();
+    let (mut old_left, mut new_left) = (0usize, 0usize);
+    let mut dels: Vec<String> = Vec::new();
+    let mut adds: Vec<String> = Vec::new();
+
+    fn flush(out: &mut Rendered, dels: &mut Vec<String>, adds: &mut Vec<String>, half: usize) {
+        let dim = Style::default().fg(DIM);
+        for i in 0..dels.len().max(adds.len()) {
+            let l = dels.get(i).map(|t| cell_exact(t, half));
+            let r = adds.get(i).map(|t| cell_exact(t, half));
+            let left = match l {
+                Some(t) => Span::styled(t, diff_style("-")),
+                None => Span::raw(" ".repeat(half)),
+            };
+            let right = match r {
+                Some(t) => Span::styled(t, diff_style("+")),
+                None => Span::raw(" ".repeat(half)),
+            };
+            out.lines.push(Line::from(vec![left, Span::styled(" │ ", dim), right]));
+        }
+        dels.clear();
+        adds.clear();
+    }
+
+    for raw in sanitize(text).lines() {
+        if mem::exceeded() {
+            break;
+        }
+        let line = clean_code(raw);
+        let in_hunk = old_left > 0 || new_left > 0;
+        if in_hunk && line.starts_with('-') {
+            old_left = old_left.saturating_sub(1);
+            dels.push(line[1..].to_string());
+        } else if in_hunk && line.starts_with('+') {
+            new_left = new_left.saturating_sub(1);
+            adds.push(line[1..].to_string());
+        } else if in_hunk && !line.starts_with('\\') {
+            flush(&mut out, &mut dels, &mut adds, half);
+            old_left = old_left.saturating_sub(1);
+            new_left = new_left.saturating_sub(1);
+            let t = line.strip_prefix(' ').unwrap_or(&line);
+            out.lines.push(Line::from(vec![
+                Span::styled(cell_exact(t, half), blank),
+                Span::styled(" │ ", dim),
+                Span::styled(cell_exact(t, half), blank),
+            ]));
+        } else {
+            flush(&mut out, &mut dels, &mut adds, half);
+            if let Some(rest) = line.strip_prefix("@@ ") {
+                let mut parts = rest.split_whitespace();
+                old_left = parts.next().map_or(0, hunk_count);
+                new_left = parts.next().map_or(0, hunk_count);
+            }
+            let style = diff_style(&line);
+            let w = half * 2 + 3;
+            out.lines.push(Line::from(Span::styled(cell_exact(&line, w), style)));
+        }
+    }
+    flush(&mut out, &mut dels, &mut adds, half);
+    memory_error().unwrap_or(out)
 }
 
 /// Desenha só uma tabela já em células de texto (CSV/TSV); `header` estiliza a primeira linha.
@@ -1232,6 +1357,7 @@ impl<'a> Renderer<'a> {
                 .unwrap_or_else(|| ss.find_syntax_plain_text())
         };
         let mut h = HighlightLines::new(syntax, theme);
+        let is_diff = is_diff_lang(&block.lang);
         let (first, cont) = self.prefixes();
         self.take_marker();
         let avail = self.width.saturating_sub(spans_width(&cont) + 2).max(MIN_BODY_WIDTH);
@@ -1247,16 +1373,20 @@ impl<'a> Renderer<'a> {
             if mem::exceeded() {
                 break;
             }
-            let pieces: Vec<Styled> = match h.highlight_line(line, ss) {
-                Ok(regions) => regions
-                    .iter()
-                    .map(|(st, txt)| {
-                        let fg = Color::Rgb(st.foreground.r, st.foreground.g, st.foreground.b);
-                        (clean_code(txt), Style::default().fg(fg).bg(CODE_BG))
-                    })
-                    .filter(|(t, _)| !t.is_empty())
-                    .collect(),
-                Err(_) => vec![(clean_code(line), Style::default().bg(CODE_BG))],
+            let pieces: Vec<Styled> = if is_diff {
+                vec![(clean_code(line), diff_style(line))]
+            } else {
+                match h.highlight_line(line, ss) {
+                    Ok(regions) => regions
+                        .iter()
+                        .map(|(st, txt)| {
+                            let fg = Color::Rgb(st.foreground.r, st.foreground.g, st.foreground.b);
+                            (clean_code(txt), Style::default().fg(fg).bg(CODE_BG))
+                        })
+                        .filter(|(t, _)| !t.is_empty())
+                        .collect(),
+                    Err(_) => vec![(clean_code(line), Style::default().bg(CODE_BG))],
+                }
             };
             let line_width: usize = pieces.iter().map(|(t, _)| t.width()).sum();
             self.out.code_overflow = self.out.code_overflow.max(line_width.saturating_sub(avail));
@@ -2667,6 +2797,34 @@ mod tests {
             let out = render(md, 40);
             assert_eq!(out.tables.len(), 2);
             assert!(out.tables[0].end <= out.tables[1].start);
+        }
+
+        #[test]
+        fn diff_split_pareia_removidas_e_adicionadas() {
+            let d = "--- a/x\n+++ b/x\n@@ -1,3 +1,3 @@\n ctx\n-velho\n+novo\n fim\n";
+            let r = render_diff_split(d, 41);
+            let txt: Vec<String> = r.lines.iter().map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()).collect();
+            assert_eq!(txt.len(), 6, "{txt:?}");
+            assert!(txt[4].starts_with("velho") && txt[4].contains("│ novo"), "{txt:?}");
+            assert!(txt.iter().all(|l| l.width() == 41), "{txt:?}");
+        }
+
+        #[test]
+        fn diff_split_trunca_linhas_largas_e_trata_menos_menos_dentro_do_trecho() {
+            let d = "@@ -1,2 +1,1 @@\n--- um\n-x\n+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n";
+            let r = render_diff_split(d, 21);
+            let txt: Vec<String> = r.lines.iter().map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()).collect();
+            assert!(txt[1].starts_with("-- um"), "{txt:?}");
+            assert!(txt.iter().any(|l| l.contains('…')), "{txt:?}");
+        }
+
+        #[test]
+        fn bloco_diff_pinta_adicoes_e_remocoes() {
+            let r = render_with("```diff\n-a\n+b\n c\n```\n", &RenderOpts { width: 40, images: None, ..Default::default() });
+            let bg = |i: usize| r.lines[i].spans.iter().find_map(|s| s.style.bg);
+            assert_eq!(bg(1), Some(DIFF_DEL_BG));
+            assert_eq!(bg(2), Some(DIFF_ADD_BG));
+            assert_eq!(bg(3), Some(CODE_BG));
         }
 
         #[test]

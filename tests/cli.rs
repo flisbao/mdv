@@ -622,3 +622,11 @@ fn graphics_invalido_e_erro_de_uso() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("--graphics"));
 }
+
+#[test]
+fn diff_split_le_do_stdin() {
+    let out = mdv(&["diff", "--split", "-p", "-w", "41"], "@@ -1 +1 @@\n-velho\n+novo\n");
+    assert!(out.status.success());
+    let txt = String::from_utf8_lossy(&out.stdout);
+    assert!(txt.contains("velho") && txt.contains("│ novo"), "{txt}");
+}

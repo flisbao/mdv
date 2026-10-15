@@ -9,6 +9,8 @@ pub const MAX_HEAD: usize = 100_000;
 pub enum Mode {
     Markdown,
     Json,
+    /// Diff unificado (`mdv diff`, `git diff | mdv diff`).
+    Diff,
     Table { delimiter: u8 },
 }
 
@@ -38,6 +40,8 @@ pub struct Cli {
     pub remote: bool,
     pub mermaid: bool,
     pub follow: bool,
+    /// Diff em duas colunas (`--split`, só com `mdv diff`).
+    pub split: bool,
     /// Segundos sem atividade para avisar (`--idle`, com `--follow` ou `--latest`).
     pub idle: Option<u64>,
     pub toc: bool,
@@ -74,6 +78,7 @@ fn mode_from_extension(path: &str) -> Mode {
         "json" | "jsonl" | "ndjson" => Mode::Json,
         "csv" => Mode::Table { delimiter: b',' },
         "tsv" => Mode::Table { delimiter: b'\t' },
+        "diff" | "patch" => Mode::Diff,
         _ => Mode::Markdown,
     }
 }
@@ -100,6 +105,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         remote: false,
         mermaid: false,
         follow: false,
+        split: false,
         idle: None,
         toc: false,
         stats: false,
@@ -125,6 +131,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         Some("json") => cli.mode = Mode::Json,
         Some("csv") => cli.mode = Mode::Table { delimiter: b',' },
         Some("tsv") => cli.mode = Mode::Table { delimiter: b'\t' },
+        Some("diff") => cli.mode = Mode::Diff,
         _ => explicit_mode = false,
     }
     if explicit_mode {
@@ -155,6 +162,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
                     _ => return Err(format!("--idle inválido: {v} (esperado de 1 a 86400 segundos)")),
                 });
             }
+            "--split" => cli.split = true,
             "--toc" => cli.toc = true,
             "--stats" => cli.stats = true,
             "--check-links" => cli.check_links = true,
@@ -253,6 +261,9 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
                 return Err(format!("--extract-code e --section não combinam com {flag}"));
             }
         }
+    }
+    if cli.split && cli.mode != Mode::Diff {
+        return Err("a opção --split só vale para diff".to_string());
     }
     if cli.idle.is_some() && !cli.follow && !cli.latest {
         return Err("--idle só vale com --follow ou --latest".to_string());
@@ -513,6 +524,14 @@ mod tests {
         assert!(run(&["json", "--section", "A", "d.json"]).unwrap_err().contains("Markdown"));
         assert!(run(&["csv", "--extract-code", "d.csv"]).unwrap_err().contains("Markdown"));
         assert!(run(&["--extract-code", "d.json"]).unwrap_err().contains("Markdown"), "modo deduzido da extensão");
+    }
+
+    #[test]
+    fn diff_e_split() {
+        assert_eq!(run(&["diff", "a.diff"]).unwrap().mode, Mode::Diff);
+        assert_eq!(run(&["a.patch"]).unwrap().mode, Mode::Diff);
+        assert!(run(&["diff", "--split", "a.diff"]).unwrap().split);
+        assert!(run(&["--split", "a.md"]).is_err());
     }
 
     #[test]

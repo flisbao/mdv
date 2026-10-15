@@ -15,6 +15,7 @@ mdv -p README.md              # só imprime, como um `cat` colorido
 curl -s https://exemplo/doc.md | mdv    # lê da entrada padrão
 agente | mdv --follow         # acompanha um texto que ainda está chegando
 mdv csv vendas.csv --cols produto,total   # CSV como tabela
+git diff | mdv diff --split              # diff colorido, em duas colunas
 mdv json dados.json --path .itens[0]      # só um trecho do JSON
 ```
 
@@ -76,6 +77,7 @@ USO:
     cat arquivo.md | mdv
     mdv json [opções] <arquivo|->
     mdv csv|tsv [opções] <arquivo|->
+    git diff | mdv diff    (ou mdv diff <arquivo.diff|.patch>)
     (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
 
 OPÇÕES:
@@ -88,6 +90,7 @@ OPÇÕES:
         --check-links  confere offline links relativos, âncoras e cercas sem fechar; sai com 1 se houver problema
         --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
         --follow       com stdin: acompanha o texto conforme chega
+        --split        com diff: duas colunas (removidas à esquerda, adicionadas à direita)
         --idle <S>     com --follow ou --latest: toca o sino quando nada muda por S segundos
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
         --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
