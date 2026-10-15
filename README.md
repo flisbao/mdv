@@ -61,6 +61,13 @@ Os binários de macOS e Windows **não são assinados**, então o sistema pode a
 - **macOS (Gatekeeper):** se o binário baixado pelo navegador for bloqueado, remova a quarentena com `xattr -d com.apple.quarantine mdv`.
 - **Windows (SmartScreen):** se aparecer o aviso de aplicativo desconhecido, escolha "Mais informações" e depois "Executar assim mesmo". Use o Windows Terminal para ver cores e a TUI corretamente.
 
+- **Linux (binário estático):** 
+
+```bash
+cd "$(mktemp -d)" && curl -fsSL https://github.com/flisbao/mdv/releases/download/v0.3.0/mdv-v0.3.0-linux-x86_64-musl.tar.gz | tar -xz && sudo install -m 755 "$(find . -type f -name mdv | head -n1)" /usr/local/bin/mdv && mdv
+  --version
+```
+
 Ou compile do código-fonte (Rust estável):
 
 ```bash
