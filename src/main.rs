@@ -4,6 +4,7 @@ mod data;
 mod diff;
 mod extract;
 mod fold;
+mod graphics;
 mod image;
 mod mem;
 mod mermaid;
