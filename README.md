@@ -196,7 +196,7 @@ plano.md:55: cerca de código aberta aqui e sem fechamento
 3 problemas
 ```
 
-O que confere: âncoras `#título` (mesma regra de slug do GitHub, com `-1`, `-2` para títulos repetidos), arquivos e imagens relativos (resolvidos a partir da pasta do documento; com stdin, do diretório atual), âncoras em outro `.md` (`outro.md#título`), links de referência sem definição (`[texto][ref]`) e cercas de código sem fechamento. Ignora `http(s)://`, `mailto:`, `data:`, caminhos que começam com `/` e tudo que está dentro de blocos de código. Limites: 200 problemas listados, 20 000 links e 50 outros `.md` lidos (até 5 MiB cada). Só vale para Markdown e não combina com `--toc`, `--stats`, `--extract-code`, `--section`, `--follow` nem `--latest`.
+O que confere: âncoras `#título` (mesma regra de slug do GitHub, com `-1`, `-2` para títulos repetidos), arquivos e imagens relativos (resolvidos a partir da pasta do documento; com stdin, do diretório atual), âncoras em outro `.md` (`outro.md#título`), links de referência sem definição (`[texto][ref]`) e cercas de código sem fechamento. Ignora `http(s)://`, `mailto:`, `data:`, caminhos absolutos, UNC (`\\servidor\pasta`) e com unidade (`C:`), que nunca são consultados no disco (nem depois de decodificar `%XX`), e tudo que está dentro de blocos de código. Limites: 200 problemas listados, 20 000 links e 50 outros `.md` lidos (até 5 MiB cada). Só vale para Markdown e não combina com `--toc`, `--stats`, `--extract-code`, `--section`, `--follow` nem `--latest`.
 
 ## JSON, CSV e TSV
 

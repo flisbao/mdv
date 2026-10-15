@@ -94,6 +94,17 @@ fn is_external(dest: &str) -> bool {
     }
 }
 
+/// O caminho (já decodificado) é relativo e sem unidade/UNC? Só esses são consultados no disco:
+/// um caminho absoluto substituiria a base no `join` (oráculo de existência de qualquer arquivo) e
+/// um `\\\\servidor\\pasta` abriria conexão de rede no Windows (vazaria credenciais).
+fn is_confined(p: &str) -> bool {
+    use std::path::Component;
+    if p.starts_with(['/', '\\']) || p.contains(':') {
+        return false;
+    }
+    Path::new(p).components().all(|c| !matches!(c, Component::Prefix(_) | Component::RootDir))
+}
+
 /// Fechamento válido de uma cerca: última linha só com o caractere da abertura, ao menos tantas vezes.
 fn fence_closed(block: &str) -> bool {
     let block = block.trim_end();
@@ -159,10 +170,11 @@ impl Checker<'_> {
             None => (dest, None),
         };
         let path_part = path_part.split('?').next().unwrap_or("");
-        if path_part.is_empty() || path_part.starts_with('/') {
-            return; // raiz do site ou do repositório: não dá para resolver aqui
+        let decoded = percent_decode(path_part);
+        if decoded.is_empty() || !is_confined(&decoded) {
+            return; // raiz do site, caminho absoluto, UNC ou unidade: nunca é consultado
         }
-        let target = self.base.join(percent_decode(path_part));
+        let target = self.base.join(decoded);
         let Ok(meta) = std::fs::metadata(&target) else {
             self.add(line, format!("arquivo \"{}\" não encontrado", sanitize(path_part)));
             return;
@@ -338,6 +350,27 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = check("[a](x%é.md) [b](100%)\n", dir.path());
         assert_eq!(p.len(), 2);
+    }
+
+    #[test]
+    fn caminho_absoluto_unc_ou_com_unidade_nunca_e_consultado() {
+        let dir = tempfile::tempdir().unwrap();
+        let abs = dir.path().join("existe.md");
+        std::fs::write(&abs, "x\n").unwrap();
+        let abs_enc = abs.to_string_lossy().replace('/', "%2F");
+        for dest in [
+            "\\\\host\\share\\x.md",
+            "%5C%5Chost%5Cshare%5Cx.md",
+            "%2F%2Fhost%2Fshare%2Fx.md",
+            "%2Fetc%2Fpasswd",
+            "C:\\x.md",
+            "C%3A%5Cx.md",
+            "/etc/passwd",
+            abs_enc.as_str(),
+        ] {
+            let p = check(&format!("[a]({dest})\n"), dir.path());
+            assert!(p.is_empty(), "{dest}: {p:?}");
+        }
     }
 
     #[test]
