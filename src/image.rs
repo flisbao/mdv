@@ -21,6 +21,7 @@ const LOCAL_PREFIX: &str = "file:";
 const DATA_PREFIX: &str = "data:";
 pub const MAX_DATA_IMAGES: usize = 32;
 /// Maior carga base64 aceita num `data:` (equivale a `MAX_IMAGE_BYTES` já decodificados).
+#[allow(clippy::cast_possible_truncation)] // 10 MiB cabe com folga em usize (mesmo em 32-bit)
 pub const MAX_DATA_PAYLOAD: usize = (MAX_IMAGE_BYTES as usize) / 3 * 4 + 8;
 pub const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
 pub const MAX_IMAGE_COLS: usize = 80;

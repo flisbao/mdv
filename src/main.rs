@@ -352,7 +352,7 @@ fn run_tui(mut app: App) -> Result<(), Failure> {
     let mut term = ratatui::init();
     let res = event_loop(&mut term, &mut app);
     if !app.sent_graphics.is_empty() {
-        emit_osc(graphics::DELETE_ALL);
+        emit_terminal_control(graphics::DELETE_ALL);
     }
     ratatui::restore();
     res.map_err(|e| Failure::Runtime(format!("erro no terminal: {e}")))
@@ -409,8 +409,8 @@ fn file_mtime(p: &Path) -> Option<SystemTime> {
     fs::metadata(p).and_then(|m| m.modified()).ok()
 }
 
-/// Escreve uma sequência de controle direto no terminal (OSC 52).
-fn emit_osc(seq: &str) {
+/// Escreve uma sequência de controle direto no terminal (OSC 52 para cópia, APC para Kitty).
+fn emit_terminal_control(seq: &str) {
     let mut out = io::stdout();
     let _ = out.write_all(seq.as_bytes());
     let _ = out.flush();
@@ -420,7 +420,7 @@ fn event_loop(term: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     loop {
         app.prepare(term.size()?.width);
         if !app.pending_gfx.is_empty() {
-            emit_osc(&std::mem::take(&mut app.pending_gfx));
+            emit_terminal_control(&std::mem::take(&mut app.pending_gfx));
         }
         term.draw(|f| app.draw(f))?;
         let interval = if app.stream.is_some() { STREAM_POLL_INTERVAL } else { POLL_INTERVAL };
@@ -430,7 +430,7 @@ fn event_loop(term: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
                     return Ok(());
                 }
                 if let Some(seq) = app.pending_osc.take() {
-                    emit_osc(&seq);
+                    emit_terminal_control(&seq);
                 }
             }
         } else {

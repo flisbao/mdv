@@ -50,8 +50,8 @@ pub fn cell_size(w: u32, h: u32, max_cols: usize, max_rows: usize) -> (usize, us
     let max_cols = u64::try_from(max_cols.max(1)).unwrap_or(u64::MAX);
     let max_rows = u64::try_from(max_rows.max(1)).unwrap_or(u64::MAX);
     let max_half = max_rows.saturating_mul(2);
-    let cols = w.min(max_cols).min(w * max_half / h).max(1);
-    let half_rows = (h * cols).div_ceil(w);
+    let cols = w.min(max_cols).min(w.saturating_mul(max_half) / h).max(1);
+    let half_rows = h.saturating_mul(cols).div_ceil(w);
     let rows = half_rows.div_ceil(2).clamp(1, max_rows);
     (
         usize::try_from(cols).unwrap_or(usize::MAX),

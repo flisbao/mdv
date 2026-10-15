@@ -25,20 +25,21 @@ pub fn base64(data: &[u8]) -> String {
 }
 
 /// Decodifica base64 padrão (RFC 4648). Espaço em branco é ignorado e o `=` final é opcional.
-/// `None` se houver caractere fora do alfabeto, dado depois do `=` ou tamanho impossível.
+/// `None` se houver caractere fora do alfabeto, dado depois do `=`, padding excessivo (> 2 `=`),
+/// padding sem dados ou tamanho impossível.
 pub fn base64_decode(s: &str) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(s.len() / 4 * 3 + 3);
     let (mut acc, mut bits) = (0u32, 0u32);
-    let mut padded = false;
+    let mut padding = 0usize;
     for b in s.bytes() {
         if b.is_ascii_whitespace() {
             continue;
         }
         if b == b'=' {
-            padded = true;
+            padding += 1;
             continue;
         }
-        if padded {
+        if padding > 0 {
             return None;
         }
         let v = ALPHABET.iter().position(|&a| a == b)?;
@@ -49,7 +50,10 @@ pub fn base64_decode(s: &str) -> Option<Vec<u8>> {
             out.push(u8::try_from((acc >> bits) & 0xFF).ok()?);
         }
     }
-    if bits >= 6 {
+    if padding > 2 || bits >= 6 {
+        return None;
+    }
+    if padding > 0 && out.is_empty() && bits == 0 {
         return None;
     }
     Some(out)
@@ -104,6 +108,8 @@ mod tests {
         assert!(base64_decode("@@@@").is_none());
         assert!(base64_decode("Z").is_none()); // 6 bits sozinhos
         assert!(base64_decode("Zg==Zg").is_none()); // dado depois do padding
+        assert!(base64_decode("AA=====").is_none()); // excesso de padding
+        assert!(base64_decode("====").is_none()); // só padding sem dados
     }
 
     #[test]
