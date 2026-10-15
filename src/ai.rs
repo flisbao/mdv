@@ -22,6 +22,10 @@ pub const MAX_SEND_BYTES: usize = 64 * 1024;
 pub const MAX_REPLY_BYTES: usize = 256 * 1024;
 pub const AI_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// Tempo extra, depois que o filho sai, para as threads de leitura terminarem. Um neto que herdou
+/// stdout/stderr mantém o pipe aberto; passado o prazo, desistimos da leitura.
+const READ_GRACE: Duration = Duration::from_secs(1);
+
 /// `MDV_AI_CMD` dividido por espaços (sem aspas nem shell): programa e argumentos.
 pub fn parse_command(raw: &str) -> Option<Vec<String>> {
     let v: Vec<String> = raw.split_whitespace().map(str::to_string).collect();
@@ -41,7 +45,20 @@ pub fn clip_bytes(s: &str, max: usize) -> (&str, bool) {
 }
 
 /// Roda `cmd` com `input` no stdin; devolve o stdout (até `max_out` bytes) ou o motivo da falha.
+/// Atalho sem cancelamento: só os testes o usam (a TUI chama `run_cancelable`).
+#[cfg(test)]
 pub fn run(cmd: &[String], input: &str, timeout: Duration, max_out: usize) -> Result<String, String> {
+    run_cancelable(cmd, input, timeout, max_out, &AtomicBool::new(false))
+}
+
+/// Como `run`, mas `cancel` em `true` mata o filho e devolve `Err("cancelado")`.
+pub fn run_cancelable(
+    cmd: &[String],
+    input: &str,
+    timeout: Duration,
+    max_out: usize,
+    cancel: &AtomicBool,
+) -> Result<String, String> {
     let (prog, args) = cmd.split_first().ok_or("comando vazio")?;
     let mut child = Command::new(prog)
         .args(args)
@@ -61,23 +78,32 @@ pub fn run(cmd: &[String], input: &str, timeout: Duration, max_out: usize) -> Re
     let overflow = Arc::new(AtomicBool::new(false));
     let mut stdout = child.stdout.take().ok_or("sem stdout")?;
     let flag = Arc::clone(&overflow);
-    let reader = std::thread::spawn(move || {
+    let (out_tx, out_rx) = mpsc::channel::<Vec<u8>>();
+    std::thread::spawn(move || {
         let mut buf = Vec::new();
         let _ = (&mut stdout).take(max_out as u64 + 1).read_to_end(&mut buf);
         if buf.len() > max_out {
             flag.store(true, Ordering::Relaxed);
         }
-        buf
+        let _ = out_tx.send(buf);
     });
     let mut stderr = child.stderr.take().ok_or("sem stderr")?;
-    let err_reader = std::thread::spawn(move || {
-        let mut s = String::new();
-        let _ = (&mut stderr).take(2048).read_to_string(&mut s);
-        s
+    let (err_tx, err_rx) = mpsc::channel::<String>();
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = (&mut stderr).take(2048).read_to_end(&mut buf);
+        // Continua lendo (e descartando) o resto: fechar o pipe mataria o filho com SIGPIPE.
+        let _ = std::io::copy(&mut stderr, &mut std::io::sink());
+        let _ = err_tx.send(String::from_utf8_lossy(&buf).into_owned());
     });
 
     let start = Instant::now();
     let status = loop {
+        if cancel.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("cancelado".to_string());
+        }
         if overflow.load(Ordering::Relaxed) {
             let _ = child.kill();
             let _ = child.wait();
@@ -93,8 +119,10 @@ pub fn run(cmd: &[String], input: &str, timeout: Duration, max_out: usize) -> Re
             None => std::thread::sleep(Duration::from_millis(20)),
         }
     };
-    let out = reader.join().unwrap_or_default();
-    let err = err_reader.join().unwrap_or_default();
+    let Ok(out) = out_rx.recv_timeout(READ_GRACE) else {
+        return Err("o comando deixou um processo preso à saída; resposta descartada".to_string());
+    };
+    let err = err_rx.recv_timeout(READ_GRACE).unwrap_or_default();
     if out.len() > max_out {
         return Err(format!("resposta maior que {} KiB, descartada", max_out / 1024));
     }
@@ -112,6 +140,14 @@ pub struct AiPanel {
     reply: Option<Result<String, String>>,
     drawn: Option<(usize, render::Rendered)>,
     scroll: usize,
+    /// Sinaliza à thread da consulta que o painel foi fechado: ela mata o subprocesso.
+    cancel: Arc<AtomicBool>,
+}
+
+impl Drop for AiPanel {
+    fn drop(&mut self) {
+        self.cancel.store(true, Ordering::Relaxed);
+    }
 }
 
 impl AiPanel {
@@ -148,11 +184,13 @@ impl App {
         let (sent, _) = clip_bytes(&section, MAX_SEND_BYTES);
         let sent = sent.to_string();
         let (tx, rx) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let worker_cancel = Arc::clone(&cancel);
         std::thread::spawn(move || {
-            let _ = tx.send(run(&cmd, &sent, AI_TIMEOUT, MAX_REPLY_BYTES));
+            let _ = tx.send(run_cancelable(&cmd, &sent, AI_TIMEOUT, MAX_REPLY_BYTES, &worker_cancel));
         });
         let label = self.ai_cmd.as_ref().and_then(|c| c.first()).cloned().unwrap_or_default();
-        self.ai = Some(AiPanel { label, rx: Some(rx), reply: None, drawn: None, scroll: 0 });
+        self.ai = Some(AiPanel { label, rx: Some(rx), reply: None, drawn: None, scroll: 0, cancel });
     }
 
     /// Recebe a resposta quando ela chega (chamado a cada tique).
@@ -275,5 +313,56 @@ mod tests {
     fn programa_inexistente() {
         let e = run(&cmd("/nao/existe/mdv-ai"), "", Duration::from_secs(1), 10).unwrap_err();
         assert!(e.contains("não consegui executar"), "{e}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cancelar_mata_o_processo() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let c2 = Arc::clone(&cancel);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(150));
+            c2.store(true, Ordering::Relaxed);
+        });
+        let t = Instant::now();
+        let e = run_cancelable(&cmd("sleep 5"), "", Duration::from_secs(10), 1024, &cancel).unwrap_err();
+        assert_eq!(e, "cancelado");
+        assert!(t.elapsed() < Duration::from_secs(3), "{:?}", t.elapsed());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn neto_preso_na_saida_nao_trava() {
+        // O `sleep` em segundo plano herda o stdout e mantém o pipe aberto por 4 s.
+        let c = vec!["sh".to_string(), "-c".to_string(), "sleep 4 & echo oi".to_string()];
+        let t = Instant::now();
+        let e = run(&c, "", Duration::from_secs(10), 1024).unwrap_err();
+        assert!(e.contains("preso"), "{e}");
+        assert!(t.elapsed() < Duration::from_secs(3), "{:?}", t.elapsed());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stderr_grande_nao_derruba_o_comando() {
+        // ~33 KB no stderr (acima dos 2 KiB lidos) e mesmo assim sai com sucesso.
+        let script = "i=0; while [ $i -lt 3000 ]; do echo abcdefghij >&2; i=$((i+1)); done; echo ok";
+        let c = vec!["sh".to_string(), "-c".to_string(), script.to_string()];
+        let r = run(&c, "", Duration::from_secs(10), 1024).unwrap();
+        assert_eq!(r.trim(), "ok");
+    }
+
+    #[test]
+    fn soltar_o_painel_sinaliza_cancelamento() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let p = AiPanel {
+            label: String::new(),
+            rx: None,
+            reply: None,
+            drawn: None,
+            scroll: 0,
+            cancel: Arc::clone(&cancel),
+        };
+        drop(p);
+        assert!(cancel.load(Ordering::Relaxed));
     }
 }
