@@ -242,6 +242,103 @@ fn render_json_text(sel: &Value, width: usize) -> Rendered {
     r
 }
 
+const MAX_SCHEMA_DEPTH: usize = 8;
+const MAX_SCHEMA_KEYS: usize = 200;
+/// Itens analisados por lista: o esquema de um milhão de registros sai de uma amostra.
+const MAX_SCHEMA_SAMPLE: usize = 1000;
+const MAX_SCHEMA_LINES: usize = 2000;
+
+fn kind(v: &Value) -> &'static str {
+    match v {
+        Value::Object(_) => "objeto",
+        Value::Array(_) => "lista",
+        Value::String(_) => "texto",
+        Value::Number(_) => "número",
+        Value::Bool(_) => "booleano",
+        Value::Null => "nulo",
+    }
+}
+
+/// Descreve os valores que ocupam o mesmo lugar no documento. Devolve o rótulo do tipo e
+/// acrescenta a `lines` as linhas dos filhos (indentadas a partir de `depth + 1`).
+fn group(values: &[&Value], depth: usize, lines: &mut Vec<String>) -> String {
+    let mut kinds: Vec<&'static str> = Vec::new();
+    for v in values {
+        let k = kind(v);
+        if !kinds.contains(&k) {
+            kinds.push(k);
+        }
+    }
+    if depth >= MAX_SCHEMA_DEPTH {
+        return format!("{} …", kinds.join(" | "));
+    }
+
+    let objects: Vec<&serde_json::Map<String, Value>> =
+        values.iter().filter_map(|v| v.as_object()).take(MAX_SCHEMA_SAMPLE).collect();
+    if !objects.is_empty() {
+        let mut keys: Vec<&str> = Vec::new();
+        let mut seen: HashSet<&str> = HashSet::new();
+        let mut cut = false;
+        for m in &objects {
+            for k in m.keys() {
+                if seen.contains(k.as_str()) {
+                    continue;
+                }
+                if keys.len() >= MAX_SCHEMA_KEYS {
+                    cut = true;
+                    continue;
+                }
+                seen.insert(k);
+                keys.push(k);
+            }
+        }
+        for key in keys {
+            let vals: Vec<&Value> = objects.iter().filter_map(|m| m.get(key)).collect();
+            let optional = if vals.len() < objects.len() { "?" } else { "" };
+            let at = lines.len();
+            lines.push(String::new());
+            let label = group(&vals, depth + 1, lines);
+            lines[at] = format!("{}{key}{optional}: {label}", "  ".repeat(depth + 1));
+        }
+        if cut {
+            lines.push(format!("{}…", "  ".repeat(depth + 1)));
+        }
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+    for k in kinds {
+        if k != "lista" {
+            parts.push(k.to_string());
+            continue;
+        }
+        let total: usize = values.iter().filter_map(|v| v.as_array()).map(Vec::len).sum();
+        if total == 0 {
+            parts.push("lista · vazia".to_string());
+            continue;
+        }
+        let elems: Vec<&Value> =
+            values.iter().filter_map(|v| v.as_array()).flatten().take(MAX_SCHEMA_SAMPLE).collect();
+        let label = group(&elems, depth, lines);
+        parts.push(format!("lista · {total} × {label}"));
+    }
+    parts.join(" | ")
+}
+
+/// Tipos do documento, uma linha por campo, indentado. Listas são resumidas por uma amostra.
+pub fn schema_text(v: &Value) -> String {
+    let mut lines = vec![String::new()];
+    lines[0] = group(&[v], 0, &mut lines);
+    if lines.len() > MAX_SCHEMA_LINES {
+        lines.truncate(MAX_SCHEMA_LINES);
+        lines.push("…".to_string());
+    }
+    lines.join("\n")
+}
+
+fn render_json_schema(sel: &Value, width: usize) -> Rendered {
+    render_code_only(&schema_text(sel), "", width)
+}
+
 pub fn render_json(text: &str, o: &JsonOpts, width: usize) -> Rendered {
     if text.len() > MAX_DATA_BYTES {
         return error_rendered("entrada grande demais para o modo JSON (limite de 5 MiB)");
@@ -257,7 +354,7 @@ pub fn render_json(text: &str, o: &JsonOpts, width: usize) -> Rendered {
     let view = if o.view == JsonView::Auto { auto_view(sel) } else { o.view };
     match view {
         JsonView::Table => render_json_table(sel, o, width),
-        JsonView::Schema => error_rendered("vista schema ainda não disponível"),
+        JsonView::Schema => render_json_schema(sel, width),
         JsonView::Text | JsonView::Auto => render_json_text(sel, width),
     }
 }
@@ -676,5 +773,57 @@ mod tests {
             assert_eq!(auto_view_of_text(r#"{"a":1}"#, None), JsonView::Text);
             assert_eq!(auto_view_of_text("{", None), JsonView::Text);
             assert_eq!(auto_view_of_text(r#"{"d":[{"a":1}]}"#, Some(".d")), JsonView::Table);
+        }
+
+        fn schema(json: &str) -> String {
+            schema_text(&parse_json(json).unwrap())
+        }
+
+        #[test]
+        fn esquema_de_objeto_com_lista_de_objetos() {
+            let s = schema(r#"{"nome":"mdv","itens":[{"id":1,"tags":["a"]},{"id":2}]}"#);
+            assert_eq!(
+                s,
+                "objeto\n  nome: texto\n  itens: lista · 2 × objeto\n    id: número\n    tags?: lista · 1 × texto"
+            );
+        }
+
+        #[test]
+        fn esquema_marca_tipos_mistos_e_lista_vazia() {
+            assert_eq!(schema(r#"[{"a":1},{"a":"x"}]"#), "lista · 2 × objeto\n  a: número | texto");
+            assert_eq!(schema("[]"), "lista · vazia");
+            assert_eq!(schema("null"), "nulo");
+        }
+
+        #[test]
+        fn esquema_para_na_profundidade_maxima() {
+            let json = format!("{}1{}", "{\"a\":".repeat(30), "}".repeat(30));
+            let s = schema(&json);
+            assert!(s.contains('…'), "{s}");
+            assert!(s.lines().count() <= MAX_SCHEMA_DEPTH + 2, "{s}");
+        }
+
+        #[test]
+        fn esquema_limita_chaves_e_linhas() {
+            let obj = (0..5000).map(|i| format!("\"k{i}\":{i}")).collect::<Vec<_>>().join(",");
+            let s = schema(&format!("{{{obj}}}"));
+            assert!(s.lines().count() <= MAX_SCHEMA_KEYS + 3, "{} linhas", s.lines().count());
+            assert!(s.contains('…'));
+        }
+
+        #[test]
+        fn esquema_de_documento_grande_e_rapido() {
+            let items = (0..200_000).map(|i| format!("{{\"id\":{i},\"nome\":\"n{i}\"}}")).collect::<Vec<_>>().join(",");
+            let t0 = std::time::Instant::now();
+            let s = schema(&format!("[{items}]"));
+            assert!(s.starts_with("lista · 200000 × objeto"), "{s}");
+            assert!(t0.elapsed() < std::time::Duration::from_secs(3), "levou {:?}", t0.elapsed());
+        }
+
+        #[test]
+        fn esquema_pela_vista_schema_e_sem_escape() {
+            let r = render_json(r#"{"\u001b]0;pwn\u0007":1}"#, &jopts(JsonView::Schema), 80);
+            let ansi = crate::render::to_ansi(&r.lines, false);
+            assert!(!ansi.contains('\x1b') && ansi.contains("número"), "{ansi:?}");
         }
 }
