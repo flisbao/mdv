@@ -1,3 +1,4 @@
+mod ai;
 mod browse;
 mod chat;
 mod cli;
@@ -121,6 +122,7 @@ TECLAS (modo interativo):
     z / Z              dobra ou abre a seção atual / dobra todas (ou abre todas); título dobrado mostra ▸ N linhas
     y / Y              copia o bloco de código da tela / o Markdown da seção (OSC 52, até 64 KiB)
     r                  recarrega o arquivo
+    ?                  envia a seção atual ao comando de $MDV_AI_CMD e mostra a resposta (opt-in)
     q, Esc             sai
 ";
 
@@ -505,6 +507,7 @@ fn event_loop(term: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
             app.drain_stream();
             app.check_reload();
             app.check_idle();
+            app.poll_ai();
             if let Some(seq) = app.pending_osc.take() {
                 emit_terminal_control(&seq);
             }
@@ -690,6 +693,9 @@ struct App {
     back: Vec<browse::Back>,
     /// Seletor de arquivos aberto (`mdv <pasta>`); enquanto existe, ocupa a tela.
     picker: Option<picker::Picker>,
+    /// Comando de `MDV_AI_CMD` (a tecla `?` fica desligada sem ele).
+    ai_cmd: Option<Vec<String>>,
+    ai: Option<ai::AiPanel>,
     pending_jump: Option<browse::Jump>,
     /// Aviso de fim de atividade (`--idle`).
     idle: Option<IdleWatch>,
@@ -741,6 +747,8 @@ impl App {
             pending_open: None,
             back: Vec::new(),
             picker: None,
+            ai_cmd: std::env::var("MDV_AI_CMD").ok().and_then(|v| ai::parse_command(&v)),
+            ai: None,
             pending_jump: None,
             idle: cli.idle.map(|s| IdleWatch::new(Duration::from_secs(s))),
             sent_graphics: HashSet::new(),
@@ -1280,6 +1288,13 @@ impl App {
 
     /// Retorna `true` quando o usuário pediu para sair.
     fn on_key(&mut self, k: KeyEvent) -> bool {
+        if self.ai.is_some() {
+            if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
+                return true;
+            }
+            self.on_ai_key(k.code);
+            return false;
+        }
         if self.picker.is_some() {
             if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
                 return true;
@@ -1317,6 +1332,7 @@ impl App {
                     self.search.clear();
                 }
             }
+            KeyCode::Char('?') => self.ask_ai(),
             KeyCode::Tab => self.step_link(true),
             KeyCode::BackTab => self.step_link(false),
             KeyCode::Enter if self.link_at.is_some() => self.follow_link(),
@@ -1427,6 +1443,10 @@ impl App {
     fn draw(&mut self, f: &mut Frame) {
         if self.picker.is_some() {
             self.draw_picker(f);
+            return;
+        }
+        if self.ai.is_some() {
+            self.draw_ai(f);
             return;
         }
         let area = f.area();
@@ -1873,6 +1893,30 @@ mod tests {
         assert_eq!(p.query, "um", "a consulta é mantida");
         assert!(!app.on_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)), "q digita no filtro");
         assert!(app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn interrogacao_envia_a_secao_ao_comando_e_mostra_a_resposta() {
+        let mut app = test_app(Source::Stdin, "# A\n\ntexto da secao\n\n# B\n\noutra\n");
+        app.view.height = 10;
+        app.rerender(60);
+        key(&mut app, KeyCode::Char('?'));
+        assert!(app.notice.as_deref().unwrap_or("").contains("MDV_AI_CMD"), "sem comando: avisa");
+        app.ai_cmd = Some(vec!["cat".to_string()]);
+        key(&mut app, KeyCode::Char('?'));
+        assert!(app.ai.is_some());
+        for _ in 0..200 {
+            app.poll_ai();
+            if app.ai.as_ref().is_some_and(|p| p.has_reply()) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let reply = app.ai.as_ref().and_then(|p| p.reply_text()).expect("resposta");
+        assert!(reply.contains("texto da secao") && !reply.contains("outra"), "{reply}");
+        key(&mut app, KeyCode::Esc);
+        assert!(app.ai.is_none());
     }
 
     #[test]

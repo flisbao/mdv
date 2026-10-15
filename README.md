@@ -132,6 +132,7 @@ TECLAS (modo interativo):
     z / Z              dobra ou abre a seção atual / dobra todas (ou abre todas); título dobrado mostra ▸ N linhas
     y / Y              copia o bloco de código da tela / o Markdown da seção (OSC 52, até 64 KiB)
     r                  recarrega o arquivo
+    ?                  envia a seção atual ao comando de $MDV_AI_CMD e mostra a resposta (opt-in)
     q, Esc             sai
 ```
 <!-- mdv:help:end -->
@@ -234,6 +235,10 @@ MDV_MEMORY_BUFFER=2G mdv grande.md      # a flag vence a variável
 ```
 
 Aceita `256M`, `1G`, `512MiB`, `65536K` (múltiplos de 1024); o mínimo é 32 MiB. Se o valor passar da memória livre do computador, o `mdv` avisa e segue. A memória livre é detectada no Linux; no macOS e no Windows a mensagem só não traz o número.
+
+## Pergunte à IA (opt-in)
+
+Defina `MDV_AI_CMD` com um comando que lê o texto no stdin e responde no stdout (sem shell e sem aspas: programa e argumentos separados por espaço), por exemplo `export MDV_AI_CMD='claude -p'`. Na TUI, `?` envia a **seção atual** (até 64 KiB) ao comando e mostra a resposta, renderizada como Markdown e saneada, num painel (`j`/`k` rolam, `Esc` fecha). O `mdv` não tem rede embutida: quem fala com o serviço é o seu comando. Limites: 60 s de tempo e 256 KiB de resposta; passando disso o processo é morto. Sem `MDV_AI_CMD` a tecla só avisa como ativar.
 
 ## Limitações conhecidas
 
