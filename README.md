@@ -63,9 +63,14 @@ Os binários de macOS e Windows **não são assinados**, então o sistema pode a
 
 - **Linux (binário estático):** 
 
+Instala sempre a última release publicada (a tag vem do redirecionamento de `releases/latest`, sem depender da API do GitHub):
+
 ```bash
-cd "$(mktemp -d)" && curl -fsSL https://github.com/flisbao/mdv/releases/download/v0.3.0/mdv-v0.3.0-linux-x86_64-musl.tar.gz | tar -xz && sudo install -m 755 "$(find . -type f -name mdv | head -n1)" /usr/local/bin/mdv && mdv
-  --version
+tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/flisbao/mdv/releases/latest) && tag=${tag##*/} \
+  && cd "$(mktemp -d)" \
+  && curl -fsSL "https://github.com/flisbao/mdv/releases/download/${tag}/mdv-${tag}-linux-x86_64-musl.tar.gz" | tar -xz \
+  && sudo install -m 755 "$(find . -type f -name mdv | head -n1)" /usr/local/bin/mdv \
+  && mdv --version
 ```
 
 Ou compile do código-fonte (Rust estável):
