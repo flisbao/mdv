@@ -2,6 +2,7 @@ mod cli;
 mod clip;
 mod data;
 mod extract;
+mod fold;
 mod image;
 mod mem;
 mod mermaid;
