@@ -56,22 +56,86 @@ Baixe o binário da última release, extraia e coloque `mdv` no seu `PATH`:
 Versão atual: **v0.4.1**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
 <!-- mdv:install:end -->
 
-Os binários de macOS e Windows **não são assinados**, então o sistema pode avisar na primeira execução:
+Os scripts abaixo detectam o sistema e a arquitetura, baixam da **última release publicada** o arquivo certo e instalam o `mdv`. A tag vem do redirecionamento de `releases/latest` (Linux e macOS, sem depender da API do GitHub) ou da API (Windows). Os binários de macOS e Windows **não são assinados**: veja o aviso de cada sistema.
 
-- **macOS (Gatekeeper):** se o binário baixado pelo navegador for bloqueado, remova a quarentena com `xattr -d com.apple.quarantine mdv`.
-- **Windows (SmartScreen):** se aparecer o aviso de aplicativo desconhecido, escolha "Mais informações" e depois "Executar assim mesmo". Use o Windows Terminal para ver cores e a TUI corretamente.
+### Linux
 
-- **Linux (binário estático):** 
-
-Instala sempre a última release publicada (a tag vem do redirecionamento de `releases/latest`, sem depender da API do GitHub):
+Escolhe `x86_64` (binário estático musl, roda em qualquer distro) ou `aarch64` (glibc 2.35+) e instala em `/usr/local/bin`:
 
 ```bash
-tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/flisbao/mdv/releases/latest) && tag=${tag##*/} \
-  && cd "$(mktemp -d)" \
-  && curl -fsSL "https://github.com/flisbao/mdv/releases/download/${tag}/mdv-${tag}-linux-x86_64-musl.tar.gz" | tar -xz \
-  && sudo install -m 755 "$(find . -type f -name mdv | head -n1)" /usr/local/bin/mdv \
-  && mdv --version
+(
+  set -eu
+  case "$(uname -m)" in
+    x86_64 | amd64)  alvo=linux-x86_64-musl ;;
+    aarch64 | arm64) alvo=linux-aarch64 ;;
+    *) echo "arquitetura não suportada: $(uname -m)" >&2; exit 1 ;;
+  esac
+  tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/flisbao/mdv/releases/latest)
+  tag=${tag##*/}
+  cd "$(mktemp -d)"
+  curl -fsSL "https://github.com/flisbao/mdv/releases/download/${tag}/mdv-${tag}-${alvo}.tar.gz" | tar -xz
+  sudo install -m 755 "$(find . -type f -name mdv | head -n1)" /usr/local/bin/mdv
+  mdv --version
+)
 ```
+
+Em Debian/Ubuntu e Fedora/RHEL também há pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/latest).
+
+### macOS
+
+Escolhe Apple Silicon (`arm64`) ou Intel (`x86_64`) e instala em `/usr/local/bin`:
+
+```bash
+(
+  set -eu
+  case "$(uname -m)" in
+    arm64)  alvo=macos-aarch64 ;;
+    x86_64) alvo=macos-x86_64 ;;
+    *) echo "arquitetura não suportada: $(uname -m)" >&2; exit 1 ;;
+  esac
+  tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/flisbao/mdv/releases/latest)
+  tag=${tag##*/}
+  cd "$(mktemp -d)"
+  curl -fsSL "https://github.com/flisbao/mdv/releases/download/${tag}/mdv-${tag}-${alvo}.tar.gz" | tar -xz
+  bin=$(find . -type f -name mdv | head -n1)
+  xattr -d com.apple.quarantine "$bin" 2>/dev/null || true
+  sudo mkdir -p /usr/local/bin
+  sudo install -m 755 "$bin" /usr/local/bin/mdv
+  mdv --version
+)
+```
+
+**Gatekeeper:** o binário não é assinado. Se você baixar pelo navegador e o sistema bloquear, remova a quarentena com `xattr -d com.apple.quarantine mdv`.
+
+### Windows
+
+No PowerShell (5.1 ou 7+), instala em `%LOCALAPPDATA%\mdv` e acrescenta a pasta ao `PATH` do usuário. Só existe build `x86_64`; em Windows ARM64 ele roda pela emulação do sistema:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+if ($env:PROCESSOR_ARCHITECTURE -notin 'AMD64', 'ARM64') {
+  throw "arquitetura não suportada: $env:PROCESSOR_ARCHITECTURE"
+}
+$tag  = (Invoke-RestMethod https://api.github.com/repos/flisbao/mdv/releases/latest).tag_name
+$zip  = Join-Path $env:TEMP "mdv-$tag.zip"
+$tmp  = Join-Path $env:TEMP "mdv-$tag"
+$dest = Join-Path $env:LOCALAPPDATA 'mdv'
+Invoke-WebRequest "https://github.com/flisbao/mdv/releases/download/$tag/mdv-$tag-windows-x86_64.zip" -OutFile $zip
+Expand-Archive $zip -DestinationPath $tmp -Force
+New-Item -ItemType Directory -Force $dest | Out-Null
+$exe = Get-ChildItem $tmp -Recurse -Filter mdv.exe | Select-Object -First 1
+Copy-Item $exe.FullName (Join-Path $dest 'mdv.exe') -Force
+Unblock-File (Join-Path $dest 'mdv.exe')
+$path = [Environment]::GetEnvironmentVariable('Path', 'User')
+if (($path -split ';') -notcontains $dest) {
+  [Environment]::SetEnvironmentVariable('Path', "$path;$dest", 'User')
+}
+$env:Path += ";$dest"
+Remove-Item $zip, $tmp -Recurse -Force
+mdv --version
+```
+
+**SmartScreen:** o binário não é assinado. Se aparecer o aviso de aplicativo desconhecido, escolha "Mais informações" e depois "Executar assim mesmo". Use o Windows Terminal para ver cores e a TUI corretamente. Abra um novo terminal para o `PATH` valer fora da sessão atual.
 
 Ou compile do código-fonte (Rust estável):
 
