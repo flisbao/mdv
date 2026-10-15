@@ -13,6 +13,7 @@ mod net;
 mod stats;
 mod stream;
 mod render;
+mod setup;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -65,7 +66,8 @@ OPÇÕES:
     -p, --plain        imprime no terminal (sem TUI), como `cat` com cores
     -w, --width <N>    largura máxima do texto (padrão: 100)
         --remote       baixa imagens de http(s):// (nunca de rede privada)
-        --mermaid      renderiza blocos ```mermaid via `mmdc` (ou $MDV_MMDC)
+        --mermaid      renderiza blocos ```mermaid (renderizador embutido; `mmdc` ou $MDV_MMDC se precisar)
+        --setup-mermaid  verifica o ambiente dos diagramas e mostra como instalar o mmdc
         --graphics <G> imagens em alta resolução: off (padrão), kitty ou auto (Kitty/Ghostty; só no modo interativo)
         --toc          imprime só o índice de títulos
         --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
@@ -147,6 +149,7 @@ fn main() -> ExitCode {
 fn run_cli() -> Result<(), Failure> {
     let cli = match cli::parse(std::env::args().skip(1)).map_err(Failure::Usage)? {
         cli::Parsed::Help => return write_stdout(HELP),
+        cli::Parsed::SetupMermaid => return write_stdout(&setup::report()),
         cli::Parsed::Version => {
             return write_stdout(&format!("mdv {}\n", env!("CARGO_PKG_VERSION")));
         }

@@ -62,6 +62,7 @@ pub enum Parsed {
     Run(Cli),
     Help,
     Version,
+    SetupMermaid,
 }
 
 fn mode_from_extension(path: &str) -> Mode {
@@ -137,6 +138,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
             "--" => only_paths = true,
             "-h" | "--help" => return Ok(Parsed::Help),
             "-V" | "--version" => return Ok(Parsed::Version),
+            "--setup-mermaid" => return Ok(Parsed::SetupMermaid),
             "-p" | "--plain" => cli.plain = true,
             "--remote" => cli.remote = true,
             "--mermaid" => cli.mermaid = true,
@@ -398,6 +400,12 @@ mod tests {
     fn ajuda_e_versao() {
         assert!(matches!(parse(["-h".to_string()]), Ok(Parsed::Help)));
         assert!(matches!(parse(["a.md".to_string(), "-V".to_string()]), Ok(Parsed::Version)));
+    }
+
+    #[test]
+    fn setup_mermaid_e_um_modo_proprio() {
+        assert!(matches!(parse(["--setup-mermaid".to_string()]), Ok(Parsed::SetupMermaid)));
+        assert!(matches!(parse(["a.md".to_string(), "--setup-mermaid".to_string()]), Ok(Parsed::SetupMermaid)));
     }
 
         #[test]

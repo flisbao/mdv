@@ -29,6 +29,7 @@ fn system_fonts() -> &'static Fonts {
 }
 
 /// Há alguma fonte para desenhar o texto dos diagramas?
+#[cfg(test)]
 pub fn fonts_available() -> bool {
     !system_fonts().is_empty()
 }

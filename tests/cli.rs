@@ -98,9 +98,19 @@ fn ajuda_documenta_subcomandos_e_opcoes() {
     let text = String::from_utf8_lossy(&out.stdout);
     for item in [
         "mdv json", "mdv csv|tsv", "--remote", "--mermaid", "--follow", "--latest", "--toc", "--stats", "--as",
-        "--path", "--head", "--cols", "--no-header", "--delimiter", "MDV_MMDC",
+        "--path", "--head", "--cols", "--no-header", "--delimiter", "MDV_MMDC", "--setup-mermaid",
     ] {
         assert!(text.contains(item), "a ajuda não menciona {item}:\n{text}");
+    }
+}
+
+#[test]
+fn setup_mermaid_imprime_relatorio_e_sai_com_sucesso() {
+    let out = mdv(&["--setup-mermaid"], "");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    for item in ["Renderizador nativo", "mmdc", "Terminal", "Windows Terminal"] {
+        assert!(text.contains(item), "faltou {item}:\n{text}");
     }
 }
 
