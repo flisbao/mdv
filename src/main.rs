@@ -1065,37 +1065,37 @@ impl App {
             .saturating_mul(100)
             .checked_div(self.view.max_scroll(total))
             .unwrap_or(100);
-                let view = match (self.doc.mode, self.doc.json_view) {
-                    (cli::Mode::Json, cli::JsonView::Text) => "  [texto]",
-                    (cli::Mode::Json, cli::JsonView::Table) => "  [tabela]",
-                    (cli::Mode::Json, cli::JsonView::Schema) => "  [esquema]",
-                    _ => "",
-                };
-                let mut s = format!(
-                    " {}  {pct}%{}{view}",
-                    self.name,
-                    if self.raw { "  [fonte]" } else { "" }
-                );
+        let view = match (self.doc.mode, self.doc.json_view) {
+            (cli::Mode::Json, cli::JsonView::Text) => "  [texto]",
+            (cli::Mode::Json, cli::JsonView::Table) => "  [tabela]",
+            (cli::Mode::Json, cli::JsonView::Schema) => "  [esquema]",
+            _ => "",
+        };
+        let mut s = format!(
+            " {}  {pct}%{}{view}",
+            self.name,
+            if self.raw { "  [fonte]" } else { "" }
+        );
         let search = &self.search;
         if !search.query.is_empty() {
             if search.matches.is_empty() {
-                let _ = write!(s, "  /{}: nada encontrado", search.query);
+        let _ = write!(s, "  /{}: nada encontrado", search.query);
             } else {
-                let _ = write!(
-                    s,
-                    "  /{} [{}/{}]",
-                    search.query,
-                    search.current + 1,
-                    search.matches.len()
-                );
+        let _ = write!(
+            s,
+            "  /{} [{}/{}]",
+            search.query,
+            search.current + 1,
+            search.matches.len()
+        );
             }
         }
-                if let Some(t) = self.task_summary() {
-                    let _ = write!(s, "  {t}");
-                }
-                if let Some(n) = &self.notice {
-                    let _ = write!(s, "  {n}");
-                }
+        if let Some(t) = self.task_summary() {
+            let _ = write!(s, "  {t}");
+        }
+        if let Some(n) = &self.notice {
+            let _ = write!(s, "  {n}");
+        }
         s
     }
 }
