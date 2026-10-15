@@ -1,8 +1,20 @@
 //! Renderizador Mermaid nativo (sem Chromium): `mermaid-rs-renderer` gera o SVG e `resvg` o rasteriza.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use resvg::{tiny_skia, usvg};
+
+use crate::mermaid::MAX_MERMAID_BYTES;
+
+/// Mais linhas que isso é recusado antes de qualquer trabalho (o layout cresce com o grafo).
+pub const MAX_LINES: usize = 400;
+/// Teto do SVG intermediário.
+pub const MAX_SVG_BYTES: usize = 2 * 1024 * 1024;
+/// Teto da imagem final: 1200×3000 px = 14,4 MB de RGBA, sempre.
+pub const MAX_WIDTH_PX: u32 = 1200;
+pub const MAX_HEIGHT_PX: u32 = 3000;
+/// Diagramas pequenos são ampliados até 2x (mais nitidez no `--graphics kitty`).
+const MAX_SCALE: f32 = 2.0;
 
 type Fonts = Arc<usvg::fontdb::Database>;
 
@@ -16,16 +28,69 @@ fn system_fonts() -> &'static Fonts {
     })
 }
 
+/// Há alguma fonte para desenhar o texto dos diagramas?
+pub fn fonts_available() -> bool {
+    !system_fonts().is_empty()
+}
+
+/// Quantas fontes o sistema tem (para o `--setup-mermaid`).
+pub(crate) fn font_count() -> usize {
+    system_fonts().len()
+}
+
+static PANIC_LOCK: Mutex<()> = Mutex::new(());
+
+/// Roda `f` e transforma pânico em erro. Enquanto roda, o gancho de pânico fica mudo para a
+/// mensagem não sujar a TUI; por isso as chamadas são serializadas por `PANIC_LOCK`.
+fn guarded<T>(f: impl FnOnce() -> T) -> Result<T, String> {
+    let _g = PANIC_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    std::panic::set_hook(prev);
+    res.map_err(|_| "o renderizador nativo falhou neste diagrama".to_string())
+}
+
 /// Desenha o diagrama Mermaid e devolve um PNG.
 pub fn render_png(source: &str) -> Result<Vec<u8>, String> {
-    let svg = mermaid_rs_renderer::render(source)
-        .map_err(|e| e.to_string().lines().next().unwrap_or("erro").to_string())?;
-    let opt = usvg::Options { fontdb: Arc::clone(system_fonts()), ..Default::default() };
-    let tree = usvg::Tree::from_str(&svg, &opt).map_err(|e| e.to_string())?;
+    render_png_with(source, system_fonts())
+}
+
+fn render_png_with(source: &str, fonts: &Fonts) -> Result<Vec<u8>, String> {
+    if source.len() > MAX_MERMAID_BYTES {
+        return Err("diagrama grande demais".into());
+    }
+    if source.lines().count() > MAX_LINES {
+        return Err(format!("diagrama com mais de {MAX_LINES} linhas"));
+    }
+    guarded(|| {
+        let svg = mermaid_rs_renderer::render(source)
+            .map_err(|e| e.to_string().lines().next().unwrap_or("erro").to_string())?;
+        // Depois do parse: erro de sintaxe é reportado mesmo sem fontes.
+        if fonts.is_empty() {
+            return Err("nenhuma fonte instalada no sistema para desenhar o texto".to_string());
+        }
+        rasterize(&svg, fonts)
+    })?
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn rasterize(svg: &str, fonts: &Fonts) -> Result<Vec<u8>, String> {
+    if svg.len() > MAX_SVG_BYTES {
+        return Err("SVG gerado grande demais".into());
+    }
+    let opt = usvg::Options { fontdb: Arc::clone(fonts), ..Default::default() };
+    let tree = usvg::Tree::from_str(svg, &opt).map_err(|e| e.to_string())?;
     let size = tree.size();
-    let (w, h) = (size.width().ceil() as u32, size.height().ceil() as u32);
-    let mut pixmap = tiny_skia::Pixmap::new(w.max(1), h.max(1)).ok_or("não consegui alocar a imagem")?;
-    resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+    let (w, h) = (size.width(), size.height());
+    if !(w >= 1.0 && h >= 1.0) {
+        return Err("diagrama sem tamanho".into());
+    }
+    let scale = (MAX_WIDTH_PX as f32 / w).min(MAX_HEIGHT_PX as f32 / h).min(MAX_SCALE);
+    let (pw, ph) = ((w * scale).ceil() as u32, (h * scale).ceil() as u32);
+    crate::mem::check().map_err(|e| e.to_string())?;
+    let mut pixmap = tiny_skia::Pixmap::new(pw.max(1), ph.max(1)).ok_or("não consegui alocar a imagem")?;
+    resvg::render(&tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
     pixmap.encode_png().map_err(|e| e.to_string())
 }
 
@@ -51,6 +116,85 @@ mod tests {
     #[test]
     fn sintaxe_invalida_vira_erro_em_portugues_ou_do_crate() {
         let e = render_png("isto não é mermaid").unwrap_err();
+        assert!(!e.trim().is_empty());
+    }
+
+    /// Máquinas sem fontes não conseguem desenhar texto: os testes de imagem são pulados.
+    fn sem_fontes() -> bool {
+        !fonts_available()
+    }
+
+    #[test]
+    fn fonte_grande_demais_e_recusada() {
+        let src = "A".repeat(crate::mermaid::MAX_MERMAID_BYTES + 1);
+        assert!(render_png(&src).unwrap_err().contains("grande"));
+    }
+
+    #[test]
+    fn diagrama_com_linhas_demais_e_recusado() {
+        let src = format!("graph TD\n{}", "A-->B\n".repeat(MAX_LINES + 1));
+        let e = render_png(&src).unwrap_err();
+        assert!(e.contains("linhas"), "{e}");
+    }
+
+    #[test]
+    fn sem_fontes_o_erro_e_claro() {
+        let vazio: Fonts = Arc::new(usvg::fontdb::Database::new());
+        let e = render_png_with("graph TD\n  A --> B\n", &vazio).unwrap_err();
+        assert!(e.contains("fonte"), "{e}");
+    }
+
+    #[test]
+    fn sintaxe_invalida_nao_depende_de_fontes() {
+        let vazio: Fonts = Arc::new(usvg::fontdb::Database::new());
+        let e = render_png_with("isto não é mermaid", &vazio).unwrap_err();
+        assert!(!e.contains("fonte instalada"), "{e}");
+    }
+
+    #[test]
+    fn panico_do_renderizador_vira_erro() {
+        let r: Result<(), String> = guarded(|| panic!("boom"));
+        assert!(r.unwrap_err().contains("falhou"));
+        // e a próxima chamada continua funcionando
+        assert_eq!(guarded(|| 7).unwrap(), 7);
+    }
+
+    #[test]
+    fn diagrama_largo_e_reduzido_para_os_tetos() {
+        if sem_fontes() {
+            return;
+        }
+        let mut src = String::from("flowchart LR\n");
+        for i in 0..40 {
+            src.push_str(&format!("N{i}[no {i}] --> N{}\n", i + 1));
+        }
+        let (w, h) = dims(&render_png(&src).unwrap());
+        assert!(w <= MAX_WIDTH_PX && h <= MAX_HEIGHT_PX, "{w}x{h}");
+        assert!(w > 0 && h > 0);
+    }
+
+    #[test]
+    fn diagrama_pequeno_e_ampliado_ate_2x() {
+        if sem_fontes() {
+            return;
+        }
+        // 93×156 no tamanho natural; com 2x fica com ~187×313.
+        let (w, _) = dims(&render_png("graph TD\n A-->B\n").unwrap());
+        assert!(w >= 170, "largura {w}");
+    }
+
+    #[test]
+    fn rotulos_com_acentos_cjk_e_emoji_nao_quebram() {
+        if sem_fontes() {
+            return;
+        }
+        let png = render_png("flowchart TD\n  A[Ação ✓ 日本語 😀] --> B[Fim]\n").unwrap();
+        assert_eq!(&png[1..4], b"PNG");
+    }
+
+    #[test]
+    fn bloco_incompleto_vira_erro_e_nao_panico() {
+        let e = render_png("flowchart TD\n  A --> ").unwrap_err();
         assert!(!e.trim().is_empty());
     }
 }
