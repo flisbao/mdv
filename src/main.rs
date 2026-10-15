@@ -683,6 +683,8 @@ impl App {
         self.source = Source::File(newest);
         self.md = md;
         self.changed.clear();
+        self.marks.clear();
+        self.folded.clear();
         self.dirty = true;
         self.view.scroll = 0;
     }
@@ -879,7 +881,10 @@ impl App {
             return;
         }
         let keys = fold::fold_keys(&self.rendered.outline);
-        let anchor = self.ref_line();
+        let top = self.ref_line();
+        // Ancora no título da seção: o corpo some ao dobrar tudo.
+        let anchor = render::section_at(&self.rendered.outline, top)
+            .map_or(top, |i| self.rendered.outline[i].line);
         if keys.iter().all(|k| self.folded.contains(k)) {
             self.folded.clear();
         } else {
@@ -2000,6 +2005,29 @@ mod tests {
             assert_eq!(app.changed.iter().copied().collect::<Vec<_>>(), vec![3]);
             app.append_md("e\n");
             assert_eq!(app.changed.iter().copied().collect::<Vec<_>>(), vec![3], "a linha parcial foi completada");
+        }
+
+        #[test]
+        fn maiusculo_dentro_de_uma_secao_fica_no_titulo_dela() {
+            let mut app = app_com_texto("# A\n\na\n\n# B\n\nbbb\n\n# C\n\nccc\n\n# D\n\nddd\n");
+            app.view.height = 2;
+            let corpo = linha_com(&app, "bbb");
+            app.view.scroll = app.pos_of(corpo);
+            app.on_key(ev(KeyCode::Char('Z')));
+            let b = app.rendered.outline[1].line;
+            assert_eq!(app.ref_line(), b, "fica em B, não pula para C");
+        }
+
+        #[test]
+        fn latest_ao_trocar_de_arquivo_zera_as_dobras() {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::write(dir.path().join("a.md"), "# Resumo\n\nx\n").unwrap();
+            let mut app = test_app(Source::Stdin, "# Resumo\n\nx\n");
+            app.rerender(60);
+            dobrar(&mut app, "Resumo");
+            app.latest_dir = Some(dir.path().to_path_buf());
+            app.follow_latest();
+            assert!(app.folded.is_empty());
         }
 
         fn copiado(app: &App) -> Option<String> {
