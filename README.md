@@ -116,6 +116,7 @@ TECLAS (modo interativo):
     m                  alterna entre renderizado e fonte crua
     v                  (JSON) alterna tabela / esquema / texto
     t                  zoom da tabela na tela (h/l colunas, Esc volta)
+    } / {              próxima / anterior mudança marcada no reload; c limpa as marcas
     z / Z              dobra ou abre a seção atual / dobra todas (ou abre todas); título dobrado mostra ▸ N linhas
     y / Y              copia o bloco de código da tela / o Markdown da seção (OSC 52, até 64 KiB)
     r                  recarrega o arquivo
@@ -195,6 +196,7 @@ Aceita `256M`, `1G`, `512MiB`, `65536K` (múltiplos de 1024); o mínimo é 32 Mi
 - A busca encontra ocorrências dentro de um mesmo trecho estilizado.
 - Imagens usam meio-bloco (baixa resolução); um protocolo gráfico como Kitty/Sixel seria um refinamento opcional.
 - A memória livre do computador só é informada no Linux.
+- Quando o arquivo muda, as linhas novas ou alteradas ganham uma barra amarela `▌` na margem esquerda, relativa à versão imediatamente anterior. Remoções não são marcadas. Acima de 20 000 linhas o `mdv` não calcula a diferença. No `--plain` não há marcas.
 - `y`/`Y` dependem de o terminal aceitar OSC 52 (no tmux, `set -g set-clipboard on`); terminais sem suporte ignoram em silêncio.
 
 ## Changelog
