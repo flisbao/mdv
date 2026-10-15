@@ -70,6 +70,7 @@ fn parse_width(value: &str) -> Result<usize, String> {
 }
 
 /// Interpreta os argumentos (sem o nome do programa). `--` encerra as opções.
+#[allow(clippy::too_many_lines)]
 pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
     let mut args = args.into_iter().peekable();
     let mut cli = Cli {

@@ -7,6 +7,10 @@ use serde_json::Value;
 
 use crate::render::{error_rendered, render_code_only, render_table_only, Rendered, DIM};
 
+use std::collections::{HashMap, HashSet};
+
+use crate::cli::JsonView;
+
 pub const MAX_DATA_BYTES: usize = 5 * 1024 * 1024;
 
 pub fn parse_json(text: &str) -> Result<Value, String> {
@@ -90,18 +94,142 @@ fn pretty_bounded(v: &Value) -> Option<String> {
     String::from_utf8(out.0).ok()
 }
 
-pub fn render_json(text: &str, path: Option<&str>, width: usize) -> Rendered {
-    if text.len() > MAX_DATA_BYTES {
-        return error_rendered("entrada grande demais para o modo JSON (limite de 5 MiB)");
+/// Opções do `mdv json`: trecho (`--path`), vista (`--as`) e, na tabela, `--head` e `--cols`.
+pub struct JsonOpts {
+    pub path: Option<String>,
+    pub view: JsonView,
+    pub head: usize,
+    pub cols: Vec<String>,
+}
+
+/// Achatamento de objetos aninhados em colunas `a.b.c`; abaixo disto o valor vira texto compacto.
+const MAX_FLATTEN_DEPTH: usize = 4;
+
+enum Shape {
+    Records,
+    Pairs,
+    Scalars,
+    Other,
+}
+
+fn shape(v: &Value) -> Shape {
+    match v {
+        Value::Array(a) if !a.is_empty() && a.iter().all(Value::is_object) => Shape::Records,
+        Value::Array(a) if !a.is_empty() && a.iter().all(|x| !x.is_object() && !x.is_array()) => {
+            Shape::Scalars
+        }
+        Value::Object(m) if !m.is_empty() => Shape::Pairs,
+        _ => Shape::Other,
     }
-    let root = match parse_json(text.trim_start_matches('\u{feff}')) {
-        Ok(v) => v,
-        Err(e) => return error_rendered(&e),
+}
+
+/// Lista de objetos (e JSONL) vira tabela; o resto fica como texto.
+pub fn auto_view(v: &Value) -> JsonView {
+    if matches!(shape(v), Shape::Records) {
+        JsonView::Table
+    } else {
+        JsonView::Text
+    }
+}
+
+/// A vista que `Auto` escolheria para este texto (usada pela tecla `v`). `Text` se não parsear.
+pub fn auto_view_of_text(text: &str, path: Option<&str>) -> JsonView {
+    let Ok(root) = parse_json(text.trim_start_matches('\u{feff}')) else {
+        return JsonView::Text;
     };
-    let sel = match select(&root, path.unwrap_or("")) {
-        Ok(v) => v,
-        Err(e) => return error_rendered(&e),
+    match select(&root, path.unwrap_or("")) {
+        Ok(sel) => auto_view(sel),
+        Err(_) => JsonView::Text,
+    }
+}
+
+fn cell_text(v: &Value) -> String {
+    match v {
+        Value::String(s) => clip_cell(s),
+        other => clip_cell(&other.to_string()),
+    }
+}
+
+fn flatten(prefix: &str, v: &Value, depth: usize, out: &mut Vec<(String, String)>) {
+    match v {
+        Value::Object(m) if depth < MAX_FLATTEN_DEPTH && !m.is_empty() => {
+            for (k, x) in m {
+                let key = if prefix.is_empty() { k.clone() } else { format!("{prefix}.{k}") };
+                flatten(&key, x, depth + 1, out);
+            }
+        }
+        other => out.push((prefix.to_string(), cell_text(other))),
+    }
+}
+
+/// Uma linha por objeto, uma coluna por chave (na ordem em que aparecem), até `MAX_TABLE_COLS`.
+/// Devolve as linhas (com o cabeçalho primeiro) e quantas colunas ficaram de fora.
+fn records_to_rows(items: &[Value], head: usize) -> (Vec<Vec<String>>, usize) {
+    let flat: Vec<Vec<(String, String)>> = items
+        .iter()
+        .take(head)
+        .map(|item| {
+            let mut pairs = Vec::new();
+            flatten("", item, 0, &mut pairs);
+            pairs
+        })
+        .collect();
+    let mut index: HashMap<&str, usize> = HashMap::new();
+    let mut keys: Vec<&str> = Vec::new();
+    let mut omitted: HashSet<&str> = HashSet::new();
+    for pairs in &flat {
+        for (k, _) in pairs {
+            if index.contains_key(k.as_str()) || omitted.contains(k.as_str()) {
+                continue;
+            }
+            if keys.len() >= MAX_TABLE_COLS {
+                omitted.insert(k);
+            } else {
+                index.insert(k, keys.len());
+                keys.push(k);
+            }
+        }
+    }
+    let mut rows = vec![keys.iter().map(|k| clip_cell(k)).collect::<Vec<_>>()];
+    for pairs in &flat {
+        let mut row = vec![String::new(); keys.len()];
+        for (k, v) in pairs {
+            if let Some(&i) = index.get(k.as_str()) {
+                row[i].clone_from(v);
+            }
+        }
+        rows.push(row);
+    }
+    (rows, omitted.len())
+}
+
+fn render_json_table(sel: &Value, o: &JsonOpts, width: usize) -> Rendered {
+    let (rows, total, omitted) = match (shape(sel), sel) {
+        (Shape::Records, Value::Array(items)) => {
+            let (rows, omitted) = records_to_rows(items, o.head);
+            (rows, items.len(), omitted)
+        }
+        (Shape::Pairs, _) => {
+            let mut pairs = Vec::new();
+            flatten("", sel, 0, &mut pairs);
+            let total = pairs.len();
+            let mut rows = vec![vec!["chave".to_string(), "valor".to_string()]];
+            rows.extend(pairs.into_iter().take(o.head).map(|(k, v)| vec![clip_cell(&k), v]));
+            (rows, total, 0)
+        }
+        (Shape::Scalars, Value::Array(items)) => {
+            let mut rows = vec![vec!["valor".to_string()]];
+            rows.extend(items.iter().take(o.head).map(|x| vec![cell_text(x)]));
+            (rows, items.len(), 0)
+        }
+        _ => {
+            return error_rendered("esta estrutura não cabe em tabela (use --as text ou --as schema)");
+        }
     };
+    finish_table(rows, true, total, omitted, &o.cols, width, "itens")
+}
+
+fn render_json_text(sel: &Value, width: usize) -> Rendered {
     let Some(pretty) = pretty_bounded(sel) else {
         return error_rendered("JSON grande demais depois de indentado (limite de 8 MiB de saída)");
     };
@@ -112,6 +240,26 @@ pub fn render_json(text: &str, path: Option<&str>, width: usize) -> Rendered {
     ));
     r.lines.insert(0, head);
     r
+}
+
+pub fn render_json(text: &str, o: &JsonOpts, width: usize) -> Rendered {
+    if text.len() > MAX_DATA_BYTES {
+        return error_rendered("entrada grande demais para o modo JSON (limite de 5 MiB)");
+    }
+    let root = match parse_json(text.trim_start_matches('\u{feff}')) {
+        Ok(v) => v,
+        Err(e) => return error_rendered(&e),
+    };
+    let sel = match select(&root, o.path.as_deref().unwrap_or("")) {
+        Ok(v) => v,
+        Err(e) => return error_rendered(&e),
+    };
+    let view = if o.view == JsonView::Auto { auto_view(sel) } else { o.view };
+    match view {
+        JsonView::Table => render_json_table(sel, o, width),
+        JsonView::Schema => error_rendered("vista schema ainda não disponível"),
+        JsonView::Text | JsonView::Auto => render_json_text(sel, width),
+    }
 }
 
 pub struct TableOpts {
@@ -277,27 +425,27 @@ mod tests {
 
     #[test]
     fn render_json_mostra_resumo_e_conteudo_indentado() {
-        let t = text(&render_json("{\"nome\":\"mdv\",\"v\":[1,2]}", None, 60));
+        let t = text(&render_json("{\"nome\":\"mdv\",\"v\":[1,2]}", &jopts(JsonView::Text), 60));
         assert!(t.contains("objeto · 2 chaves"), "{t}");
         assert!(t.contains("\"nome\": \"mdv\""), "{t}");
     }
 
     #[test]
     fn render_json_com_caminho_mostra_so_o_trecho() {
-        let t = text(&render_json("{\"a\":{\"b\":1},\"c\":2}", Some(".a"), 60));
+        let t = text(&render_json("{\"a\":{\"b\":1},\"c\":2}", &JsonOpts { path: Some(".a".into()), ..jopts(JsonView::Text) }, 60));
         assert!(t.contains("\"b\": 1") && !t.contains("\"c\""), "{t}");
     }
 
     #[test]
     fn render_json_erro_vira_linha_de_erro() {
-        let r = render_json("{", None, 60);
+        let r = render_json("{", &jopts(JsonView::Text), 60);
         assert_eq!(r.lines.len(), 1);
         assert!(text(&r).contains("JSON"));
     }
 
     #[test]
     fn controle_em_string_nao_vaza_para_o_terminal() {
-        let r = render_json("{\"x\":\"\\u001b]0;pwn\\u0007\"}", None, 60);
+        let r = render_json("{\"x\":\"\\u001b]0;pwn\\u0007\"}", &jopts(JsonView::Text), 60);
         let ansi = crate::render::to_ansi(&r.lines, false);
         assert!(!ansi.contains('\x1b'), "{ansi:?}");
     }
@@ -388,7 +536,7 @@ mod tests {
         let json = format!("{}{}{}", "[".repeat(60), "1,".repeat(100_000) + "1", "]".repeat(60));
         assert!(json.len() < MAX_DATA_BYTES);
         let t0 = std::time::Instant::now();
-        let t = text(&render_json(&json, None, 60));
+        let t = text(&render_json(&json, &jopts(JsonView::Text), 60));
         assert!(t.contains("grande"), "{}", &t[..t.len().min(200)]);
         assert!(t0.elapsed() < std::time::Duration::from_secs(5));
     }
@@ -396,7 +544,7 @@ mod tests {
     #[test]
     fn entrada_grande_e_recusada() {
         let big = format!("[{}]", "1,".repeat(MAX_DATA_BYTES));
-        assert!(text(&render_json(&big, None, 60)).contains("grande"));
+        assert!(text(&render_json(&big, &jopts(JsonView::Text), 60)).contains("grande"));
     }
         #[test]
         fn celula_gigante_e_cortada_com_reticencias() {
@@ -420,5 +568,113 @@ mod tests {
             let t = text(&render_table_data(&csv, &opts(), 80));
             assert!(t.contains("omitidas"), "{}", &t[..t.len().min(200)]);
             assert!(t0.elapsed() < std::time::Duration::from_secs(3), "levou {:?}", t0.elapsed());
+        }
+
+        use crate::cli::JsonView;
+
+        fn jopts(view: JsonView) -> JsonOpts {
+            JsonOpts { path: None, view, head: 1000, cols: vec![] }
+        }
+
+        #[test]
+        fn lista_de_objetos_vira_tabela_com_uniao_de_chaves() {
+            let json = r#"[{"id":1,"nome":"Ana"},{"id":2,"extra":true}]"#;
+            let t = text(&render_json(json, &jopts(JsonView::Auto), 80));
+            for s in ["id", "nome", "extra", "Ana", "true"] {
+                assert!(t.contains(s), "falta {s}:\n{t}");
+            }
+            assert!(t.contains("2 de 2 itens") && t.contains("3 colunas"), "{t}");
+        }
+
+        #[test]
+        fn objetos_aninhados_viram_colunas_com_ponto() {
+            let t = text(&render_json(r#"[{"a":{"b":1,"c":{"d":2}}}]"#, &jopts(JsonView::Table), 80));
+            assert!(t.contains("a.b") && t.contains("a.c.d"), "{t}");
+        }
+
+        #[test]
+        fn listas_dentro_da_celula_ficam_compactas() {
+            let t = text(&render_json(r#"[{"tags":["x","y"]}]"#, &jopts(JsonView::Table), 80));
+            assert!(t.contains(r#"["x","y"]"#), "{t}");
+        }
+
+        #[test]
+        fn objeto_unico_vira_chave_valor_na_vista_tabela() {
+            let t = text(&render_json(r#"{"nome":"mdv","v":{"n":1}}"#, &jopts(JsonView::Table), 80));
+            assert!(t.contains("chave") && t.contains("valor") && t.contains("v.n"), "{t}");
+        }
+
+        #[test]
+        fn lista_de_escalares_vira_coluna_valor() {
+            let t = text(&render_json("[1,2,3]", &jopts(JsonView::Table), 80));
+            assert!(t.contains("valor") && t.contains("3 de 3 itens"), "{t}");
+        }
+
+        #[test]
+        fn jsonl_vira_tabela_no_automatico() {
+            let t = text(&render_json("{\"a\":1}\n{\"a\":2}\n", &jopts(JsonView::Auto), 80));
+            assert!(t.contains("2 de 2 itens"), "{t}");
+        }
+
+        #[test]
+        fn automatico_mantem_texto_para_o_que_nao_e_lista_de_objetos() {
+            let t = text(&render_json(r#"{"a":1}"#, &jopts(JsonView::Auto), 80));
+            assert!(t.contains("objeto · 1 chaves"), "{t}");
+        }
+
+        #[test]
+        fn head_e_cols_valem_na_tabela_json() {
+            let json = r#"[{"id":1,"nome":"A"},{"id":2,"nome":"B"},{"id":3,"nome":"C"}]"#;
+            let o = JsonOpts { head: 1, ..jopts(JsonView::Table) };
+            assert!(text(&render_json(json, &o, 80)).contains("1 de 3 itens"));
+            let o = JsonOpts { cols: vec!["id".into()], ..jopts(JsonView::Table) };
+            let t = text(&render_json(json, &o, 80));
+            assert!(!t.contains("nome"), "{t}");
+        }
+
+        #[test]
+        fn estrutura_que_nao_cabe_em_tabela_da_mensagem() {
+            for json in ["[[1],[2]]", r#"[1,{"a":1}]"#, "[]", "5"] {
+                let t = text(&render_json(json, &jopts(JsonView::Table), 80));
+                assert!(t.contains("não cabe em tabela"), "{json}: {t}");
+            }
+        }
+
+        #[test]
+        fn json_largo_tem_teto_de_colunas_e_e_rapido() {
+            let obj = (0..5000).map(|i| format!("\"k{i}\":{i}")).collect::<Vec<_>>().join(",");
+            let t0 = std::time::Instant::now();
+            let t = text(&render_json(&format!("[{{{obj}}}]"), &jopts(JsonView::Table), 80));
+            assert!(t.contains("200 colunas") && t.contains("+4800 omitidas"), "{t}");
+            assert!(t0.elapsed() < std::time::Duration::from_secs(3));
+        }
+
+        #[test]
+        fn aninhamento_muito_fundo_para_no_nivel_quatro() {
+            let json = format!("[{}1{}]", "{\"a\":".repeat(50), "}".repeat(50));
+            let t = text(&render_json(&json, &jopts(JsonView::Table), 200));
+            assert!(t.contains("a.a.a.a"), "{t}");
+            assert!(!t.contains("a.a.a.a.a"), "{t}");
+        }
+
+        #[test]
+        fn controle_em_chave_e_valor_nao_vaza_na_tabela() {
+            let r = render_json(r#"[{"\u001b]0;pwn\u0007":"\u001b[31mx"}]"#, &jopts(JsonView::Table), 80);
+            assert!(!crate::render::to_ansi(&r.lines, false).contains('\x1b'));
+        }
+
+        #[test]
+        fn caminho_vale_antes_da_vista() {
+            let o = JsonOpts { path: Some(".d".into()), ..jopts(JsonView::Auto) };
+            let t = text(&render_json(r#"{"d":[{"a":1}],"z":9}"#, &o, 80));
+            assert!(t.contains("1 de 1 itens") && !t.contains('z'), "{t}");
+        }
+
+        #[test]
+        fn vista_automatica_de_texto_bruto() {
+            assert_eq!(auto_view_of_text(r#"[{"a":1}]"#, None), JsonView::Table);
+            assert_eq!(auto_view_of_text(r#"{"a":1}"#, None), JsonView::Text);
+            assert_eq!(auto_view_of_text("{", None), JsonView::Text);
+            assert_eq!(auto_view_of_text(r#"{"d":[{"a":1}]}"#, Some(".d")), JsonView::Table);
         }
 }

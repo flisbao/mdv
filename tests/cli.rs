@@ -255,3 +255,25 @@ fn pipe_fechado_na_saida_nao_e_erro() {
     assert!(out.status.success(), "stderr: {}", stderr_of(&out));
     assert!(out.stderr.is_empty(), "stderr: {}", stderr_of(&out));
 }
+
+#[test]
+fn json_lista_de_objetos_vira_tabela_por_padrao() {
+    let out = mdv(&["json", "-p", "-"], "[{\"id\":1,\"nome\":\"Ana\"},{\"id\":2,\"nome\":\"Bia\"}]");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("│ nome") && text.contains("2 de 2 itens"), "{text}");
+}
+
+#[test]
+fn json_as_text_forca_a_vista_indentada() {
+    let out = mdv(&["json", "-p", "--as", "text", "-"], "[{\"id\":1}]");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("lista · 1 itens") && text.contains("\"id\": 1"), "{text}");
+}
+
+#[test]
+fn as_com_markdown_e_erro_de_uso() {
+    let out = mdv(&["--as", "table", "-"], "# a");
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--as"));
+}

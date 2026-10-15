@@ -221,6 +221,7 @@ fn image_store(source: &Source, cli: &cli::Cli, blocking: bool) -> image::ImageS
 struct DocOpts {
     mode: cli::Mode,
     json_path: Option<String>,
+    json_view: cli::JsonView,
     head: usize,
     cols: Vec<String>,
     no_header: bool,
@@ -231,6 +232,7 @@ impl DocOpts {
         DocOpts {
             mode: cli.mode,
             json_path: cli.json_path.clone(),
+            json_view: cli.json_view,
             head: cli.head,
             cols: cli.cols.clone(),
             no_header: cli.no_header,
@@ -244,7 +246,15 @@ fn render_doc(doc: &DocOpts, text: &str, width: usize, images: &image::ImageStor
         cli::Mode::Markdown => {
             render::render_with(text, &render::RenderOpts { width, images: Some(images) })
         }
-        cli::Mode::Json => data::render_json(text, doc.json_path.as_deref(), width),
+        cli::Mode::Json => {
+            let opts = data::JsonOpts {
+                path: doc.json_path.clone(),
+                view: doc.json_view,
+                head: doc.head,
+                cols: doc.cols.clone(),
+            };
+            data::render_json(text, &opts, width)
+        }
         cli::Mode::Table { delimiter } => {
             let opts = data::TableOpts {
                 delimiter,
