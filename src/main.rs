@@ -8,6 +8,7 @@ mod graphics;
 mod image;
 mod mem;
 mod mermaid;
+mod mermaid_native;
 mod net;
 mod stats;
 mod stream;

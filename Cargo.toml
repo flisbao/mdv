@@ -17,6 +17,8 @@ url = "2"
 tempfile = "3"
 serde_json = { version = "1", features = ["preserve_order"] }
 csv = "1"
+mermaid-rs-renderer = { version = "0.3.1", default-features = false }
+resvg = { version = "0.47", default-features = false, features = ["text"] }
 
 [profile.release]
 lto = true
