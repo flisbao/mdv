@@ -27,6 +27,10 @@ pub const MAX_IMAGE_COLS: usize = 80;
 pub const MAX_IMAGE_ROWS: usize = 24;
 const MAX_DIMENSION: u32 = 8192;
 const MAX_ALLOC: u64 = 256 * 1024 * 1024;
+/// Com gráficos ligados, o cache guarda imagens de até este tamanho (px): dá nitidez no
+/// terminal sem estourar a memória (≈1,2 MiB por imagem, no máximo ~112 imagens por documento).
+const GFX_MAX_W: u32 = 640;
+const GFX_MAX_H: u32 = 480;
 
 #[derive(Clone)]
 pub enum ImageState {
@@ -116,12 +120,12 @@ fn read_capped(reader: impl Read, max: u64) -> Result<Vec<u8>, String> {
     Ok(buf)
 }
 
-/// Guarda no cache só o que cabe na tela (no máximo `MAX_IMAGE_COLS` × `MAX_IMAGE_ROWS*2` px):
-/// uma imagem de 8192×8192 ocuparia 256 MiB e seria reduzida de novo a cada redesenho.
-fn to_state(r: Result<DynamicImage, String>) -> ImageState {
+/// Guarda no cache só o que cabe em `cap` (px): uma imagem de 8192×8192 ocuparia 256 MiB e
+/// seria reduzida de novo a cada redesenho.
+fn to_state(r: Result<DynamicImage, String>, cap: (u32, u32)) -> ImageState {
     match r {
         Ok(img) => {
-            let (max_w, max_h) = (u32::try_from(MAX_IMAGE_COLS).unwrap_or(u32::MAX), u32::try_from(MAX_IMAGE_ROWS * 2).unwrap_or(u32::MAX));
+            let (max_w, max_h) = cap;
             let img = if img.width() > max_w || img.height() > max_h {
                 img.resize(max_w, max_h, FilterType::Triangle)
             } else {
@@ -168,6 +172,13 @@ fn decode_data_uri(src: &str) -> Result<DynamicImage, String> {
 }
 
 
+/// Imagem pronta para o protocolo gráfico: `id` do terminal e os bytes PNG.
+#[derive(Clone)]
+pub struct Graphic {
+    pub id: u32,
+    pub png: Arc<Vec<u8>>,
+}
+
 pub struct ImageStore {
     base_dir: Option<PathBuf>,
     cache: Arc<Mutex<HashMap<String, ImageState>>>,
@@ -175,6 +186,8 @@ pub struct ImageStore {
     remote: Option<(Arc<FetchPolicy>, bool)>, // (política, bloqueante)
     mermaid: Option<(String, bool)>,          // (binário mmdc, bloqueante)
     mermaid_hold: AtomicBool,
+    graphics: bool,
+    gfx: Mutex<HashMap<(usize, usize, usize), Graphic>>, // (ponteiro da imagem, colunas, linhas)
 }
 
 impl ImageStore {
@@ -186,12 +199,53 @@ impl ImageStore {
             remote: None,
             mermaid: None,
             mermaid_hold: AtomicBool::new(false),
+            graphics: false,
+            gfx: Mutex::new(HashMap::new()),
         }
     }
 
     pub fn with_mermaid(mut self, bin: String, blocking: bool) -> Self {
         self.mermaid = Some((bin, blocking));
         self
+    }
+
+    pub fn with_graphics(mut self, on: bool) -> Self {
+        self.graphics = on;
+        self
+    }
+
+    pub fn graphics_enabled(&self) -> bool {
+        self.graphics
+    }
+
+    /// Teto de pixels guardado no cache.
+    fn cap(&self) -> (u32, u32) {
+        if self.graphics {
+            (GFX_MAX_W, GFX_MAX_H)
+        } else {
+            (
+                u32::try_from(MAX_IMAGE_COLS).unwrap_or(u32::MAX),
+                u32::try_from(MAX_IMAGE_ROWS * 2).unwrap_or(u32::MAX),
+            )
+        }
+    }
+
+    /// `id` e PNG de `img` desenhada em `cols`×`rows` células. `None` com gráficos desligados.
+    /// A chave é o endereço da imagem do cache (que nunca é descartada) mais o tamanho em células.
+    pub fn graphic(&self, img: &Arc<DynamicImage>, cols: usize, rows: usize) -> Option<Graphic> {
+        if !self.graphics {
+            return None;
+        }
+        let key = (Arc::as_ptr(img) as usize, cols, rows);
+        let mut map = self.gfx.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(g) = map.get(&key) {
+            return Some(g.clone());
+        }
+        let id = u32::try_from(map.len() + 1).ok()?;
+        let png = Arc::new(crate::graphics::encode_png(img)?);
+        let g = Graphic { id, png };
+        map.insert(key, g.clone());
+        Some(g)
     }
 
     pub fn mermaid_enabled(&self) -> bool {
@@ -258,15 +312,16 @@ impl ImageStore {
         if let Some(s) = self.lock().get(key) {
             return s.clone();
         }
+        let cap = self.cap();
         if !run_async {
-            let st = to_state(job());
+            let st = to_state(job(), cap);
             self.lock().insert(key.to_string(), st.clone());
             return st;
         }
         self.lock().insert(key.to_string(), ImageState::Loading);
         let (cache, version, key) = (Arc::clone(&self.cache), Arc::clone(&self.version), key.to_string());
         std::thread::spawn(move || {
-            let st = to_state(job());
+            let st = to_state(job(), cap);
             cache.lock().unwrap_or_else(PoisonError::into_inner).insert(key, st);
             version.fetch_add(1, Ordering::Relaxed);
         });
@@ -337,6 +392,47 @@ mod tests {
         b.put_pixel(0, 0, image::Rgba([255, 0, 0, 255]));
         b.put_pixel(0, 1, image::Rgba([0, 0, 255, 255]));
         DynamicImage::ImageRgba8(b)
+    }
+
+    fn grava_png(dir: &std::path::Path, nome: &str, w: u32, h: u32) {
+        std::fs::write(dir.join(nome), png_bytes(w, h)).unwrap();
+    }
+
+    #[test]
+    fn com_graficos_a_imagem_guarda_mais_pixels() {
+        let dir = tempfile::tempdir().unwrap();
+        grava_png(dir.path(), "a.png", 1000, 800);
+        let normal = ImageStore::new(Some(dir.path().to_path_buf()));
+        let gfx = ImageStore::new(Some(dir.path().to_path_buf())).with_graphics(true);
+        let (ImageState::Ready(n), ImageState::Ready(g)) = (normal.get("a.png"), gfx.get("a.png")) else {
+            panic!("esperava Ready");
+        };
+        assert!(n.width() <= 80 && n.height() <= 48);
+        assert!(g.width() <= 640 && g.height() <= 480 && g.width() > 80);
+    }
+
+    #[test]
+    fn graphic_reaproveita_o_id_por_imagem_e_tamanho() {
+        let dir = tempfile::tempdir().unwrap();
+        grava_png(dir.path(), "a.png", 8, 8);
+        let store = ImageStore::new(Some(dir.path().to_path_buf())).with_graphics(true);
+        let ImageState::Ready(img) = store.get("a.png") else { panic!() };
+        let a = store.graphic(&img, 10, 5).unwrap();
+        let b = store.graphic(&img, 10, 5).unwrap();
+        let c = store.graphic(&img, 12, 5).unwrap();
+        assert_eq!(a.id, b.id);
+        assert_ne!(a.id, c.id);
+        assert_eq!(&a.png[..4], b"\x89PNG");
+    }
+
+    #[test]
+    fn graphic_e_none_com_graficos_desligados() {
+        let dir = tempfile::tempdir().unwrap();
+        grava_png(dir.path(), "a.png", 8, 8);
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        let ImageState::Ready(img) = store.get("a.png") else { panic!() };
+        assert!(store.graphic(&img, 4, 2).is_none());
+        assert!(!store.graphics_enabled());
     }
 
     pub fn png_bytes(w: u32, h: u32) -> Vec<u8> {

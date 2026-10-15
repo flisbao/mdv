@@ -16,6 +16,7 @@ use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+use crate::graphics;
 use crate::mem;
 use crate::image::{halfblock, ImageState, ImageStore, MAX_IMAGE_COLS, MAX_IMAGE_ROWS};
 
@@ -93,6 +94,8 @@ pub struct Rendered {
     /// Maior quanto uma linha de código passa das colunas disponíveis (0 se nenhuma passa).
     /// Limite do deslocamento horizontal.
     pub code_overflow: usize,
+    /// Imagens gráficas usadas, sem repetir `id`. Vazio sem `--graphics`.
+    pub graphics: Vec<GraphicRef>,
 }
 
 /// Bloco de código desenhado: linhas renderizadas `[start, end)` e o texto cru (já saneado).
@@ -103,6 +106,15 @@ pub struct CodeSpan {
     #[cfg_attr(not(test), allow(dead_code))]
     pub lang: String,
     pub text: String,
+}
+
+/// Imagem que o terminal precisa receber (protocolo gráfico) para os placeholders aparecerem.
+#[derive(Clone)]
+pub struct GraphicRef {
+    pub id: u32,
+    pub cols: usize,
+    pub rows: usize,
+    pub png: Arc<Vec<u8>>,
 }
 
 /// Item de lista de tarefas e a linha renderizada onde ele começa.
@@ -1066,11 +1078,25 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    fn push_image(&mut self, img: &image::DynamicImage) {
+    fn push_image(&mut self, img: &Arc<image::DynamicImage>) {
         let (first, cont) = self.prefixes();
         self.take_marker();
-        let cols = self.width.saturating_sub(spans_width(&first)).clamp(1, MAX_IMAGE_COLS);
-        for (i, line) in halfblock(img, cols, MAX_IMAGE_ROWS).into_iter().enumerate() {
+        let max_cols = self.width.saturating_sub(spans_width(&first)).clamp(1, MAX_IMAGE_COLS);
+        if self.images.is_some_and(ImageStore::graphics_enabled) {
+            let (cols, rows) = graphics::cell_size(img.width(), img.height(), max_cols, MAX_IMAGE_ROWS);
+            if let Some(g) = self.images.and_then(|s| s.graphic(img, cols, rows)) {
+                for (i, span) in graphics::placeholder_rows(g.id, cols, rows).into_iter().enumerate() {
+                    let mut v = if i == 0 { first.clone() } else { cont.clone() };
+                    v.push(span);
+                    self.out.lines.push(Line::from(v));
+                }
+                if !self.out.graphics.iter().any(|x| x.id == g.id) {
+                    self.out.graphics.push(GraphicRef { id: g.id, cols, rows, png: g.png });
+                }
+                return;
+            }
+        }
+        for (i, line) in halfblock(img, max_cols, MAX_IMAGE_ROWS).into_iter().enumerate() {
             let mut v = if i == 0 { first.clone() } else { cont.clone() };
             v.extend(line.spans);
             self.out.lines.push(Line::from(v));
@@ -2251,6 +2277,52 @@ mod tests {
         let t = joined_text(&r);
         assert!(t.contains("[imagem: logo"), "{t}");
         assert!(t.contains('—'), "{t}");
+    }
+
+
+    #[test]
+    fn imagem_com_graficos_vira_placeholders_e_registra_o_png() {
+        let dir = tempfile::tempdir().unwrap();
+        png_no_dir(dir.path(), "a.png"); // 4×4 px
+        let store = ImageStore::new(Some(dir.path().to_path_buf())).with_graphics(true);
+        let r = render_with("![x](a.png)", &RenderOpts { width: 40, images: Some(&store), ..Default::default() });
+        let t = joined_text(&r);
+        assert!(t.contains('\u{10EEEE}') && !t.contains('▀'), "{t:?}");
+        assert_eq!(r.graphics.len(), 1);
+        let g = &r.graphics[0];
+        assert_eq!((g.cols, g.rows), (4, 2));
+        assert_eq!(r.lines.len(), g.rows);
+        assert_eq!(&g.png[..4], b"\x89PNG");
+    }
+
+    #[test]
+    fn mesma_imagem_duas_vezes_registra_um_png_so() {
+        let dir = tempfile::tempdir().unwrap();
+        png_no_dir(dir.path(), "a.png");
+        let store = ImageStore::new(Some(dir.path().to_path_buf())).with_graphics(true);
+        let r = render_with("![a](a.png)\n\n![b](a.png)", &RenderOpts { width: 40, images: Some(&store), ..Default::default() });
+        assert_eq!(r.graphics.len(), 1);
+        assert!(r.lines.iter().filter(|l| l.spans.iter().any(|s| s.content.contains('\u{10EEEE}'))).count() >= 4);
+    }
+
+    #[test]
+    fn sem_graficos_continua_meio_bloco_e_sem_registro() {
+        let dir = tempfile::tempdir().unwrap();
+        png_no_dir(dir.path(), "a.png");
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        let r = render_with("![x](a.png)", &RenderOpts { width: 40, images: Some(&store), ..Default::default() });
+        assert!(joined_text(&r).contains('▀'));
+        assert!(r.graphics.is_empty());
+    }
+
+    #[test]
+    fn imagem_em_lista_com_graficos_mantem_o_prefixo() {
+        let dir = tempfile::tempdir().unwrap();
+        png_no_dir(dir.path(), "a.png");
+        let store = ImageStore::new(Some(dir.path().to_path_buf())).with_graphics(true);
+        let r = render_with("- item\n  ![x](a.png)\n", &RenderOpts { width: 40, images: Some(&store), ..Default::default() });
+        let img_line = r.lines.iter().find(|l| l.spans.iter().any(|s| s.content.contains('\u{10EEEE}'))).unwrap();
+        assert!(img_line.spans.len() >= 2, "o recuo da lista vem antes dos placeholders");
     }
 
     fn png_no_dir(dir: &std::path::Path, nome: &str) {
