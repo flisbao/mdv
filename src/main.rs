@@ -1,6 +1,7 @@
 mod cli;
 mod clip;
 mod data;
+mod extract;
 mod image;
 mod mem;
 mod mermaid;

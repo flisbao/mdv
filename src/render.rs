@@ -321,14 +321,19 @@ pub fn render(md: &str, width: usize) -> Rendered {
     render_with(md, &RenderOpts { width, images: None })
 }
 
-pub fn render_with(md: &str, opts: &RenderOpts) -> Rendered {
+/// Opções do `pulldown-cmark` usadas em todo o programa (renderização e extração veem a mesma estrutura).
+pub(crate) fn parse_options() -> Options {
     // `ENABLE_MATH` fica de fora de propósito: textos de LLM com `$5 e $10` seriam lidos como fórmula.
-    let parse_opts = Options::ENABLE_TABLES
+    Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_FOOTNOTES
         | Options::ENABLE_GFM
-        | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS;
+        | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS
+}
+
+pub fn render_with(md: &str, opts: &RenderOpts) -> Rendered {
+    let parse_opts = parse_options();
     if let Err(e) = mem::check_parse(md.len()) {
         return error_rendered(&e.to_string());
     }
