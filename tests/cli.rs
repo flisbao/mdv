@@ -61,6 +61,36 @@ fn stats_imprime_total_e_secoes() {
 }
 
 #[test]
+fn check_links_limpo_sai_com_zero() {
+    let out = mdv(&["--check-links", "-"], "# A\n\n[ok](#a) [web](https://example.com)\n");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "nenhum problema encontrado\n");
+}
+
+#[test]
+fn check_links_com_problema_imprime_e_sai_com_um() {
+    let out = mdv(&["--check-links", "-"], "# A\n\n[x](#nada)\n\n```\nsem fim\n");
+    assert_eq!(out.status.code(), Some(1));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("<stdin>:3: âncora \"#nada\" não existe"), "{text}");
+    assert!(text.contains("<stdin>:5: cerca de código aberta"), "{text}");
+    assert!(text.ends_with("2 problemas\n"), "{text}");
+    assert!(out.stderr.is_empty(), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+#[test]
+fn check_links_resolve_caminhos_a_partir_da_pasta_do_arquivo() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("b.md"), "# B\n").unwrap();
+    let doc = dir.path().join("a.md");
+    std::fs::write(&doc, "[b](b.md#b) [c](c.md)\n").unwrap();
+    let out = mdv(&["--check-links", doc.to_str().unwrap()], "");
+    assert_eq!(out.status.code(), Some(1));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains(":1: arquivo \"c.md\" não encontrado") && !text.contains("b.md"), "{text}");
+}
+
+#[test]
 fn latest_mostra_o_md_mais_novo_da_pasta() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.md"), "# antigo\n").unwrap();
@@ -97,7 +127,7 @@ fn ajuda_documenta_subcomandos_e_opcoes() {
     let out = mdv(&["--help"], "");
     let text = String::from_utf8_lossy(&out.stdout);
     for item in [
-        "mdv json", "mdv csv|tsv", "--remote", "--mermaid", "--follow", "--latest", "--toc", "--stats", "--as",
+        "mdv json", "mdv csv|tsv", "--remote", "--mermaid", "--follow", "--latest", "--toc", "--stats", "--check-links", "--as",
         "--path", "--head", "--cols", "--no-header", "--delimiter", "MDV_MMDC", "--setup-mermaid",
     ] {
         assert!(text.contains(item), "a ajuda não menciona {item}:\n{text}");

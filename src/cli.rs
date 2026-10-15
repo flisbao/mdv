@@ -40,6 +40,7 @@ pub struct Cli {
     pub follow: bool,
     pub toc: bool,
     pub stats: bool,
+    pub check_links: bool,
     pub latest: bool,
     pub mode: Mode,
     pub path: Option<String>,
@@ -99,6 +100,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         follow: false,
         toc: false,
         stats: false,
+        check_links: false,
         latest: false,
         mode: Mode::Markdown,
         path: None,
@@ -145,6 +147,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
             "--follow" => cli.follow = true,
             "--toc" => cli.toc = true,
             "--stats" => cli.stats = true,
+            "--check-links" => cli.check_links = true,
             "--extract-code" => cli.extract_code = true,
             "--lang" => cli.lang = Some(value(&mut args, &a)?),
             "-n" => {
@@ -254,6 +257,22 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         ];
         if let Some((_, flag)) = others.iter().find(|(on, _)| *on) {
             return Err(format!("--stats não combina com {flag}"));
+        }
+    }
+    if cli.check_links {
+        if cli.mode != Mode::Markdown {
+            return Err("--check-links só vale para Markdown".to_string());
+        }
+        let others = [
+            (cli.toc, "--toc"),
+            (cli.stats, "--stats"),
+            (cli.extract_code, "--extract-code"),
+            (cli.section.is_some(), "--section"),
+            (cli.follow, "--follow"),
+            (cli.latest, "--latest"),
+        ];
+        if let Some((_, flag)) = others.iter().find(|(on, _)| *on) {
+            return Err(format!("--check-links não combina com {flag}"));
         }
     }
     Ok(Parsed::Run(cli))
@@ -490,6 +509,22 @@ mod tests {
             let e = run(&args).unwrap_err();
             assert!(e.contains("--stats") && e.contains(f), "{f}: {e}");
         }
+    }
+
+    #[test]
+    fn check_links_nao_combina_com_outros_modos() {
+        for f in ["--toc", "--stats", "--extract-code", "--section", "--follow", "--latest"] {
+            let args: Vec<&str> = if f == "--section" { vec!["--check-links", f, "x", "a.md"] } else { vec!["--check-links", f, "a.md"] };
+            let e = run(&args).unwrap_err();
+            assert!(e.contains("--check-links") && e.contains(f), "{f}: {e}");
+        }
+    }
+
+    #[test]
+    fn check_links_so_vale_para_markdown() {
+        let e = run(&["csv", "--check-links", "a.csv"]).unwrap_err();
+        assert!(e.contains("--check-links"), "{e}");
+        assert!(run(&["--check-links", "a.md"]).is_ok());
     }
 
     #[test]

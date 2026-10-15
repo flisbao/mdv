@@ -6,6 +6,7 @@ mod extract;
 mod fold;
 mod graphics;
 mod image;
+mod links;
 mod mem;
 mod mermaid;
 mod mermaid_native;
@@ -70,6 +71,7 @@ OPÇÕES:
         --setup-mermaid  verifica o ambiente dos diagramas e mostra como instalar o mmdc
         --graphics <G> imagens em alta resolução: off (padrão), kitty ou auto (Kitty/Ghostty; só no modo interativo)
         --toc          imprime só o índice de títulos
+        --check-links  confere offline links relativos, âncoras e cercas sem fechar; sai com 1 se houver problema
         --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
         --follow       com stdin: acompanha o texto conforme chega
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
@@ -122,13 +124,15 @@ enum Failure {
     Usage(String),
     /// Erro ao ler a entrada ou usar o terminal (código 1).
     Runtime(String),
+    /// `--check-links` achou problemas: o relatório já foi impresso, só falta o código 1.
+    Findings,
 }
 
 impl Failure {
     fn exit_code(&self) -> ExitCode {
         match self {
             Failure::Usage(_) => ExitCode::from(2),
-            Failure::Runtime(_) => ExitCode::from(1),
+            Failure::Runtime(_) | Failure::Findings => ExitCode::from(1),
         }
     }
 }
@@ -140,6 +144,7 @@ fn main() -> ExitCode {
             match &failure {
                 Failure::Usage(msg) => eprintln!("mdv: {msg}\nUse `mdv --help` para ver as opções."),
                 Failure::Runtime(msg) => eprintln!("mdv: {msg}"),
+                Failure::Findings => {}
             }
             failure.exit_code()
         }
@@ -200,6 +205,21 @@ fn run_cli() -> Result<(), Failure> {
         };
         let text = extract::extract(&md, &opts).map_err(Failure::Runtime)?;
         return write_stdout(&text);
+    }
+    if cli.check_links {
+        mem::check_parse(md.len()).map_err(|e| Failure::Runtime(e.to_string()))?;
+        let (label, base) = match &source {
+            Source::File(p) => (
+                p.display().to_string(),
+                p.parent()
+                    .filter(|d| !d.as_os_str().is_empty())
+                    .map_or_else(|| PathBuf::from("."), Path::to_path_buf),
+            ),
+            Source::Stdin => ("<stdin>".to_string(), PathBuf::from(".")),
+        };
+        let problems = links::check(&md, &base);
+        write_stdout(&links::format(&label, &problems))?;
+        return if problems.is_empty() { Ok(()) } else { Err(Failure::Findings) };
     }
     if cli.stats {
         return write_stdout(&stats::format(&stats::stats(&md)));

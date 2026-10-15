@@ -20,7 +20,7 @@ cargo run --release -- --setup-mermaid        # diagnóstico do ambiente Mermaid
 cargo clippy
 ```
 
-`cargo test` roda os testes unitários (`render.rs`, `main.rs`, `cli.rs`, `image.rs`, `net.rs`, `mermaid.rs`, `mermaid_native.rs`, `setup.rs`, `stream.rs`, `data.rs`) e `tests/cli.rs` (executa o binário). Para validar mudanças de renderização, também use `-p` com `sample.md` ou com `samples/` — funciona sem terminal interativo.
+`cargo test` roda os testes unitários (`render.rs`, `main.rs`, `cli.rs`, `image.rs`, `net.rs`, `mermaid.rs`, `mermaid_native.rs`, `setup.rs`, `links.rs`, `stream.rs`, `data.rs`) e `tests/cli.rs` (executa o binário). Para validar mudanças de renderização, também use `-p` com `sample.md` ou com `samples/` — funciona sem terminal interativo.
 
 O projeto, README e mensagens de erro/ajuda são em português.
 
@@ -45,6 +45,7 @@ Um único pipeline: entrada (Markdown, JSON, CSV/TSV) → `Vec<Line>` do ratatui
 - `src/net.rs`: download HTTP(S) restrito (`--remote`): resolvedor que recusa rede privada/loopback, teto de bytes, redirecionamento manual.
 - `src/mermaid.rs`: `render_png_auto` tenta o renderizador nativo e, se falhar, executa o `mmdc` (só com `--mermaid`, binário configurável por `MDV_MMDC`) com timeout. Sem a flag, `ImageStore::with_native_mermaid` usa só o nativo (padrão).
 - `src/mermaid_native.rs`: Mermaid → SVG (`mermaid-rs-renderer`) → PNG (`resvg`) em memória; tetos (`MAX_LINES` 400 linhas, `MAX_CONNECTIONS` 100 conexões contadas por `>` e `&`, `MAX_SVG_BYTES`, 1200×3000 px), erro claro sem fontes do sistema (`font_count`) e `guarded` (pânico vira erro, com o gancho mudo para não sujar a TUI).
+- `src/links.rs`: `--check-links`; `check(md, base) -> Vec<Problem>` e `format`, sobre o fonte com `pulldown-cmark` (como `extract.rs`), sem rede: âncoras (slug do GitHub), arquivos relativos, `arquivo.md#âncora`, referências sem definição e cercas sem fechar. Tetos: 200 problemas, 20 000 links, 50 `.md` lidos (5 MiB cada). `main.rs` imprime o relatório e sai com 1 via `Failure::Findings`.
 - `src/setup.rs`: `--setup-mermaid`, diagnóstico que só lê o ambiente (Node, `mmdc`, Chromium, fontes, terminal) e nunca instala nada.
 - `src/stream.rs`: leitor de stdin em thread (`Utf8Accum`) e `newest_md`.
 - `src/mem.rs`: limite de memória do processo (`--memory-buffer`, `MDV_MEMORY_BUFFER`, padrão 512 MiB). `CountingAlloc` é o `#[global_allocator]` (conta bytes vivos, teto duro `limite×1,5+16 MiB`); `check()`/`exceeded()` são os pontos de checagem usados por `render_with`, `layout_table`, `render_code`, `data.rs` e `main.rs`; ao estourar devolvem `error_rendered(MemoryLimit)`. `check_parse` barra antes de analisar o texto cuja árvore do `pulldown-cmark` passaria do limite. Testes unitários **não** alteram o limite global (rodam em paralelo); o estouro real é testado pelo binário em `tests/cli.rs`.
