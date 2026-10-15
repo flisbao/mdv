@@ -50,6 +50,17 @@ fn toc_imprime_indice_de_titulos() {
 }
 
 #[test]
+fn stats_imprime_total_e_secoes() {
+    let out = mdv(&["--stats", "-"], "# A\n\num dois\n\n## B\n\n```\nx\n```\n");
+    assert!(out.status.success());
+    let text = String::from_utf8_lossy(&out.stdout);
+    let linhas: Vec<&str> = text.lines().collect();
+    assert_eq!(linhas.len(), 3, "{text}");
+    assert!(linhas[0].starts_with("Total: 4 palavras · 1 bloco de código"), "{text}");
+    assert!(linhas[2].starts_with("  B "), "{text}");
+}
+
+#[test]
 fn latest_mostra_o_md_mais_novo_da_pasta() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.md"), "# antigo\n").unwrap();
@@ -86,7 +97,7 @@ fn ajuda_documenta_subcomandos_e_opcoes() {
     let out = mdv(&["--help"], "");
     let text = String::from_utf8_lossy(&out.stdout);
     for item in [
-        "mdv json", "mdv csv|tsv", "--remote", "--mermaid", "--follow", "--latest", "--toc", "--as",
+        "mdv json", "mdv csv|tsv", "--remote", "--mermaid", "--follow", "--latest", "--toc", "--stats", "--as",
         "--path", "--head", "--cols", "--no-header", "--delimiter", "MDV_MMDC",
     ] {
         assert!(text.contains(item), "a ajuda não menciona {item}:\n{text}");

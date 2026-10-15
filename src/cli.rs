@@ -39,6 +39,7 @@ pub struct Cli {
     pub mermaid: bool,
     pub follow: bool,
     pub toc: bool,
+    pub stats: bool,
     pub latest: bool,
     pub mode: Mode,
     pub path: Option<String>,
@@ -96,6 +97,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         mermaid: false,
         follow: false,
         toc: false,
+        stats: false,
         latest: false,
         mode: Mode::Markdown,
         path: None,
@@ -140,6 +142,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
             "--mermaid" => cli.mermaid = true,
             "--follow" => cli.follow = true,
             "--toc" => cli.toc = true,
+            "--stats" => cli.stats = true,
             "--extract-code" => cli.extract_code = true,
             "--lang" => cli.lang = Some(value(&mut args, &a)?),
             "-n" => {
@@ -234,6 +237,21 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
             if on {
                 return Err(format!("--extract-code e --section não combinam com {flag}"));
             }
+        }
+    }
+    if cli.stats {
+        if cli.mode != Mode::Markdown {
+            return Err("--stats só vale para Markdown".to_string());
+        }
+        let others = [
+            (cli.toc, "--toc"),
+            (cli.extract_code, "--extract-code"),
+            (cli.section.is_some(), "--section"),
+            (cli.follow, "--follow"),
+            (cli.latest, "--latest"),
+        ];
+        if let Some((_, flag)) = others.iter().find(|(on, _)| *on) {
+            return Err(format!("--stats não combina com {flag}"));
         }
     }
     Ok(Parsed::Run(cli))
@@ -455,6 +473,22 @@ mod tests {
         assert!(run(&["json", "--section", "A", "d.json"]).unwrap_err().contains("Markdown"));
         assert!(run(&["csv", "--extract-code", "d.csv"]).unwrap_err().contains("Markdown"));
         assert!(run(&["--extract-code", "d.json"]).unwrap_err().contains("Markdown"), "modo deduzido da extensão");
+    }
+
+    #[test]
+    fn stats_nao_combina_com_toc_extracao_follow_latest() {
+        for f in ["--toc", "--extract-code", "--section", "--follow", "--latest"] {
+            let args: Vec<&str> = if f == "--section" { vec!["--stats", f, "x", "a.md"] } else { vec!["--stats", f, "a.md"] };
+            let e = run(&args).unwrap_err();
+            assert!(e.contains("--stats") && e.contains(f), "{f}: {e}");
+        }
+    }
+
+    #[test]
+    fn stats_so_vale_para_markdown() {
+        let e = run(&["csv", "--stats", "a.csv"]).unwrap_err();
+        assert!(e.contains("--stats"), "{e}");
+        assert!(run(&["--stats", "a.md"]).is_ok());
     }
 
     #[test]

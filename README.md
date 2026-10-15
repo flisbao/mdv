@@ -84,6 +84,7 @@ OPÇÕES:
         --remote       baixa imagens de http(s):// (nunca de rede privada)
         --mermaid      renderiza blocos ```mermaid via `mmdc` (ou $MDV_MMDC)
         --toc          imprime só o índice de títulos
+        --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
         --follow       com stdin: acompanha o texto conforme chega
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
         --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
@@ -163,6 +164,8 @@ mdv --section "Instalação" --extract-code plano.md | sh
 ```
 
 `--lang` não distingue maiúsculas; `-n` conta a partir de 1, depois do filtro. O título casa por igualdade (sem distinguir caixa) ou por trecho único; se for ambíguo, o `mdv` lista os candidatos e sai com código 1, o mesmo código de quando nada é encontrado.
+
+Para dimensionar um documento antes de colá-lo num prompt, `mdv --stats plano.md` imprime palavras, blocos de código e tokens estimados, no total e por seção (a seção pai soma as subseções; `[feitas/total]` aparece quando há tarefas). Os tokens são uma estimativa: caracteres do texto, prosa e código, divididos por 4. Só vale para Markdown e não combina com `--toc`, `--extract-code`, `--section`, `--follow` nem `--latest`.
 
 ## JSON, CSV e TSV
 

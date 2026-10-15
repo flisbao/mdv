@@ -9,6 +9,7 @@ mod image;
 mod mem;
 mod mermaid;
 mod net;
+mod stats;
 mod stream;
 mod render;
 
@@ -66,6 +67,7 @@ OPÇÕES:
         --mermaid      renderiza blocos ```mermaid via `mmdc` (ou $MDV_MMDC)
         --graphics <G> imagens em alta resolução: off (padrão), kitty ou auto (Kitty/Ghostty; só no modo interativo)
         --toc          imprime só o índice de títulos
+        --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
         --follow       com stdin: acompanha o texto conforme chega
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
         --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
@@ -194,6 +196,9 @@ fn run_cli() -> Result<(), Failure> {
         };
         let text = extract::extract(&md, &opts).map_err(Failure::Runtime)?;
         return write_stdout(&text);
+    }
+    if cli.stats {
+        return write_stdout(&stats::format(&stats::stats(&md)));
     }
     if cli.toc && cli.mode == cli::Mode::Markdown {
         return write_stdout(&render::toc(&render::render(&md, width)));
