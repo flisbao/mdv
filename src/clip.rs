@@ -24,6 +24,37 @@ pub fn base64(data: &[u8]) -> String {
     out
 }
 
+/// Decodifica base64 padrão (RFC 4648). Espaço em branco é ignorado e o `=` final é opcional.
+/// `None` se houver caractere fora do alfabeto, dado depois do `=` ou tamanho impossível.
+pub fn base64_decode(s: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(s.len() / 4 * 3 + 3);
+    let (mut acc, mut bits) = (0u32, 0u32);
+    let mut padded = false;
+    for b in s.bytes() {
+        if b.is_ascii_whitespace() {
+            continue;
+        }
+        if b == b'=' {
+            padded = true;
+            continue;
+        }
+        if padded {
+            return None;
+        }
+        let v = ALPHABET.iter().position(|&a| a == b)?;
+        acc = (acc << 6) | u32::try_from(v).ok()?;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push(u8::try_from((acc >> bits) & 0xFF).ok()?);
+        }
+    }
+    if bits >= 6 {
+        return None;
+    }
+    Some(out)
+}
+
 /// Sequência OSC 52 que copia `text`. `Err(n)` se o texto (em bytes) passa de `MAX_COPY_BYTES`.
 pub fn osc52(text: &str) -> Result<String, usize> {
     let clean = crate::render::sanitize(text);
@@ -57,6 +88,22 @@ mod tests {
     fn base64_aceita_bytes_arbitrarios() {
         assert_eq!(base64(&[0xff, 0xfe, 0xfd]), "//79");
         assert_eq!(base64(&[0x00]), "AA==");
+    }
+
+    #[test]
+    fn base64_decode_inverte_o_encode_e_aceita_sem_padding() {
+        for s in ["", "f", "fo", "foo", "foob", "fooba", "foobar"] {
+            assert_eq!(base64_decode(&base64(s.as_bytes())).unwrap(), s.as_bytes(), "{s}");
+        }
+        assert_eq!(base64_decode("Zg").unwrap(), b"f");
+        assert_eq!(base64_decode("Zm9v\nYmFy").unwrap(), b"foobar"); // espaço em branco é ignorado
+    }
+
+    #[test]
+    fn base64_decode_recusa_entrada_invalida() {
+        assert!(base64_decode("@@@@").is_none());
+        assert!(base64_decode("Z").is_none()); // 6 bits sozinhos
+        assert!(base64_decode("Zg==Zg").is_none()); // dado depois do padding
     }
 
     #[test]

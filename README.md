@@ -128,9 +128,9 @@ TECLAS (modo interativo):
 
 Imagens `![alt](caminho)` aparecem desenhadas no próprio terminal, em **meio-bloco** (`▀` com cor de frente e de fundo), então funcionam na TUI e no `--plain` sem protocolo gráfico. Caminhos relativos são resolvidos a partir da pasta do arquivo (com stdin, do diretório atual).
 
-- **Locais:** PNG, JPEG, GIF e WebP, até 10 MiB e 8192×8192 px. Se não abrir, aparece `[imagem: alt — motivo]`.
+- **Locais:** PNG, JPEG, GIF e WebP, até 10 MiB e 8192×8192 px. Se não abrir, aparece `[imagem: alt — motivo]`. Imagens embutidas como `data:image/...;base64,...` (mesmos limites) também funcionam, sem rede; até 32 por documento.
 - **Por URL:** só com `--remote`. Sem a flag, o `mdv` nunca acessa a rede. O download recusa endereços de rede privada, loopback e link-local, limita o tamanho a 10 MiB, segue no máximo 3 redirecionamentos e aceita até 32 imagens por documento. Na TUI o texto aparece na hora e a imagem entra quando o download termina.
-- **Não suportados:** SVG e `data:` URIs. A resolução é baixa (meio-bloco); imagem dentro de célula de tabela fica como texto alternativo.
+- **Não suportados:** SVG e `data:` sem `;base64`. A resolução é baixa (meio-bloco); imagem dentro de célula de tabela fica como texto alternativo.
 
 ## Mermaid
 

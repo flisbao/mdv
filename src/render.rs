@@ -2186,6 +2186,17 @@ mod tests {
     }
 
     #[test]
+    fn imagem_data_uri_vira_meio_bloco() {
+        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(4, 4, image::Rgba([200, 10, 10, 255])));
+        let mut png = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut png, image::ImageFormat::Png).unwrap();
+        let uri = format!("data:image/png;base64,{}", crate::clip::base64(&png.into_inner()));
+        let store = ImageStore::new(None);
+        let r = render_with(&format!("![x]({uri})"), &RenderOpts { width: 40, images: Some(&store), ..Default::default() });
+        assert!(joined_text(&r).contains('▀'));
+    }
+
+    #[test]
     fn imagem_local_vira_meio_bloco() {
         let dir = tempfile::tempdir().unwrap();
         let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(4, 4, image::Rgba([200, 10, 10, 255])));

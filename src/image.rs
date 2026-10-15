@@ -18,6 +18,10 @@ pub const MAX_LOCAL_IMAGES: usize = 64;
 pub const MAX_MERMAID_DIAGRAMS: usize = 16;
 const MERMAID_PREFIX: &str = "mermaid:";
 const LOCAL_PREFIX: &str = "file:";
+const DATA_PREFIX: &str = "data:";
+pub const MAX_DATA_IMAGES: usize = 32;
+/// Maior carga base64 aceita num `data:` (equivale a `MAX_IMAGE_BYTES` já decodificados).
+pub const MAX_DATA_PAYLOAD: usize = (MAX_IMAGE_BYTES as usize) / 3 * 4 + 8;
 pub const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
 pub const MAX_IMAGE_COLS: usize = 80;
 pub const MAX_IMAGE_ROWS: usize = 24;
@@ -134,6 +138,35 @@ pub fn is_remote(src: &str) -> bool {
     s.starts_with("http://") || s.starts_with("https://")
 }
 
+/// `src` começa com `data:` (qualquer caixa)?
+pub fn is_data(src: &str) -> bool {
+    src.len() >= DATA_PREFIX.len() && src.as_bytes()[..DATA_PREFIX.len()].eq_ignore_ascii_case(DATA_PREFIX.as_bytes())
+}
+
+/// Decodifica `data:image/<tipo>;base64,<carga>`. Só base64; SVG não é suportado.
+fn decode_data_uri(src: &str) -> Result<DynamicImage, String> {
+    // `is_data` garante que os 5 primeiros bytes são ASCII, então o corte é seguro.
+    let rest = &src[DATA_PREFIX.len()..];
+    let (meta, payload) = rest.split_once(',').ok_or("data: sem vírgula")?;
+    let mut parts = meta.split(';');
+    let mime = parts.next().unwrap_or("").trim().to_ascii_lowercase();
+    let is_base64 = parts.any(|p| p.trim().eq_ignore_ascii_case("base64"));
+    if mime == "image/svg+xml" {
+        return Err("SVG não é suportado".into());
+    }
+    if !mime.starts_with("image/") {
+        return Err("data: não é uma imagem".into());
+    }
+    if !is_base64 {
+        return Err("data: sem base64 não é suportado".into());
+    }
+    if payload.len() > MAX_DATA_PAYLOAD {
+        return Err("imagem grande demais".into());
+    }
+    let bytes = crate::clip::base64_decode(payload).ok_or("base64 inválido")?;
+    decode(&bytes)
+}
+
 
 pub struct ImageStore {
     base_dir: Option<PathBuf>,
@@ -241,6 +274,22 @@ impl ImageStore {
     }
 
     pub fn get(&self, src: &str) -> ImageState {
+        if is_data(src) {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            src.hash(&mut h);
+            let key = format!("{DATA_PREFIX}{:016x}", h.finish());
+            let over_limit = {
+                let cache = self.lock();
+                !cache.contains_key(&key)
+                    && cache.keys().filter(|k| k.starts_with(DATA_PREFIX)).count() >= MAX_DATA_IMAGES
+            };
+            if over_limit {
+                return ImageState::Failed("limite de imagens data: atingido".into());
+            }
+            let s = src.to_string();
+            return self.get_job(&key, false, move || decode_data_uri(&s));
+        }
         if !is_remote(src) {
             // A chave é o caminho canônico: `a.png`, `./a.png` e `x/../a.png` são um só arquivo.
             let path = match &self.base_dir {
@@ -295,6 +344,60 @@ mod tests {
         let mut out = Cursor::new(Vec::new());
         img.write_to(&mut out, image::ImageFormat::Png).unwrap();
         out.into_inner()
+    }
+
+    fn data_uri(png: &[u8]) -> String {
+        format!("data:image/png;base64,{}", crate::clip::base64(png))
+    }
+
+    #[test]
+    fn data_uri_png_vira_imagem() {
+        let store = ImageStore::new(None);
+        match store.get(&data_uri(&png_bytes(4, 4))) {
+            ImageState::Ready(img) => assert_eq!((img.width(), img.height()), (4, 4)),
+            _ => panic!("esperava Ready"),
+        }
+    }
+
+    #[test]
+    fn data_uri_aceita_maiusculas_no_esquema_e_no_tipo() {
+        let uri = format!("DATA:IMAGE/PNG;BASE64,{}", crate::clip::base64(&png_bytes(2, 2)));
+        assert!(matches!(ImageStore::new(None).get(&uri), ImageState::Ready(_)));
+    }
+
+    fn falha(uri: &str) -> String {
+        match ImageStore::new(None).get(uri) {
+            ImageState::Failed(e) => e,
+            _ => panic!("esperava Failed para {uri}"),
+        }
+    }
+
+    #[test]
+    fn data_uri_hostil_vira_falha_com_motivo() {
+        assert!(falha("data:image/svg+xml;base64,PHN2Zy8+").contains("SVG"));
+        assert!(falha("data:image/png,abc").contains("base64"));
+        assert!(falha("data:text/plain;base64,QUJD").contains("não é uma imagem"));
+        assert!(falha("data:image/png;base64").contains("vírgula"));
+        assert!(falha("data:image/png;base64,@@@@").contains("base64"));
+        // base64 válido ("ABC"), mas os bytes não são uma imagem: falha do decodificador, sem pânico
+        assert!(!falha("data:image/png;base64,QUJD").is_empty());
+    }
+
+    #[test]
+    fn data_uri_acima_do_teto_e_recusada_antes_de_decodificar() {
+        let uri = format!("data:image/png;base64,{}", "A".repeat(MAX_DATA_PAYLOAD + 1));
+        assert!(falha(&uri).contains("grande"));
+    }
+
+    #[test]
+    fn data_uri_tem_limite_por_documento() {
+        let store = ImageStore::new(None);
+        for i in 0..MAX_DATA_IMAGES {
+            let w = u32::try_from(i).unwrap() + 1;
+            assert!(matches!(store.get(&data_uri(&png_bytes(w, 1))), ImageState::Ready(_)));
+        }
+        let extra = data_uri(&png_bytes(500, 1));
+        assert!(matches!(store.get(&extra), ImageState::Failed(e) if e.contains("limite")));
     }
 
     #[test]

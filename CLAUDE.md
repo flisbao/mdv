@@ -52,4 +52,4 @@ Um único pipeline: entrada (Markdown, JSON, CSV/TSV) → `Vec<Line>` do ratatui
 
 Qualquer recurso novo de formatação entra em `render.rs` e vale automaticamente para TUI e `--plain`.
 
-Limitações conhecidas (do README): código largo é quebrado por padrão (tecla `w` liga rolagem horizontal), células de tabela largas são truncadas com `…`, imagens usam meio-bloco (baixa resolução; SVG e `data:` URIs não são suportados), imagem dentro de célula de tabela fica como texto alternativo.
+Limitações conhecidas (do README): código largo é quebrado por padrão (tecla `w` liga rolagem horizontal), células de tabela largas são truncadas com `…`, imagens usam meio-bloco (baixa resolução; SVG não é suportado), imagem dentro de célula de tabela fica como texto alternativo.
