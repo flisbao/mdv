@@ -159,51 +159,98 @@ fn cell_text(v: &Value) -> String {
     }
 }
 
-fn flatten(prefix: &str, v: &Value, depth: usize, out: &mut Vec<(String, String)>) {
+/// Teto de caminhos de chave distintos guardados ao achatar. Cada caminho custa no máximo
+/// `MAX_CELL_CHARS` caracteres, então a memória das chaves fica abaixo de uns 10 MiB.
+const MAX_KEY_NODES: usize = 10_000;
+
+/// Pai dos caminhos de primeiro nível.
+const KEY_ROOT: usize = usize::MAX;
+
+/// Caminhos de chave (`a.b.c`) vistos ao achatar, guardados como árvore: cada nó é (pai, chave).
+/// Assim o custo de um par não depende do tamanho do prefixo (uma chave de 2 MB com 200 mil
+/// filhos não vira 200 mil cópias dela) e chaves longas que só diferem no fim continuam distintas.
+#[derive(Default)]
+struct KeyTree {
+    ids: HashMap<(usize, String), usize>,
+    /// Nome exibido de cada nó, já cortado em `MAX_CELL_CHARS`.
+    names: Vec<String>,
+}
+
+impl KeyTree {
+    /// Nó da chave `key` sob `parent`; `None` quando o teto de nós foi atingido.
+    fn child(&mut self, parent: usize, key: &str) -> Option<usize> {
+        if let Some(&id) = self.ids.get(&(parent, key.to_string())) {
+            return Some(id);
+        }
+        if self.names.len() >= MAX_KEY_NODES {
+            return None;
+        }
+        let own = clip_cell(key);
+        let name = match self.names.get(parent) {
+            Some(prefix) => clip_cell(&format!("{prefix}.{own}")),
+            None => own,
+        };
+        let id = self.names.len();
+        self.names.push(name);
+        self.ids.insert((parent, key.to_string()), id);
+        Some(id)
+    }
+}
+
+/// Achata objetos aninhados em pares (caminho, texto da célula). Chaves além do teto de nós
+/// ficam de fora.
+fn flatten(tree: &mut KeyTree, parent: usize, v: &Value, depth: usize, out: &mut Vec<(usize, String)>) {
     match v {
         Value::Object(m) if depth < MAX_FLATTEN_DEPTH && !m.is_empty() => {
             for (k, x) in m {
-                let key = if prefix.is_empty() { k.clone() } else { format!("{prefix}.{k}") };
-                flatten(&key, x, depth + 1, out);
+                if let Some(id) = tree.child(parent, k) {
+                    flatten(tree, id, x, depth + 1, out);
+                }
             }
         }
-        other => out.push((prefix.to_string(), cell_text(other))),
+        other => {
+            let node = if parent == KEY_ROOT { tree.child(KEY_ROOT, "") } else { Some(parent) };
+            if let Some(id) = node {
+                out.push((id, cell_text(other)));
+            }
+        }
     }
 }
 
 /// Uma linha por objeto, uma coluna por chave (na ordem em que aparecem), até `MAX_TABLE_COLS`.
 /// Devolve as linhas (com o cabeçalho primeiro) e quantas colunas ficaram de fora.
 fn records_to_rows(items: &[Value], head: usize) -> (Vec<Vec<String>>, usize) {
-    let flat: Vec<Vec<(String, String)>> = items
+    let mut tree = KeyTree::default();
+    let flat: Vec<Vec<(usize, String)>> = items
         .iter()
         .take(head)
         .map(|item| {
             let mut pairs = Vec::new();
-            flatten("", item, 0, &mut pairs);
+            flatten(&mut tree, KEY_ROOT, item, 0, &mut pairs);
             pairs
         })
         .collect();
-    let mut index: HashMap<&str, usize> = HashMap::new();
-    let mut keys: Vec<&str> = Vec::new();
-    let mut omitted: HashSet<&str> = HashSet::new();
+    let mut column: HashMap<usize, usize> = HashMap::new();
+    let mut keys: Vec<usize> = Vec::new();
+    let mut omitted: HashSet<usize> = HashSet::new();
     for pairs in &flat {
-        for (k, _) in pairs {
-            if index.contains_key(k.as_str()) || omitted.contains(k.as_str()) {
+        for &(node, _) in pairs {
+            if column.contains_key(&node) || omitted.contains(&node) {
                 continue;
             }
             if keys.len() >= MAX_TABLE_COLS {
-                omitted.insert(k);
+                omitted.insert(node);
             } else {
-                index.insert(k, keys.len());
-                keys.push(k);
+                column.insert(node, keys.len());
+                keys.push(node);
             }
         }
     }
-    let mut rows = vec![keys.iter().map(|k| clip_cell(k)).collect::<Vec<_>>()];
+    let mut rows = vec![keys.iter().map(|&n| tree.names[n].clone()).collect::<Vec<_>>()];
     for pairs in &flat {
         let mut row = vec![String::new(); keys.len()];
-        for (k, v) in pairs {
-            if let Some(&i) = index.get(k.as_str()) {
+        for (node, v) in pairs {
+            if let Some(&i) = column.get(node) {
                 row[i].clone_from(v);
             }
         }
@@ -219,11 +266,12 @@ fn render_json_table(sel: &Value, o: &JsonOpts, width: usize) -> Rendered {
             (rows, items.len(), omitted)
         }
         (Shape::Pairs, _) => {
+            let mut tree = KeyTree::default();
             let mut pairs = Vec::new();
-            flatten("", sel, 0, &mut pairs);
+            flatten(&mut tree, KEY_ROOT, sel, 0, &mut pairs);
             let total = pairs.len();
             let mut rows = vec![vec!["chave".to_string(), "valor".to_string()]];
-            rows.extend(pairs.into_iter().take(o.head).map(|(k, v)| vec![clip_cell(&k), v]));
+            rows.extend(pairs.into_iter().take(o.head).map(|(k, v)| vec![tree.names[k].clone(), v]));
             (rows, total, 0)
         }
         (Shape::Scalars, Value::Array(items)) => {
@@ -843,4 +891,14 @@ mod tests {
             assert_eq!(next_view(JsonView::Table), JsonView::Schema);
             assert_eq!(next_view(JsonView::Schema), JsonView::Text);
         }
+
+    #[test]
+    fn chave_longa_com_muitos_filhos_nao_explode_a_memoria() {
+        let filhos = (0..200_000).map(|i| format!("\"k{i}\":0")).collect::<Vec<_>>().join(",");
+        let json = format!("[{{\"{}\":{{{filhos}}}}}]", "A".repeat(2_000_000));
+        let t0 = std::time::Instant::now();
+        let t = text(&render_json(&json, &jopts(JsonView::Table), 80));
+        assert!(t.contains("omitidas"), "{}", &t[..t.len().min(300)]);
+        assert!(t0.elapsed() < std::time::Duration::from_secs(3), "levou {:?}", t0.elapsed());
+    }
 }

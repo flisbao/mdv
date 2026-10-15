@@ -21,6 +21,14 @@ cargo clippy
 
 O projeto, README e mensagens de erro/ajuda são em português.
 
+## Memória: limitar a aplicação, nunca estourar a máquina
+
+Nenhum teste (nem execução manual) pode alocar memória sem teto. Entrada hostil ou gigante se resolve **limitando o uso de memória do `mdv`** (tetos de bytes, de itens, de caracteres por chave/célula, de profundidade), nunca rodando para ver se aguenta.
+
+- Antes de escrever ou rodar um teste com entrada grande, calcule o pior caso de memória (inclusive o que o código derivado gera: concatenar o prefixo de uma chave de N caracteres para cada um de M filhos custa N×M). Se passar de algumas dezenas de MiB, **não rode**: corrija o limite no código primeiro e só então teste com tamanhos pequenos que provem o limite (por exemplo, teto reduzido por constante ou parâmetro de teste).
+- Entradas de teste de estresse ficam em dezenas de MiB no máximo; prefira provar o teto com um valor um pouco acima dele.
+- Se a ferramenta for rodar algo potencialmente pesado, use `ulimit -v` (por exemplo `(ulimit -v 2000000; cargo test ...)`) para o processo morrer sozinho em vez de travar o terminal.
+
 ## Arquitetura
 
 Um único pipeline: entrada (Markdown, JSON, CSV/TSV) → `Vec<Line>` do ratatui → (TUI | ANSI).
