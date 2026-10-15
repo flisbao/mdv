@@ -1826,6 +1826,36 @@ mod tests {
         App::new(source, md.to_string(), 80, &cli)
     }
 
+    /// Texto de todas as células do buffer, uma linha por string.
+    fn screen_text(buf: &ratatui::buffer::Buffer) -> Vec<String> {
+        let w = buf.area.width;
+        (0..buf.area.height)
+            .map(|y| (0..w).map(|x| buf[(x, y)].symbol()).collect::<String>())
+            .collect()
+    }
+
+    /// Regressão da troca do ratatui: desenha a TUI num `TestBackend` e confere conteúdo, estilo e rolagem.
+    #[test]
+    fn tui_desenha_documento_no_test_backend() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let md = "# Título\n\nTexto **forte** e `código`.\n\n- um\n- dois\n\n```rust\nfn main() {}\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n";
+        let mut app = test_app(Source::Stdin, md);
+        let mut term = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        term.draw(|f| app.draw(f)).unwrap();
+        let buf = term.backend().buffer().clone();
+        let linhas = screen_text(&buf);
+        let tela = linhas.join("\n");
+        for esperado in ["Título", "forte", "código", "um", "dois", "fn main", "│"] {
+            assert!(tela.contains(esperado), "faltou {esperado:?} na tela:\n{tela}");
+        }
+        let fg_titulo = (0..buf.area.width).find(|&x| buf[(x, 0)].symbol() != " ").map(|x| buf[(x, 0)].fg);
+        assert!(fg_titulo.is_some_and(|c| c != ratatui::style::Color::Reset), "título sem cor");
+        // redimensionar e redesenhar não pode entrar em pânico nem perder o conteúdo
+        let mut pequeno = Terminal::new(TestBackend::new(30, 8)).unwrap();
+        pequeno.draw(|f| app.draw(f)).unwrap();
+        assert!(screen_text(pequeno.backend().buffer()).join("\n").contains("Título"));
+    }
+
     fn key(app: &mut App, c: KeyCode) {
         app.on_key(KeyEvent::new(c, KeyModifiers::NONE));
     }

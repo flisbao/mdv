@@ -146,6 +146,37 @@ mod tests {
         assert!(w > 50 && h > 20, "{w}x{h}");
     }
 
+    /// Regressão da troca de `resvg`/`usvg`/`fontdb`: vários tipos de diagrama, com texto, viram PNG não vazio.
+    #[test]
+    fn tipos_de_diagrama_variados_viram_png_com_conteudo() {
+        if sem_fontes() {
+            return;
+        }
+        let casos = [
+            FLOW,
+            "sequenceDiagram\n  Ana->>Beto: Oi\n  Beto-->>Ana: Olá\n",
+            "pie title Uso\n  \"A\" : 40\n  \"B\" : 60\n",
+            "stateDiagram-v2\n  [*] --> Ativo\n  Ativo --> [*]\n",
+        ];
+        for src in casos {
+            let png = render_png(src).unwrap_or_else(|e| panic!("{src:?}: {e}"));
+            let img = image::load_from_memory(&png).expect("PNG válido").to_rgba8();
+            let cores: std::collections::HashSet<[u8; 4]> = img.pixels().map(|p| p.0).take(200_000).collect();
+            assert!(cores.len() > 3, "imagem sem conteúdo para {src:?}");
+        }
+    }
+
+    /// O texto precisa ser desenhado (fontes do sistema carregadas pelo `fontdb`): rótulos diferentes mudam os pixels.
+    #[test]
+    fn rotulos_diferentes_geram_pixels_diferentes() {
+        if sem_fontes() {
+            return;
+        }
+        let a = render_png("flowchart LR\n  A[Alfa] --> B[Beta]\n").unwrap();
+        let b = render_png("flowchart LR\n  A[Zzzz] --> B[Yyyy]\n").unwrap();
+        assert_ne!(a, b);
+    }
+
     #[test]
     fn sintaxe_invalida_vira_erro_em_portugues_ou_do_crate() {
         let e = render_png("isto não é mermaid").unwrap_err();

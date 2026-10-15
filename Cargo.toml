@@ -8,7 +8,7 @@ description = "Visualizador de Markdown no terminal (renderizador + TUI)"
 [dependencies]
 similar = { version = "2", default-features = false, features = ["text"] }
 pulldown-cmark = { version = "0.13", default-features = false }
-ratatui = "0.29"
+ratatui = "0.30"
 syntect = { version = "5", default-features = false, features = ["parsing", "default-syntaxes", "default-themes", "regex-fancy"] }
 unicode-width = "0.2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
@@ -18,7 +18,7 @@ tempfile = "3"
 serde_json = { version = "1", features = ["preserve_order"] }
 csv = "1"
 mermaid-rs-renderer = { version = "0.3.1", default-features = false }
-resvg = { version = "0.47", default-features = false, features = ["text"] }
+resvg = { version = "0.48", default-features = false, features = ["text", "system-fonts"] }
 
 [profile.release]
 lto = true
