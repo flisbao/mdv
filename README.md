@@ -45,15 +45,15 @@ Baixe o binário da última release, extraia e coloque `mdv` no seu `PATH`:
 <!-- mdv:install:start -->
 | Plataforma | Download |
 |------------|----------|
-| Linux x86_64 (glibc 2.35+) | [`mdv-v0.4.1-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.1/mdv-v0.4.1-linux-x86_64.tar.gz) |
-| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.4.1-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.1/mdv-v0.4.1-linux-x86_64-musl.tar.gz) |
-| Linux aarch64 | [`mdv-v0.4.1-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.1/mdv-v0.4.1-linux-aarch64.tar.gz) |
-| macOS Apple Silicon | [`mdv-v0.4.1-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.1/mdv-v0.4.1-macos-aarch64.tar.gz) |
-| macOS Intel | [`mdv-v0.4.1-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.1/mdv-v0.4.1-macos-x86_64.tar.gz) |
-| Windows x86_64 | [`mdv-v0.4.1-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.4.1/mdv-v0.4.1-windows-x86_64.zip) |
-| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.4.1) |
+| Linux x86_64 (glibc 2.35+) | [`mdv-v0.4.2-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.2/mdv-v0.4.2-linux-x86_64.tar.gz) |
+| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.4.2-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.2/mdv-v0.4.2-linux-x86_64-musl.tar.gz) |
+| Linux aarch64 | [`mdv-v0.4.2-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.2/mdv-v0.4.2-linux-aarch64.tar.gz) |
+| macOS Apple Silicon | [`mdv-v0.4.2-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.2/mdv-v0.4.2-macos-aarch64.tar.gz) |
+| macOS Intel | [`mdv-v0.4.2-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.2/mdv-v0.4.2-macos-x86_64.tar.gz) |
+| Windows x86_64 | [`mdv-v0.4.2-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.4.2/mdv-v0.4.2-windows-x86_64.zip) |
+| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.4.2) |
 
-Versão atual: **v0.4.1**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
+Versão atual: **v0.4.2**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
 <!-- mdv:install:end -->
 
 Os scripts abaixo detectam o sistema e a arquitetura, baixam da **última release publicada** o arquivo certo e instalam o `mdv`. A tag vem do redirecionamento de `releases/latest` (Linux e macOS, sem depender da API do GitHub) ou da API (Windows). Os binários de macOS e Windows **não são assinados**: veja o aviso de cada sistema.
@@ -330,6 +330,13 @@ Defina `MDV_AI_CMD` com um comando que lê o texto no stdin e responde no stdout
 ## Changelog
 
 <!-- mdv:changelog:start -->
+### v0.4.2
+
+_2026-10-15_
+
+- chore(deps): ratatui 0.30 e resvg 0.48
+- Added cmd line to install and move to path on linux distros
+
 ### v0.4.1
 
 _2026-10-15_
