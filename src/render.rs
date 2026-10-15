@@ -1024,7 +1024,7 @@ impl<'a> Renderer<'a> {
 
         let mut out: Vec<Line<'static>> = vec![table_border(&first, &widths, ["┌", "┬", "┐"])];
         for (ri, row) in t.rows.iter().enumerate() {
-            out.push(draw_table_row(&cont, row, &widths, &t.aligns));
+            out.extend(draw_table_row(&cont, row, &widths, &t.aligns));
             if ri == 0 && t.has_header {
                 out.push(table_border(&cont, &widths, ["├", "┼", "┤"]));
             }
@@ -1069,31 +1069,41 @@ fn table_border(prefix: &[Span<'static>], widths: &[usize], corners: [&str; 3]) 
     Line::from(v)
 }
 
-/// Linha de dados da tabela com cada célula truncada e alinhada à sua coluna.
+/// Linhas de dados da tabela: cada célula é quebrada na largura da sua coluna e alinhada;
+/// a linha da tabela tem a altura da maior célula.
 fn draw_table_row(
     prefix: &[Span<'static>],
     row: &[Vec<Piece>],
     widths: &[usize],
     aligns: &[Alignment],
-) -> Line<'static> {
+) -> Vec<Line<'static>> {
     let dim = Style::default().fg(DIM);
-    let mut v = prefix.to_vec();
-    v.push(Span::styled("│", dim));
-    for (c, &width) in widths.iter().enumerate() {
-        let cell = row.get(c).map_or(&[][..], Vec::as_slice);
-        let (spans, w) = fit(cell, width);
-        let pad = width.saturating_sub(w);
-        let (lead, trail) = match aligns.get(c).copied().unwrap_or(Alignment::None) {
-            Alignment::Right => (pad, 0),
-            Alignment::Center => (pad / 2, pad - pad / 2),
-            _ => (0, pad),
-        };
-        v.push(Span::raw(format!(" {}", " ".repeat(lead))));
-        v.extend(spans);
-        v.push(Span::raw(format!("{} ", " ".repeat(trail))));
-        v.push(Span::styled("│", dim));
-    }
-    Line::from(v)
+    let cells: Vec<Vec<(Vec<Span<'static>>, usize)>> = widths
+        .iter()
+        .enumerate()
+        .map(|(c, &width)| wrap_cell(row.get(c).map_or(&[][..], Vec::as_slice), width))
+        .collect();
+    let height = cells.iter().map(Vec::len).max().unwrap_or(1);
+    (0..height)
+        .map(|li| {
+            let mut v = prefix.to_vec();
+            v.push(Span::styled("│", dim));
+            for (c, &width) in widths.iter().enumerate() {
+                let (spans, w) = cells[c].get(li).cloned().unwrap_or_default();
+                let pad = width.saturating_sub(w);
+                let (lead, trail) = match aligns.get(c).copied().unwrap_or(Alignment::None) {
+                    Alignment::Right => (pad, 0),
+                    Alignment::Center => (pad / 2, pad - pad / 2),
+                    _ => (0, pad),
+                };
+                v.push(Span::raw(format!(" {}", " ".repeat(lead))));
+                v.extend(spans);
+                v.push(Span::raw(format!("{} ", " ".repeat(trail))));
+                v.push(Span::styled("│", dim));
+            }
+            Line::from(v)
+        })
+        .collect()
 }
 
 /// Largura de borda e preenchimento por coluna (`│ ` + ` `) mais a borda final.
@@ -1136,6 +1146,75 @@ fn largest_cap_within(mut lo: usize, mut hi: usize, budget: usize, sum: impl Fn(
         }
     }
     lo
+}
+
+/// Teto de linhas por célula de tabela; o que passa disso termina em "…".
+const MAX_CELL_LINES: usize = 8;
+
+/// Mesma natureza de `piece` (texto ou código) com outro conteúdo; `Break` vira espaço.
+fn with_text(piece: &Piece, text: String) -> Piece {
+    match piece {
+        Piece::Code(_, st) => Piece::Code(text, *st),
+        Piece::Text(_, st) => Piece::Text(text, *st),
+        Piece::Break => Piece::Text(text, Style::default()),
+    }
+}
+
+/// Mantém só os primeiros `budget` colunas da célula; o `bool` diz se algo foi cortado.
+/// Evita quebrar em linhas um texto de milhões de caracteres que só mostraria `MAX_CELL_LINES`.
+fn clip_pieces(cell: &[Piece], budget: usize) -> (Vec<Piece>, bool) {
+    let mut used = 0;
+    let mut out = Vec::new();
+    for piece in cell {
+        let text = piece.as_text().0;
+        let room = budget - used;
+        let w = text.width();
+        if w <= room {
+            out.push(with_text(piece, text.to_string()));
+            used += w;
+            continue;
+        }
+        let mut buf = String::new();
+        let mut taken = 0;
+        for ch in text.chars() {
+            let cw = ch.width().unwrap_or(0);
+            if taken + cw > room {
+                break;
+            }
+            buf.push(ch);
+            taken += cw;
+        }
+        if !buf.is_empty() {
+            out.push(with_text(piece, buf));
+        }
+        return (out, true);
+    }
+    (out, false)
+}
+
+/// Quebra a célula em linhas de até `w` colunas (no máximo `MAX_CELL_LINES`), cada uma com a
+/// sua largura. Se sobrar texto, a última linha termina em "…".
+fn wrap_cell(cell: &[Piece], w: usize) -> Vec<(Vec<Span<'static>>, usize)> {
+    let w = w.max(1);
+    let (pieces, clipped) = clip_pieces(cell, w.saturating_mul(MAX_CELL_LINES));
+    let mut lines = wrap(&pieces, w);
+    let overflow = lines.len() > MAX_CELL_LINES;
+    lines.truncate(MAX_CELL_LINES);
+    if overflow || clipped {
+        let last = lines.pop().unwrap_or_default();
+        let style = last.last().map_or_else(Style::default, |s| s.style);
+        let mut ps: Vec<Piece> =
+            last.iter().map(|s| Piece::Text(s.content.to_string(), s.style)).collect();
+        ps.push(Piece::Text("…".to_string(), style));
+        lines.push(fit(&ps, w).0);
+    }
+    lines
+        .into_iter()
+        .map(|spans| {
+            let n = spans_width(&spans);
+            (spans, n)
+        })
+        .collect()
 }
 
 fn clean_code(s: &str) -> String {
@@ -1500,6 +1579,10 @@ mod tests {
         rendered_text_at(md, 80)
     }
 
+        fn line_to_string(l: &Line<'_>) -> String {
+            l.spans.iter().map(|s| s.content.as_ref()).collect()
+        }
+
     fn rendered_text_at(md: &str, width: usize) -> Vec<String> {
         render(md, width)
             .lines
@@ -1590,6 +1673,93 @@ mod tests {
         assert_fits(&format!("{header}{sep}{row}"), 20);
         assert_fits(&format!("> {header}> {sep}> {row}"), 20);
     }
+
+        const FRASE_LONGA: &str = "uma descricao bem longa que precisa quebrar em varias linhas dentro da celula";
+
+        fn tabela_de_uma_celula(texto: &str, alinhamento: &str) -> String {
+            format!("| titulo |\n|{alinhamento}|\n| {texto} |\n")
+        }
+
+        #[test]
+        fn celula_longa_quebra_em_varias_linhas() {
+            let md = format!("| nome | descricao |\n|---|---|\n| a | {FRASE_LONGA} |\n");
+            let lines = rendered_text_at(&md, 40);
+            let junto = lines.join("\n");
+            assert!(!junto.contains('…'), "não deve truncar: {junto}");
+            for palavra in FRASE_LONGA.split(' ') {
+                assert!(junto.contains(palavra), "faltou {palavra:?}: {junto}");
+            }
+            // borda, cabeçalho, separador, 3+ linhas de dado, borda
+            assert!(lines.len() >= 7, "{lines:?}");
+            assert_fits(&md, 40);
+        }
+
+        #[test]
+        fn palavra_maior_que_a_coluna_quebra_por_caractere() {
+            let md = tabela_de_uma_celula(&"x".repeat(100), "---");
+            let junto = rendered_text_at(&md, 30).join("");
+            assert_eq!(junto.matches('x').count(), 100, "{junto}");
+            assert_fits(&md, 30);
+        }
+
+        #[test]
+        fn teto_de_linhas_termina_com_reticencias() {
+            let md = tabela_de_uma_celula(&"palavra ".repeat(200), "---");
+            let lines = rendered_text_at(&md, 30);
+            let dados: Vec<&String> = lines.iter().filter(|l| l.contains("palavra") || l.contains('…')).collect();
+            assert_eq!(dados.len(), MAX_CELL_LINES, "{lines:?}");
+            assert!(dados.last().unwrap().contains('…'), "{dados:?}");
+            assert!(dados[..MAX_CELL_LINES - 1].iter().all(|l| !l.contains('…')), "{dados:?}");
+        }
+
+        #[test]
+        fn celula_enorme_respeita_o_teto() {
+            let md = tabela_de_uma_celula(&"x".repeat(500), "---");
+            let lines = rendered_text_at(&md, 30);
+            let dados: Vec<&String> = lines.iter().filter(|l| l.contains('x')).collect();
+            assert_eq!(dados.len(), MAX_CELL_LINES, "{lines:?}");
+            assert!(dados.last().unwrap().contains('…'), "{dados:?}");
+        }
+
+        #[test]
+        fn alinhamento_a_direita_vale_em_cada_linha_da_celula() {
+            let md = tabela_de_uma_celula("1234567890 1234567890", "--:");
+            let lines = rendered_text_at(&md, 20);
+            let dados: Vec<&String> = lines.iter().filter(|l| l.contains("1234567890")).collect();
+            assert_eq!(dados.len(), 2, "{lines:?}");
+            assert!(dados.iter().all(|l| l.ends_with("1234567890 │")), "{dados:?}");
+        }
+
+        #[test]
+        fn todas_as_linhas_da_tabela_tem_a_mesma_largura() {
+            let md = format!(
+                "| a | b | c |\n|:--|:-:|--:|\n| {FRASE_LONGA} | 世界世界世界世界 | |\n| x | y | z |\n"
+            );
+            let larguras: std::collections::HashSet<usize> =
+                render(&md, 40).lines.iter().filter(|l| !l.spans.is_empty()).map(Line::width).collect();
+            assert_eq!(larguras.len(), 1, "{larguras:?}");
+        }
+
+        #[test]
+        fn celula_com_estilo_mantem_o_estilo_apos_quebrar() {
+            let md = tabela_de_uma_celula("**negrito comprido que quebra** fim", "---");
+            let out = render(&md, 20);
+            let negrito = out
+                .lines
+                .iter()
+                .flat_map(|l| l.spans.iter())
+                .filter(|s| s.style.add_modifier.contains(Modifier::BOLD) && s.content.contains("negrito"))
+                .count();
+            assert!(negrito >= 1);
+        }
+
+        #[test]
+        fn tabela_so_de_dados_quebra_celula_longa() {
+            let rows = vec![vec!["id".to_string(), FRASE_LONGA.to_string()]];
+            let out = render_table_only(rows, false, vec![Alignment::Left; 2], 30);
+            let junto: String = out.lines.iter().map(line_to_string).collect::<Vec<_>>().join("\n");
+            assert!(junto.contains("celula") && !junto.contains('…'), "{junto}");
+        }
 
     #[test]
     fn tabela_com_colunas_ocultas_avisa() {
