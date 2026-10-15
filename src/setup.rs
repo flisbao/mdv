@@ -36,14 +36,16 @@ fn probe_version(bin: &str, arg: &str) -> Option<String> {
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
-    let stdout = child.stdout.take()?;
+    let mut stdout = child.stdout.take()?;
     // Lido numa thread: um filho com muita saída não trava, e um neto que herde o stdout
     // não prende a leitura sem prazo.
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut buf = Vec::new();
-        let _ = stdout.take(1024).read_to_end(&mut buf);
+        let _ = (&mut stdout).take(1024).read_to_end(&mut buf);
         let _ = tx.send(buf);
+        // Descarta o resto: fechar o pipe cedo mataria o filho com SIGPIPE e a sonda falharia.
+        let _ = std::io::copy(&mut stdout, &mut std::io::sink());
     });
     let start = Instant::now();
     let status = loop {
@@ -289,5 +291,19 @@ mod tests {
         let t = std::time::Instant::now();
         assert!(probe_version(p.to_str().unwrap(), "--version").is_none());
         assert!(t.elapsed() < std::time::Duration::from_secs(8));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sonda_com_saida_maior_que_o_teto_ainda_acha_a_versao() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        let bin = d.path().join("falso-bin");
+        // ~5,5 KB no stdout (o teto lido é 1 KiB): antes, o pipe fechado matava o script.
+        let script = "#!/bin/sh\ni=0\nwhile [ $i -lt 500 ]; do echo 0123456789; i=$((i+1)); done\n";
+        std::fs::write(&bin, script).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let v = probe_version(bin.to_str().unwrap(), "--version");
+        assert_eq!(v.as_deref(), Some("0123456789"));
     }
 }
