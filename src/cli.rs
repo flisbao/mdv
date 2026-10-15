@@ -12,6 +12,15 @@ pub enum Mode {
     Table { delimiter: u8 },
 }
 
+/// Como o JSON é mostrado. `Auto` vira tabela para lista de objetos (e JSONL) e texto nos demais casos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JsonView {
+    Auto,
+    Text,
+    Table,
+    Schema,
+}
+
 /// Opções da linha de comando para exibir um documento.
 #[derive(Debug)]
 #[allow(clippy::struct_excessive_bools)]
@@ -26,6 +35,7 @@ pub struct Cli {
     pub mode: Mode,
     pub path: Option<String>,
     pub json_path: Option<String>,
+    pub json_view: JsonView,
     pub head: usize,
     pub cols: Vec<String>,
     pub no_header: bool,
@@ -73,6 +83,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         mode: Mode::Markdown,
         path: None,
         json_path: None,
+        json_view: JsonView::Auto,
         head: DEFAULT_HEAD,
         cols: Vec::new(),
         no_header: false,
@@ -114,6 +125,16 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
                 cli.width = Some(parse_width(&v)?);
             }
             "--path" => cli.json_path = Some(value(&mut args, &a)?),
+            "--as" => {
+                let v = value(&mut args, &a)?;
+                cli.json_view = match v.as_str() {
+                    "auto" => JsonView::Auto,
+                    "text" => JsonView::Text,
+                    "table" => JsonView::Table,
+                    "schema" => JsonView::Schema,
+                    _ => return Err(format!("vista inválida: {v} (use auto, text, table ou schema)")),
+                };
+            }
             "--head" => {
                 let v = value(&mut args, &a)?;
                 let n: usize = v.parse().map_err(|_| format!("--head inválido: {v}"))?;
@@ -144,6 +165,9 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
             cli.mode = mode_from_extension(p);
         }
     }
+    if cli.json_view != JsonView::Auto && cli.mode != Mode::Json {
+        return Err("a opção --as só vale para JSON".to_string());
+    }
     Ok(Parsed::Run(cli))
 }
 
@@ -156,6 +180,28 @@ mod tests {
             Parsed::Run(c) => Ok(c),
             _ => Err("esperava Run".into()),
         }
+    }
+
+    #[test]
+    fn as_define_a_vista_do_json() {
+        assert_eq!(run(&["json", "d.json", "--as", "table"]).unwrap().json_view, JsonView::Table);
+        assert_eq!(run(&["json", "d.json", "--as", "schema"]).unwrap().json_view, JsonView::Schema);
+        assert_eq!(run(&["json", "d.json", "--as", "text"]).unwrap().json_view, JsonView::Text);
+        assert_eq!(run(&["json", "d.json", "--as", "auto"]).unwrap().json_view, JsonView::Auto);
+        assert_eq!(run(&["d.json"]).unwrap().json_view, JsonView::Auto);
+    }
+
+    #[test]
+    fn as_por_extensao_tambem_vale() {
+        assert_eq!(run(&["d.jsonl", "--as", "table"]).unwrap().json_view, JsonView::Table);
+    }
+
+    #[test]
+    fn as_invalido_ou_fora_do_json_e_erro() {
+        assert!(run(&["json", "--as", "xml", "-"]).unwrap_err().contains("xml"));
+        assert!(run(&["--as"]).is_err());
+        assert!(run(&["a.md", "--as", "table"]).unwrap_err().contains("--as"));
+        assert!(run(&["csv", "a.csv", "--as", "table"]).unwrap_err().contains("--as"));
     }
 
     #[test]
