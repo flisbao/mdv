@@ -8,6 +8,8 @@ mod diff;
 mod extract;
 mod fold;
 mod graphics;
+#[cfg(test)]
+mod golden_ansi;
 mod imgview;
 mod imgzoom;
 mod image;

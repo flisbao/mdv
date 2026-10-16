@@ -1,0 +1,62 @@
+␛[1;38;2;210;168;255mDocumento␛[0m␛[1;38;2;210;168;255m ␛[0m␛[1;38;2;210;168;255mlongo␛[0m
+␛[38;2;110;118;129m════════════════════════════════════════␛[0m
+
+Este arquivo existe para testar rolagem,
+busca (␛[38;2;255;166;87;48;2;47;52;60m/␛[0m, ␛[38;2;255;166;87;48;2;47;52;60mn␛[0m, ␛[38;2;255;166;87;48;2;47;52;60mN␛[0m), navegação por títulos
+(␛[38;2;255;166;87;48;2;47;52;60m]␛[0m, ␛[38;2;255;166;87;48;2;47;52;60m[␛[0m) e desempenho de re-render.
+
+␛[38;2;121;192;255m▌ ␛[0m␛[1;38;2;121;192;255mSeção␛[0m␛[1;38;2;121;192;255m ␛[0m␛[1;38;2;121;192;255m1␛[0m
+
+Lorem ipsum dolor sit amet, consectetur
+adipiscing elit. Integer posuere erat a
+ante venenatis dapibus posuere velit
+aliquet. Donec ullamcorper nulla non
+metus auctor fringilla. Vestibulum id
+ligula porta felis euismod semper.
+
+Cras mattis consectetur purus sit amet
+fermentum. Maecenas sed diam eget risus
+varius blandit sit amet non magna.
+Nullam quis risus eget urna mollis
+ornare vel eu leo.
+
+␛[38;2;121;192;255m▌ ␛[0m␛[1;38;2;121;192;255mSeção␛[0m␛[1;38;2;121;192;255m ␛[0m␛[1;38;2;121;192;255m2␛[0m
+
+Palavra-chave para busca: abacaxi. Outra
+ocorrência de abacaxi aqui.
+
+Praesent commodo cursus magna, vel
+scelerisque nisl consectetur et. Sed
+posuere consectetur est at lobortis.
+Morbi leo risus, porta ac consectetur
+ac, vestibulum at eros.
+
+␛[38;2;126;231;135m▎ ␛[0m␛[1;38;2;126;231;135mSeção␛[0m␛[1;38;2;126;231;135m ␛[0m␛[1;38;2;126;231;135m2.1␛[0m
+
+Aenean lacinia bibendum nulla sed
+consectetur. Curabitur blandit tempus
+porttitor. Etiam porta sem malesuada
+magna mollis euismod.
+
+␛[38;2;126;231;135m▎ ␛[0m␛[1;38;2;126;231;135mSeção␛[0m␛[1;38;2;126;231;135m ␛[0m␛[1;38;2;126;231;135m2.2␛[0m
+
+Donec sed odio dui. Nulla vitae elit
+libero, a pharetra augue. Fusce dapibus,
+tellus ac cursus commodo, tortor mauris
+condimentum nibh.
+
+␛[38;2;121;192;255m▌ ␛[0m␛[1;38;2;121;192;255mSeção␛[0m␛[1;38;2;121;192;255m ␛[0m␛[1;38;2;121;192;255m3␛[0m
+
+abacaxi aparece de novo, junto com
+mangas e goiabas.
+
+␛[1;38;2;230;237;243mSubseção␛[0m␛[1;38;2;230;237;243m ␛[0m␛[1;38;2;230;237;243m3.1.1␛[0m
+
+Vivamus sagittis lacus vel augue laoreet
+rutrum faucibus dolor auctor. Duis
+mollis, est non commodo luctus, nisi
+erat porttitor ligula.
+
+␛[38;2;121;192;255m▌ ␛[0m␛[1;38;2;121;192;255mSeção␛[0m␛[1;38;2;121;192;255m ␛[0m␛[1;38;2;121;192;255m4␛[0m
+
+Último parágrafo: ␛[38;2;255;166;87;48;2;47;52;60mfim do documento␛[0m.
