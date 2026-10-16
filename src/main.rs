@@ -10,6 +10,8 @@ mod fold;
 mod graphics;
 #[cfg(test)]
 mod golden_ansi;
+#[cfg(test)]
+mod app_keys_tests;
 mod imgview;
 mod imgzoom;
 mod image;
