@@ -1,9 +1,9 @@
 //! Decodificação de imagens e conversão para linhas de meio-bloco.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use image::imageops::FilterType;
@@ -196,6 +196,10 @@ pub struct ImageStore {
     mermaid_png: Arc<Mutex<HashMap<String, Arc<Vec<u8>>>>>,
     graphics: bool,
     gfx: Mutex<HashMap<(usize, usize, usize), Graphic>>, // (ponteiro da imagem, colunas, linhas)
+    /// Próximo `id` gráfico; só cresce, porque o terminal guarda as imagens já enviadas.
+    next_gfx: AtomicU32,
+    /// Chaves pedidas desde o último `begin_pass`; os limites por documento contam só elas.
+    used: Mutex<HashSet<String>>,
 }
 
 impl ImageStore {
@@ -210,6 +214,8 @@ impl ImageStore {
             mermaid_png: Arc::new(Mutex::new(HashMap::new())),
             graphics: false,
             gfx: Mutex::new(HashMap::new()),
+            next_gfx: AtomicU32::new(1),
+            used: Mutex::new(HashSet::new()),
         }
     }
 
@@ -241,7 +247,8 @@ impl ImageStore {
     }
 
     /// `id` e PNG de `img` desenhada em `cols`×`rows` células. `None` com gráficos desligados.
-    /// A chave é o endereço da imagem do cache (que nunca é descartada) mais o tamanho em células.
+    /// A chave é o endereço da imagem do cache mais o tamanho em células; `begin_pass` tira daqui
+    /// as imagens que despeja, para o endereço não ser confundido se a memória for reaproveitada.
     pub fn graphic(&self, img: &Arc<DynamicImage>, cols: usize, rows: usize) -> Option<Graphic> {
         if !self.graphics {
             return None;
@@ -254,8 +261,8 @@ impl ImageStore {
         if map.len() >= MAX_GRAPHICS {
             return None;
         }
-        let id = u32::try_from(map.len() + 1).ok().filter(|&i| i <= 0x00FF_FFFF)?;
         let png = Arc::new(crate::graphics::encode_png(img)?);
+        let id = Some(self.next_gfx.fetch_add(1, Ordering::Relaxed)).filter(|&i| i <= 0x00FF_FFFF)?;
         let g = Graphic { id, png };
         map.insert(key, g.clone());
         Some(g)
@@ -298,17 +305,14 @@ impl ImageStore {
         let Some((bin, blocking)) = &self.mermaid else {
             return ImageState::Failed("mermaid desativado".into());
         };
+        let key = Self::mermaid_key(source);
         if self.mermaid_hold.load(Ordering::Relaxed) {
             // Entrada ainda chegando: o bloco pode estar incompleto, então nada é disparado.
+            // A chave conta como usada para o diagrama já pronto não ser despejado.
+            self.used().insert(key);
             return ImageState::Loading;
         }
-        let key = Self::mermaid_key(source);
-        let over_limit = {
-            let cache = self.lock();
-            !cache.contains_key(&key)
-                && cache.keys().filter(|k| k.starts_with(MERMAID_PREFIX)).count() >= MAX_MERMAID_DIAGRAMS
-        };
-        if over_limit {
+        if self.over_limit(&key, |k| k.starts_with(MERMAID_PREFIX), MAX_MERMAID_DIAGRAMS) {
             return ImageState::Failed("limite de diagramas por documento atingido".into());
         }
         let (bin, src) = (bin.clone(), source.to_string());
@@ -339,6 +343,35 @@ impl ImageStore {
         self.cache.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    fn used(&self) -> MutexGuard<'_, HashSet<String>> {
+        self.used.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// `key` seria mais uma imagem do seu tipo além de `max` nesta passada?
+    fn over_limit(&self, key: &str, same_kind: impl Fn(&str) -> bool, max: usize) -> bool {
+        let used = self.used();
+        !used.contains(key) && used.iter().filter(|k| same_kind(k)).count() >= max
+    }
+
+    /// Começa uma nova renderização: despeja o que a passada anterior não pediu (versões
+    /// antigas de diagramas e imagens que saíram do documento) e zera a contagem dos limites.
+    /// O cache fica limitado a duas passadas; o que segue em uso volta do cache sem recalcular.
+    pub fn begin_pass(&self) {
+        let used = std::mem::take(&mut *self.used());
+        let mut evicted = HashSet::new();
+        self.lock().retain(|k, st| {
+            let keep = used.contains(k);
+            if let (false, ImageState::Ready(img)) = (keep, &st) {
+                evicted.insert(Arc::as_ptr(img) as usize);
+            }
+            keep
+        });
+        self.mermaid_png.lock().unwrap_or_else(PoisonError::into_inner).retain(|k, _| used.contains(k));
+        if !evicted.is_empty() {
+            self.gfx.lock().unwrap_or_else(PoisonError::into_inner).retain(|(p, _, _), _| !evicted.contains(p));
+        }
+    }
+
     /// Executa `job` (agora ou em thread) e guarda o resultado sob `key`.
     pub fn get_job(
         &self,
@@ -346,6 +379,7 @@ impl ImageStore {
         run_async: bool,
         job: impl FnOnce() -> Result<DynamicImage, String> + Send + 'static,
     ) -> ImageState {
+        self.used().insert(key.to_string());
         if let Some(s) = self.lock().get(key) {
             return s.clone();
         }
@@ -371,12 +405,7 @@ impl ImageStore {
             let mut h = std::collections::hash_map::DefaultHasher::new();
             src.hash(&mut h);
             let key = format!("{DATA_PREFIX}{:016x}", h.finish());
-            let over_limit = {
-                let cache = self.lock();
-                !cache.contains_key(&key)
-                    && cache.keys().filter(|k| k.starts_with(DATA_PREFIX)).count() >= MAX_DATA_IMAGES
-            };
-            if over_limit {
+            if self.over_limit(&key, |k| k.starts_with(DATA_PREFIX), MAX_DATA_IMAGES) {
                 return ImageState::Failed("limite de imagens data: atingido".into());
             }
             let s = src.to_string();
@@ -392,12 +421,7 @@ impl ImageStore {
                 "{LOCAL_PREFIX}{}",
                 std::fs::canonicalize(&path).unwrap_or(path).to_string_lossy()
             );
-            let over_limit = {
-                let cache = self.lock();
-                !cache.contains_key(&key)
-                    && cache.keys().filter(|k| k.starts_with(LOCAL_PREFIX)).count() >= MAX_LOCAL_IMAGES
-            };
-            if over_limit {
+            if self.over_limit(&key, |k| k.starts_with(LOCAL_PREFIX), MAX_LOCAL_IMAGES) {
                 return ImageState::Failed("limite de imagens locais atingido".into());
             }
             let base = self.base_dir.clone();
@@ -407,11 +431,7 @@ impl ImageStore {
         let Some((policy, blocking)) = &self.remote else {
             return ImageState::Failed("imagem remota: use --remote".into());
         };
-        let over_limit = {
-            let cache = self.lock();
-            !cache.contains_key(src) && cache.keys().filter(|k| is_remote(k)).count() >= MAX_REMOTE_IMAGES
-        };
-        if over_limit {
+        if self.over_limit(src, is_remote, MAX_REMOTE_IMAGES) {
             return ImageState::Failed("limite de imagens remotas atingido".into());
         }
         let (policy, url) = (Arc::clone(policy), src.to_string());
@@ -639,6 +659,54 @@ mod tests {
             ImageState::Failed(m) => assert!(m.contains("limite"), "{m}"),
             _ => panic!("deveria estourar o limite"),
         }
+    }
+
+    /// Live reload: cada edição do diagrama vira uma chave nova; as versões antigas não
+    /// podem contar contra o limite nem ficar no cache para sempre.
+    #[test]
+    fn versoes_antigas_do_diagrama_nao_esgotam_o_limite() {
+        let store = ImageStore::new(None).with_mermaid("/nao/existe/mmdc".into(), true);
+        for i in 0..=MAX_MERMAID_DIAGRAMS * 2 {
+            store.begin_pass();
+            if let ImageState::Failed(m) = store.get_mermaid(&format!("isto não é mermaid {i}")) {
+                assert!(!m.contains("limite"), "versão {i}: {m}");
+            }
+        }
+        assert!(store.lock().len() <= 2, "só a passada anterior e a atual ficam no cache");
+    }
+
+    #[test]
+    fn passada_descarta_o_que_a_anterior_nao_usou() {
+        let dir = tempfile::tempdir().unwrap();
+        grava_png(dir.path(), "a.png", 2, 2);
+        grava_png(dir.path(), "b.png", 2, 2);
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        store.get("a.png");
+        store.begin_pass();
+        store.get("a.png");
+        store.get("b.png");
+        store.begin_pass();
+        store.get("b.png");
+        store.begin_pass();
+        let keys: Vec<String> = store.lock().keys().cloned().collect();
+        assert_eq!(keys.len(), 1, "{keys:?}");
+        assert!(keys[0].ends_with("b.png"), "{keys:?}");
+    }
+
+    #[test]
+    fn graphic_nao_reusa_id_depois_do_despejo() {
+        let dir = tempfile::tempdir().unwrap();
+        grava_png(dir.path(), "a.png", 2, 2);
+        grava_png(dir.path(), "b.png", 2, 2);
+        let store = ImageStore::new(Some(dir.path().to_path_buf())).with_graphics(true);
+        let ImageState::Ready(a) = store.get("a.png") else { panic!() };
+        let ga = store.graphic(&a, 2, 1).unwrap();
+        drop(a);
+        store.begin_pass();
+        store.begin_pass(); // a.png sai do cache
+        let ImageState::Ready(b) = store.get("b.png") else { panic!() };
+        let gb = store.graphic(&b, 2, 1).unwrap();
+        assert_ne!(ga.id, gb.id, "o terminal ainda guarda a imagem antiga sob o id velho");
     }
 
     #[test]

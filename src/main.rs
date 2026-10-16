@@ -1154,6 +1154,7 @@ impl App {
         self.rendered = if self.raw {
             render::render_code_only_at(&self.md, raw_lang(self.doc.mode), w, self.doc.code_scroll)
         } else {
+            self.images.begin_pass();
             render_doc(&self.doc, &self.md, w, &self.images)
         };
         self.render_width = w;
