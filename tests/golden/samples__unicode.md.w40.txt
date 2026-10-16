@@ -1,0 +1,30 @@
+Unicode e largura
+════════════════════════════════════════
+
+Acentuação: àáâãäå èéêë ìíîï òóôõö ùúûü
+ç ñ ÇÃO.
+
+Caracteres de largura dupla (CJK):
+日本語のテキスト、中文字符、한국어
+텍스트.
+
+Emojis: 🦀 🐍 🚀 ✅ ❌ 👨‍👩‍👧 🇧🇷.
+
+Símbolos: ─ │ ┌ ┐ └ ┘ ▀ ▄ █ ░ ▒ ▓ → ← ↑
+↓ ∑ ∞ ≠ ≤ ≥.
+
+Texto combinado (acento como caractere
+separado): é ã ô.
+
+Espaço sem quebra: palavra·com·pontos e
+1 000 000 (com NBSP).
+
+Tabulação no texto: coluna após tab.
+
+Lista com itens em idiomas diferentes:
+
+• Português: olá, mundo
+• 日本語: こんにちは世界
+• العربية: مرحبا بالعالم
+• Русский: привет мир
+• Ελληνικά: γεια σου κόσμε

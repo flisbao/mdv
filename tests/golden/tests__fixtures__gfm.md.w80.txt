@@ -1,0 +1,56 @@
+╭─ yaml
+│ titulo: Fixture de golden                                                     
+│ tags: [gfm, teste]                                                            
+╰─
+
+Construções que permanecem
+════════════════════════════════════════════════════════════════════════════════
+
+▎ ℹ Nota
+▎ Alerta de nota.
+
+▎ ⚠ Aviso
+▎ Alerta de aviso, com formatação e código dentro.
+
+▎ 💡 Dica
+▎ Dica curta.
+
+▌ Detalhes e rodapé
+
+▸ Ver detalhes da medição
+Foram 10 mil requisições em 5 minutos.
+
+A taxa de erro caiu para 0,2%[^1].
+
+[^1]: Fonte: painel de observabilidade, semana 41.
+
+▌ Tarefas
+
+☑ feito
+☐ pendente
+  ☑ subtarefa feita
+  ☐ subtarefa pendente
+
+▌ Código e diff
+
+╭─ diff
+│ @@ -1,2 +1,2 @@                                                               
+│ -removida                                                                     
+│ +adicionada                                                                   
+╰─
+
+╭─ rust
+│ fn main() {                                                                   
+│     println!("olá");                                                          
+│ }                                                                             
+╰─
+
+▌ Tabela com texto longo
+
+┌──────┬───────────────────────────────────────────────────────────────────────┐
+│ Nome │ Descrição                                                             │
+├──────┼───────────────────────────────────────────────────────────────────────┤
+│ a    │ uma descrição bem comprida para forçar o truncamento da célula na     │
+│      │ largura estreita                                                      │
+│ b    │ curta                                                                 │
+└──────┴───────────────────────────────────────────────────────────────────────┘

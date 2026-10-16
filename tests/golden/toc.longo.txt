@@ -1,0 +1,8 @@
+Documento longo
+  Seção 1
+  Seção 2
+    Seção 2.1
+    Seção 2.2
+  Seção 3
+      Subseção 3.1.1
+  Seção 4

@@ -1,0 +1,9 @@
+Total: 209 palavras · 0 blocos de código · ~327 tokens
+Documento longo 209 palavras · 0 blocos de código · ~327 tokens
+  Seção 1 62 palavras · 0 blocos de código · ~100 tokens
+  Seção 2 78 palavras · 0 blocos de código · ~132 tokens
+    Seção 2.1 19 palavras · 0 blocos de código · ~35 tokens
+    Seção 2.2 23 palavras · 0 blocos de código · ~36 tokens
+  Seção 3 33 palavras · 0 blocos de código · ~52 tokens
+      Subseção 3.1.1 22 palavras · 0 blocos de código · ~38 tokens
+  Seção 4 8 palavras · 0 blocos de código · ~11 tokens

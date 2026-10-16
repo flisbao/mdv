@@ -1,0 +1,72 @@
+Tabelas
+════════════════════════════════════════════════════════════════════════════════
+
+▌ Tabela simples
+
+┌───────────┬──────┬──────────┐
+│ Linguagem │ Ano  │ Tipagem  │
+├───────────┼──────┼──────────┤
+│ Rust      │ 2015 │ estática │
+│ Python    │ 1991 │ dinâmica │
+│ Go        │ 2009 │ estática │
+└───────────┴──────┴──────────┘
+
+▌ Alinhamento
+
+┌──────────────────┬────────┬─────────┐
+│ Esquerda         │ Centro │ Direita │
+├──────────────────┼────────┼─────────┤
+│ a                │   b    │       c │
+│ texto mais longo │  meio  │ 1234,56 │
+└──────────────────┴────────┴─────────┘
+
+▌ Tabela com muitas colunas
+
+┌───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┬──────┐
+│ Colun │ Colun │ Colun │ Colun │ Colun │ Colun │ Colun │ Colun │ Colun │ Colu │
+│ a 1   │ a 2   │ a 3   │ a 4   │ a 5   │ a 6   │ a 7   │ a 8   │ a 9   │ na   │
+│       │       │       │       │       │       │       │       │       │ 10   │
+├───────┼───────┼───────┼───────┼───────┼───────┼───────┼───────┼───────┼──────┤
+│ 1     │ 2     │ 3     │ 4     │ 5     │ 6     │ 7     │ 8     │ 9     │ 10   │
+│ um    │ b     │ c     │ d     │ e     │ f     │ g     │ h     │ i     │ j    │
+│ valor │       │       │       │       │       │       │       │       │      │
+│ bem   │       │       │       │       │       │       │       │       │      │
+│ maior │       │       │       │       │       │       │       │       │      │
+│ que   │       │       │       │       │       │       │       │       │      │
+│ os    │       │       │       │       │       │       │       │       │      │
+│ outro │       │       │       │       │       │       │       │       │      │
+│ s…    │       │       │       │       │       │       │       │       │      │
+└───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┴──────┘
+
+▌ Célula com código e formatação
+
+┌─────────────┬───────────────────┐
+│ Comando     │ Descrição         │
+├─────────────┼───────────────────┤
+│ cargo build │ compila o projeto │
+│ cargo test  │ roda os testes    │
+└─────────────┴───────────────────┘
+
+▌ Tabela com caracteres largos
+
+┌────────┬──────────────────┐
+│ Emoji  │ Nome             │
+├────────┼──────────────────┤
+│ 🦀     │ Rust             │
+│ 🐍     │ Python           │
+│ 日本語 │ texto em japonês │
+└────────┴──────────────────┘
+
+▌ Célula longa
+
+┌───────────────────────────────────────┬──────────────────────────────────────┐
+│ Arquivo                               │ Descrição                            │
+├───────────────────────────────────────┼──────────────────────────────────────┤
+│ src/render.rs                         │ Máquina de estados sobre os eventos  │
+│                                       │ do pulldown-cmark: as linhas já saem │
+│                                       │ quebradas na largura pedida, então   │
+│                                       │ quem consome não faz wrap.           │
+│ https://example.com/um/caminho/muito/ │ URL sem espaços quebra por caractere │
+│ longo/sem/espacos/que/nao/cabe/na/col │                                      │
+│ una/index.html                        │                                      │
+└───────────────────────────────────────┴──────────────────────────────────────┘

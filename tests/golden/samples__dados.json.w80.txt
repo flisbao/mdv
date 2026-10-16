@@ -1,0 +1,34 @@
+objeto · 8 chaves
+╭─ json
+│ {                                                                             
+│   "projeto": "mdv",                                                           
+│   "versao": "0.1.0",                                                          
+│   "ativo": true,                                                              
+│   "licenca": null,                                                            
+│   "linguagens": [                                                             
+│     "Rust",                                                                   
+│     "Markdown"                                                                
+│   ],                                                                          
+│   "autor": {                                                                  
+│     "nome": "Exemplo",                                                        
+│     "contatos": [                                                             
+│       {                                                                       
+│         "tipo": "email",                                                      
+│         "valor": "exemplo@example.com"                                        
+│       },                                                                      
+│       {                                                                       
+│         "tipo": "site",                                                       
+│         "valor": "https://example.com"                                        
+│       }                                                                       
+│     ]                                                                         
+│   },                                                                          
+│   "metricas": {                                                               
+│     "linhas": 2325,                                                           
+│     "testes": 60,                                                             
+│     "tempo_render_ms": 1100.0                                                 
+│   },                                                                          
+│   "texto_longo": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed
+│  do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad min
+│ im veniam."                                                                   
+│ }                                                                             
+╰─
