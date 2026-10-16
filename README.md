@@ -45,15 +45,15 @@ Baixe o binário da última release, extraia e coloque `mdv` no seu `PATH`:
 <!-- mdv:install:start -->
 | Plataforma | Download |
 |------------|----------|
-| Linux x86_64 (glibc 2.35+) | [`mdv-v0.4.2-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.2/mdv-v0.4.2-linux-x86_64.tar.gz) |
-| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.4.2-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.2/mdv-v0.4.2-linux-x86_64-musl.tar.gz) |
-| Linux aarch64 | [`mdv-v0.4.2-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.2/mdv-v0.4.2-linux-aarch64.tar.gz) |
-| macOS Apple Silicon | [`mdv-v0.4.2-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.2/mdv-v0.4.2-macos-aarch64.tar.gz) |
-| macOS Intel | [`mdv-v0.4.2-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.2/mdv-v0.4.2-macos-x86_64.tar.gz) |
-| Windows x86_64 | [`mdv-v0.4.2-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.4.2/mdv-v0.4.2-windows-x86_64.zip) |
-| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.4.2) |
+| Linux x86_64 (glibc 2.35+) | [`mdv-v0.4.3-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.3/mdv-v0.4.3-linux-x86_64.tar.gz) |
+| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.4.3-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.3/mdv-v0.4.3-linux-x86_64-musl.tar.gz) |
+| Linux aarch64 | [`mdv-v0.4.3-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.3/mdv-v0.4.3-linux-aarch64.tar.gz) |
+| macOS Apple Silicon | [`mdv-v0.4.3-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.3/mdv-v0.4.3-macos-aarch64.tar.gz) |
+| macOS Intel | [`mdv-v0.4.3-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.3/mdv-v0.4.3-macos-x86_64.tar.gz) |
+| Windows x86_64 | [`mdv-v0.4.3-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.4.3/mdv-v0.4.3-windows-x86_64.zip) |
+| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.4.3) |
 
-Versão atual: **v0.4.2**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
+Versão atual: **v0.4.3**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
 <!-- mdv:install:end -->
 
 Os scripts abaixo detectam o sistema e a arquitetura, baixam da **última release publicada** o arquivo certo e instalam o `mdv`. A tag vem do redirecionamento de `releases/latest` (Linux e macOS, sem depender da API do GitHub) ou da API (Windows). Os binários de macOS e Windows **não são assinados**: veja o aviso de cada sistema.
@@ -161,7 +161,7 @@ USO:
 
 OPÇÕES:
     -p, --plain        imprime no terminal (sem TUI), como `cat` com cores
-    -w, --width <N>    largura máxima do texto (padrão: largura do terminal)
+    -w, --width <N>    largura máxima do texto (padrão: 100)
         --remote       baixa imagens de http(s):// (nunca de rede privada)
         --mermaid      diagramas Mermaid: se o renderizador embutido falhar, tenta o `mmdc` (ou $MDV_MMDC)
         --setup-mermaid  verifica o ambiente dos diagramas e mostra como instalar o mmdc
@@ -205,8 +205,8 @@ TECLAS (modo interativo):
     m                  alterna entre renderizado e fonte crua
     w                  código sem quebra: h/l (ou ←/→) rolam 8 colunas, 0/$ início/fim; w de novo volta a quebrar
     v                  (JSON) alterna tabela / esquema / texto
-    t                  zoom da tabela na tela (h/l colunas, Esc volta)
-    i                  zoom do diagrama Mermaid na tela (+/- zoom, h/j/k/l movem, espaço/b página, g/G topo/fim, 0 ajusta, Esc volta)
+    t                  zoom da tabela mais visível na tela (h/l colunas, n/p troca de tabela, Esc volta)
+    i                  zoom do diagrama Mermaid mais visível na tela: n/p troca de diagrama, +/- zoom, h/j/k/l movem, espaço/b página, g/G topo/fim, 0 ajusta, Esc volta
     } / {              próxima / anterior mudança marcada no reload; c limpa as marcas
     z / Z              dobra ou abre a seção atual / dobra todas (ou abre todas); título dobrado mostra ▸ N linhas
     y / Y              copia o bloco de código da tela / o Markdown da seção (OSC 52, até 64 KiB)
@@ -333,6 +333,14 @@ Defina `MDV_AI_CMD` com um comando que lê o texto no stdin e responde no stdout
 ## Changelog
 
 <!-- mdv:changelog:start -->
+### v0.4.3
+
+_2026-10-15_
+
+- fix(zoom): i/t abrem o bloco mais visível e n/p trocam de bloco
+- fix(width): largura padrão acompanha o terminal em vez de 100 fixo
+- feat(mermaid): zoom de diagrama (tecla i) e teto inline maior
+
 ### v0.4.2
 
 _2026-10-15_
