@@ -1,0 +1,11 @@
+╭─
+│ lista · 3 × objeto                                                            
+│   id: número                                                                  
+│   nome: texto                                                                 
+│   nota: número                                                                
+│   endereco?: objeto                                                           
+│     cidade: texto                                                             
+│     uf: texto                                                                 
+│   tags?: lista · 2 × texto                                                    
+│   ativo?: booleano                                                            
+╰─

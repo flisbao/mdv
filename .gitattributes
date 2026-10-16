@@ -1,0 +1,6 @@
+# Goldens e entradas dos testes precisam ter o mesmo fim de linha em qualquer sistema.
+tests/golden/** -text
+tests/fixtures/** text eol=lf
+samples/** text eol=lf
+sample.md text eol=lf
+samples/*.png binary

@@ -33,6 +33,8 @@ const EXTRAS: &[(&str, &[&str])] = &[
     ("toc.gfm", &["--toc", "tests/fixtures/gfm.md"]),
     ("stats.longo", &["--stats", "samples/longo.md"]),
     ("stats.gfm", &["--stats", "tests/fixtures/gfm.md"]),
+    ("json-schema.itens", &["json", "-p", "-w", "80", "samples/itens.json", "--as", "schema"]),
+    ("json-table.itens", &["json", "-p", "-w", "80", "samples/itens.json", "--as", "table"]),
 ];
 
 fn root() -> PathBuf {
@@ -58,7 +60,7 @@ fn compare(name: &str, got: &str, bad: &mut Vec<String>) {
         return;
     }
     match fs::read_to_string(&path) {
-        Ok(want) if want == got => {}
+        Ok(want) if want.replace("\r\n", "\n") == got => {}
         Ok(_) => bad.push(format!("{name}: a saída mudou")),
         Err(_) => bad.push(format!("{name}: golden ausente (rode com UPDATE_GOLDEN=1)")),
     }

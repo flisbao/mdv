@@ -38,7 +38,7 @@ fn ansi_com_cor_nao_muda() {
                 continue;
             }
             match fs::read_to_string(&path) {
-                Ok(want) if want == got => {}
+                Ok(want) if want.replace("\r\n", "\n") == got => {}
                 Ok(_) => bad.push(format!("{name}: a saída mudou")),
                 Err(_) => bad.push(format!("{name}: golden ausente (rode com UPDATE_GOLDEN=1)")),
             }
