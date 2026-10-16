@@ -29,3 +29,11 @@ overflow-checks = true
 assets = [
     { source = "target/release/mdv", dest = "/usr/bin/mdv", mode = "755" },
 ]
+
+# Build rápido para testar à mão: `cargo run --profile fast -- sample.md`.
+# Sem LTO e com compilação incremental; o `release` continua completo para distribuição.
+[profile.fast]
+inherits = "release"
+lto = false
+incremental = true
+codegen-units = 256

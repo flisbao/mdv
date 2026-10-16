@@ -117,8 +117,8 @@ TECLAS (modo interativo):
     m                  alterna entre renderizado e fonte crua
     w                  código sem quebra: h/l (ou ←/→) rolam 8 colunas, 0/$ início/fim; w de novo volta a quebrar
     v                  (JSON) alterna tabela / esquema / texto
-    t                  zoom da tabela na tela (h/l colunas, Esc volta)
-    i                  zoom do diagrama Mermaid na tela: +/- zoom, h/j/k/l movem, espaço/b página, g/G topo/fim, 0 ajusta, Esc volta
+    t                  zoom da tabela mais visível na tela (h/l colunas, n/p troca de tabela, Esc volta)
+    i                  zoom do diagrama Mermaid mais visível na tela: n/p troca de diagrama, +/- zoom, h/j/k/l movem, espaço/b página, g/G topo/fim, 0 ajusta, Esc volta
     } / {              próxima / anterior mudança marcada no reload; c limpa as marcas
     z / Z              dobra ou abre a seção atual / dobra todas (ou abre todas); título dobrado mostra ▸ N linhas
     y / Y              copia o bloco de código da tela / o Markdown da seção (OSC 52, até 64 KiB)
@@ -600,6 +600,32 @@ impl Zoom {
     fn body_total(&self) -> usize {
         self.drawn.as_ref().map_or(0, |(_, _, v)| v.lines.len().saturating_sub(v.pinned))
     }
+}
+
+/// Índice do intervalo `[start, end)` com mais linhas dentro da janela (empate: o primeiro).
+/// Escolher o primeiro que toca a janela esconde os blocos seguintes quando um é mais alto que a tela.
+fn most_visible(spans: impl Iterator<Item = (usize, usize)>, window: &[usize]) -> Option<usize> {
+    let mut best: Option<(usize, usize)> = None;
+    for (i, (start, end)) in spans.enumerate() {
+        let seen = window.iter().filter(|&&l| l >= start && l < end).count();
+        if seen > 0 && best.is_none_or(|(_, n)| seen > n) {
+            best = Some((i, seen));
+        }
+    }
+    best.map(|(i, _)| i)
+}
+
+/// Texto do título da seção que contém a linha renderizada `line`.
+fn section_title(r: &render::Rendered, line: usize) -> Option<String> {
+    render::section_at(&r.outline, line).map(|i| render::sanitize(&r.outline[i].title).into_owned())
+}
+
+/// Próximo/anterior índice entre `n` itens, dando a volta nos extremos; `None` com menos de 2 itens.
+fn step_index(cur: usize, n: usize, forward: bool) -> Option<usize> {
+    if n < 2 {
+        return None;
+    }
+    Some(if forward { (cur + 1) % n } else { (cur + n - 1) % n })
 }
 
 /// "todas as N colunas" ou "colunas 1 e A–B de N" (1 é a coluna fixa).
@@ -1219,7 +1245,7 @@ impl App {
         /// Abre o zoom da primeira tabela que aparece na tela.
         fn open_visible_table(&mut self) {
             let janela = self.window_display();
-            let achada = self.rendered.tables.iter().position(|t| janela.iter().any(|&l| l >= t.start && l < t.end));
+            let achada = most_visible(self.rendered.tables.iter().map(|t| (t.start, t.end)), janela);
             match achada {
                 Some(i) => self.open_zoom(i),
                 None => self.notice = Some("nenhuma tabela na tela".to_string()),
@@ -1258,6 +1284,11 @@ impl App {
                 KeyCode::Char('h') | KeyCode::Left => z.first_col = z.first_col.saturating_sub(1),
                 KeyCode::Char('0') => z.first_col = 0,
                 KeyCode::Char('$') => z.first_col = usize::MAX,
+                KeyCode::Char(c @ ('n' | 'p')) => {
+                    if let Some(next) = step_index(z.table, self.rendered.tables.len(), c == 'n') {
+                        *z = Zoom::new(next);
+                    }
+                }
                 _ => {}
             }
         }
@@ -1554,14 +1585,20 @@ impl App {
             f.render_widget(Paragraph::new(visible), content);
 
             let bar = Style::default().bg(Color::Rgb(59, 66, 82)).fg(Color::Rgb(229, 233, 240));
+            let titulo = self
+                .rendered
+                .tables
+                .get(z.table)
+                .and_then(|t| section_title(&self.rendered, t.start))
+                .map_or(String::new(), |t| format!("  «{t}»"));
             let left = format!(
-                " {}  tabela {}/{}  {}",
+                " {}  tabela {}/{}{titulo}  {}",
                 self.name,
                 z.table + 1,
                 self.rendered.tables.len(),
                 columns_label(tv)
             );
-            let right = "j/k rolar  h/l colunas  0/$ extremos  Esc voltar ";
+            let right = "j/k rolar  h/l colunas  n/p outra tabela  Esc voltar ";
             let width = usize::from(status.width);
             let (lw, rw) = (left.width(), right.width());
             let text = if lw + rw < width { format!("{left}{}{right}", " ".repeat(width - lw - rw)) } else { left };
@@ -2833,6 +2870,27 @@ mod tests {
         fn tabela_larga(n: usize) -> String {
             let h: String = (1..=n).map(|i| format!(" c{i} |")).collect();
             format!("|{h}\n|{}\n|{h}\n", "---|".repeat(n))
+        }
+
+        #[test]
+        fn mais_visivel_prefere_o_bloco_com_mais_linhas_na_tela() {
+            // janela 10..30: bloco 0 mostra 5 linhas (5..15), bloco 1 mostra 20 (15..60)
+            let janela: Vec<usize> = (10..30).collect();
+            assert_eq!(most_visible([(5, 15), (15, 60)].into_iter(), &janela), Some(1));
+            assert_eq!(most_visible([(100, 120)].into_iter(), &janela), None);
+            assert_eq!(most_visible([(10, 20), (20, 30)].into_iter(), &janela), Some(0), "empate: o primeiro");
+        }
+
+        #[test]
+        fn n_e_p_trocam_de_tabela_no_zoom_dando_a_volta() {
+            let md = format!("{TABELA}\n{}\n{TABELA}", "texto\n\n".repeat(30));
+            let mut app = app_com_tabela(&md);
+            app.on_key(ev(KeyCode::Char('t')));
+            app.on_key(ev(KeyCode::Char('p')));
+            assert_eq!(app.zoom.as_ref().map(|z| z.table), Some(1), "do primeiro volta ao último");
+            app.on_key(ev(KeyCode::Char('n')));
+            assert_eq!(app.zoom.as_ref().map(|z| z.table), Some(0), "do último vai ao primeiro");
+            assert_eq!(step_index(0, 1, true), None);
         }
 
         #[test]
