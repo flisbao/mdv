@@ -47,8 +47,6 @@ use unicode_width::UnicodeWidthStr;
 /// Teto de bytes lidos de arquivo ou stdin (protege a memória).
 const MAX_INPUT_BYTES: u64 = 16 * 1024 * 1024;
 
-/// Largura máxima do texto quando `-w` não é informado.
-const DEFAULT_WIDTH: usize = 100;
 /// Largura do `--plain` quando o tamanho do terminal é desconhecido.
 const FALLBACK_TERMINAL_WIDTH: usize = 80;
 /// Colunas deixadas livres nas laterais da TUI.
@@ -192,7 +190,7 @@ fn run_cli() -> Result<(), Failure> {
     };
     let stdout_tty = io::stdout().is_terminal();
     let interactive = !cli.plain && stdout_tty;
-    let width = cli.width.unwrap_or(DEFAULT_WIDTH);
+    let width = cli.width.unwrap_or(render::MAX_WIDTH);
     if !interactive {
         if let Some(w) = &mem_warning {
             eprintln!("mdv: {w}");
@@ -414,7 +412,6 @@ fn run_plain(md: &str, source: &Source, width: Option<usize>, color: bool, cli: 
     let width = width.unwrap_or_else(|| {
         terminal::size()
             .map_or(FALLBACK_TERMINAL_WIDTH, |(cols, _)| usize::from(cols))
-            .min(DEFAULT_WIDTH)
     });
     let images = image_store(source, cli, true);
     let out = render_doc(&DocOpts::from_cli(cli), md, width, &images);

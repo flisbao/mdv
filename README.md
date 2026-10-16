@@ -161,7 +161,7 @@ USO:
 
 OPÇÕES:
     -p, --plain        imprime no terminal (sem TUI), como `cat` com cores
-    -w, --width <N>    largura máxima do texto (padrão: 100)
+    -w, --width <N>    largura máxima do texto (padrão: largura do terminal)
         --remote       baixa imagens de http(s):// (nunca de rede privada)
         --mermaid      diagramas Mermaid: se o renderizador embutido falhar, tenta o `mmdc` (ou $MDV_MMDC)
         --setup-mermaid  verifica o ambiente dos diagramas e mostra como instalar o mmdc
