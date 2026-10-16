@@ -8,6 +8,8 @@ mod diff;
 mod extract;
 mod fold;
 mod graphics;
+mod imgview;
+mod imgzoom;
 mod image;
 mod links;
 mod mem;
@@ -118,6 +120,7 @@ TECLAS (modo interativo):
     w                  código sem quebra: h/l (ou ←/→) rolam 8 colunas, 0/$ início/fim; w de novo volta a quebrar
     v                  (JSON) alterna tabela / esquema / texto
     t                  zoom da tabela na tela (h/l colunas, Esc volta)
+    i                  zoom do diagrama Mermaid na tela: +/- zoom, h/j/k/l movem, espaço/b página, g/G topo/fim, 0 ajusta, Esc volta
     } / {              próxima / anterior mudança marcada no reload; c limpa as marcas
     z / Z              dobra ou abre a seção atual / dobra todas (ou abre todas); título dobrado mostra ▸ N linhas
     y / Y              copia o bloco de código da tela / o Markdown da seção (OSC 52, até 64 KiB)
@@ -421,7 +424,7 @@ fn run_plain(md: &str, source: &Source, width: Option<usize>, color: bool, cli: 
 fn run_tui(mut app: App) -> Result<(), Failure> {
     let mut term = ratatui::init();
     let res = event_loop(&mut term, &mut app);
-    if !app.sent_graphics.is_empty() {
+    if !app.sent_graphics.is_empty() || app.zoom_sent {
         emit_terminal_control(graphics::DELETE_ALL);
     }
     ratatui::restore();
@@ -486,9 +489,19 @@ fn emit_terminal_control(seq: &str) {
     let _ = out.flush();
 }
 
+/// Largura de uma célula em pixels (8 se o terminal não informa o tamanho da janela).
+fn cell_px_width() -> f64 {
+    match terminal::window_size() {
+        Ok(ws) if ws.width > 0 && ws.columns > 0 => f64::from(ws.width) / f64::from(ws.columns),
+        _ => 8.0,
+    }
+}
+
 fn event_loop(term: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     loop {
-        app.prepare(term.size()?.width);
+        let size = term.size()?;
+        app.prepare(size.width);
+        app.prepare_img_zoom(size.width, size.height, cell_px_width());
         if !app.pending_gfx.is_empty() {
             emit_terminal_control(&std::mem::take(&mut app.pending_gfx));
         }
@@ -677,6 +690,10 @@ struct App {
     view: Viewport,
     search: SearchState,
     zoom: Option<Zoom>,
+    /// Zoom de imagem (`i`): um diagrama Mermaid na tela inteira.
+    img_zoom: Option<imgview::ImgZoom>,
+    /// O zoom de imagem já enviou algo ao terminal (limpar ao sair).
+    zoom_sent: bool,
     notice: Option<String>,
     open_table: Option<usize>,
     changed: BTreeSet<usize>,
@@ -737,6 +754,8 @@ impl App {
             view: Viewport::default(),
             search: SearchState::default(),
             zoom: None,
+            img_zoom: None,
+            zoom_sent: false,
             changed: BTreeSet::new(),
             marks: Vec::new(),
             folded: HashSet::new(),
@@ -1128,6 +1147,7 @@ impl App {
         } else if let Some(z) = &mut self.zoom {
             z.drawn = None;
         }
+        self.sync_img_zoom();
         self.queue_graphics();
     }
 
@@ -1310,6 +1330,10 @@ impl App {
         if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
             return true;
         }
+                if self.img_zoom.is_some() {
+                    self.on_img_zoom_key(k.code);
+                    return false;
+                }
                 if self.zoom.is_some() {
                     self.on_zoom_key(k.code);
                     return false;
@@ -1387,6 +1411,7 @@ impl App {
                             self.dirty = true;
                         }
                         KeyCode::Char('t') => self.open_visible_table(),
+                        KeyCode::Char('i') => self.open_visible_mermaid(),
                         KeyCode::Char('y') => self.copy_code(),
                         KeyCode::Char('Y') => self.copy_section(),
             KeyCode::Char('w') => self.toggle_code_wrap(),
@@ -1465,6 +1490,10 @@ impl App {
         }
         self.open_pending_table();
         self.apply_pending_jump();
+                if self.img_zoom.is_some() {
+                    self.draw_img_zoom(f, content, status);
+                    return;
+                }
                 if self.zoom.is_some() {
                     self.draw_zoom(f, content, status);
                     return;
@@ -1501,7 +1530,7 @@ impl App {
             Some(buf) => format!(" /{buf}█"),
             None => self.status_left(),
         };
-        let right = "j/k rolar  [ ] título  / buscar  Tab link  ⌫ voltar  z dobrar  t tabela  y/Y copiar  q sair ";
+        let right = "j/k rolar  [ ] título  / buscar  Tab link  ⌫ voltar  z dobrar  t tabela  y/Y copiar  i imagem  q sair ";
         let (lw, rw) = (left.width(), right.width());
         let text = if lw + rw < width {
             format!("{left}{}{right}", " ".repeat(width - lw - rw))
@@ -1832,6 +1861,39 @@ mod tests {
         (0..buf.area.height)
             .map(|y| (0..w).map(|x| buf[(x, y)].symbol()).collect::<String>())
             .collect()
+    }
+
+    /// Ponta a ponta: diagrama Mermaid nativo → tecla `i` → zoom desenhado → `Esc` volta.
+    #[test]
+    fn tecla_i_abre_o_zoom_do_diagrama_mermaid() {
+        use ratatui::{backend::TestBackend, Terminal};
+        if !crate::mermaid_native::fonts_available() {
+            return;
+        }
+        let md = "# D\n\n```mermaid\nflowchart LR\n  A[Início] --> B[Fim]\n```\n";
+        let mut app = test_app(Source::Stdin, md);
+        app.images = image::ImageStore::new(None).with_native_mermaid(true);
+        let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        term.draw(|f| app.draw(f)).unwrap();
+        assert_eq!(app.rendered.mermaids.len(), 1, "o diagrama virou imagem");
+        app.on_key(ev(KeyCode::Char('i')));
+        assert!(app.img_zoom.is_some(), "{:?}", app.notice);
+        app.prepare_img_zoom(100, 30, 8.0);
+        term.draw(|f| app.draw(f)).unwrap();
+        let text = screen_text(term.backend().buffer()).join("\n");
+        assert!(text.contains("diagrama 1/1") && text.contains('▀'), "{text}");
+        app.on_key(ev(KeyCode::Char('+')));
+        app.on_key(ev(KeyCode::Esc));
+        assert!(app.img_zoom.is_none());
+    }
+
+    #[test]
+    fn tecla_i_sem_diagrama_avisa() {
+        let mut app = test_app(Source::Stdin, "# só texto\n");
+        app.prepare(80);
+        app.on_key(ev(KeyCode::Char('i')));
+        assert!(app.img_zoom.is_none());
+        assert_eq!(app.notice.as_deref(), Some("nenhum diagrama na tela"));
     }
 
     /// Regressão da troca do ratatui: desenha a TUI num `TestBackend` e confere conteúdo, estilo e rolagem.

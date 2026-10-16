@@ -19,11 +19,14 @@ pub const PLACEHOLDER: char = '\u{10EEEE}';
 /// Apaga todas as imagens do terminal (enviado ao sair).
 pub const DELETE_ALL: &str = "\x1b_Ga=d,d=A,q=2\x1b\\";
 
+/// Maior número de colunas ou linhas de um bloco de placeholders (o tamanho de `DIACRITICS`).
+pub const MAX_CELLS: usize = 128;
+
 /// Tamanho de cada pedaço de base64 (múltiplo de 4, como o protocolo exige).
 const CHUNK: usize = 4096;
 
 /// Primeiros 128 diacríticos de `rowcolumn-diacritics.txt` do Kitty: o índice é o número da
-/// linha/coluna. O maior bloco usado é `MAX_IMAGE_COLS` (80), então 128 sobram.
+/// linha/coluna. O maior bloco usado é `MAX_IMAGE_COLS` (120) e o zoom é limitado a `MAX_CELLS` (128).
 const DIACRITICS: [u32; 128] = [
     0x0305, 0x030D, 0x030E, 0x0310, 0x0312, 0x033D, 0x033E, 0x033F, 0x0346, 0x034A, 0x034B, 0x034C,
     0x0350, 0x0351, 0x0352, 0x0357, 0x035B, 0x0363, 0x0364, 0x0365, 0x0366, 0x0367, 0x0368, 0x0369,

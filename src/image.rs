@@ -24,14 +24,15 @@ pub const MAX_DATA_IMAGES: usize = 32;
 #[allow(clippy::cast_possible_truncation)] // 10 MiB cabe com folga em usize (mesmo em 32-bit)
 pub const MAX_DATA_PAYLOAD: usize = (MAX_IMAGE_BYTES as usize) / 3 * 4 + 8;
 pub const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
-pub const MAX_IMAGE_COLS: usize = 80;
-pub const MAX_IMAGE_ROWS: usize = 24;
+/// Tetos da imagem no texto. 120 colunas cabem nos 128 diacríticos do Kitty (`graphics.rs`).
+pub const MAX_IMAGE_COLS: usize = 120;
+pub const MAX_IMAGE_ROWS: usize = 36;
 const MAX_DIMENSION: u32 = 8192;
 const MAX_ALLOC: u64 = 256 * 1024 * 1024;
 /// Com gráficos ligados, o cache guarda imagens de até este tamanho (px): dá nitidez no
-/// terminal sem estourar a memória (≈1,2 MiB por imagem, no máximo ~112 imagens por documento).
-const GFX_MAX_W: u32 = 640;
-const GFX_MAX_H: u32 = 480;
+/// terminal sem estourar a memória (≈1,8 MiB por imagem, no máximo ~112 imagens por documento).
+const GFX_MAX_W: u32 = 800;
+const GFX_MAX_H: u32 = 600;
 
 #[derive(Clone)]
 pub enum ImageState {
@@ -190,6 +191,9 @@ pub struct ImageStore {
     remote: Option<(Arc<FetchPolicy>, bool)>, // (política, bloqueante)
     mermaid: Option<(Option<String>, bool)>,  // (binário mmdc de reserva, bloqueante)
     mermaid_hold: AtomicBool,
+    /// PNG original de cada diagrama (chave de `mermaid_key`): o cache de imagens guarda só a
+    /// versão reduzida, e o zoom (`imgzoom`) decodifica este sob demanda, um por vez.
+    mermaid_png: Arc<Mutex<HashMap<String, Arc<Vec<u8>>>>>,
     graphics: bool,
     gfx: Mutex<HashMap<(usize, usize, usize), Graphic>>, // (ponteiro da imagem, colunas, linhas)
 }
@@ -203,6 +207,7 @@ impl ImageStore {
             remote: None,
             mermaid: None,
             mermaid_hold: AtomicBool::new(false),
+            mermaid_png: Arc::new(Mutex::new(HashMap::new())),
             graphics: false,
             gfx: Mutex::new(HashMap::new()),
         }
@@ -276,8 +281,20 @@ impl ImageStore {
         self.mermaid_hold.load(Ordering::Relaxed)
     }
 
-    pub fn get_mermaid(&self, source: &str) -> ImageState {
+    /// Chave do diagrama no cache (e em `mermaid_png`).
+    pub fn mermaid_key(source: &str) -> String {
         use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        source.hash(&mut h);
+        format!("{MERMAID_PREFIX}{:016x}", h.finish())
+    }
+
+    /// PNG original do diagrama `key`, se já foi renderizado.
+    pub fn mermaid_png(&self, key: &str) -> Option<Arc<Vec<u8>>> {
+        self.mermaid_png.lock().unwrap_or_else(PoisonError::into_inner).get(key).cloned()
+    }
+
+    pub fn get_mermaid(&self, source: &str) -> ImageState {
         let Some((bin, blocking)) = &self.mermaid else {
             return ImageState::Failed("mermaid desativado".into());
         };
@@ -285,9 +302,7 @@ impl ImageStore {
             // Entrada ainda chegando: o bloco pode estar incompleto, então nada é disparado.
             return ImageState::Loading;
         }
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        source.hash(&mut h);
-        let key = format!("{MERMAID_PREFIX}{:016x}", h.finish());
+        let key = Self::mermaid_key(source);
         let over_limit = {
             let cache = self.lock();
             !cache.contains_key(&key)
@@ -297,13 +312,16 @@ impl ImageStore {
             return ImageState::Failed("limite de diagramas por documento atingido".into());
         }
         let (bin, src) = (bin.clone(), source.to_string());
+        let (pngs, png_key) = (Arc::clone(&self.mermaid_png), key.clone());
         self.get_job(&key, !*blocking, move || {
             let png = match &bin {
                 Some(bin) => crate::mermaid::render_png_auto(&src, bin, crate::mermaid::MMDC_TIMEOUT)?,
                 None => crate::mermaid_native::render_png(&src)
                     .map_err(|e| format!("{e} (use --mermaid para tentar o mmdc; veja `mdv --setup-mermaid`)"))?,
             };
-            decode(&png)
+            let img = decode(&png)?;
+            pngs.lock().unwrap_or_else(PoisonError::into_inner).insert(png_key, Arc::new(png));
+            Ok(img)
         })
     }
 
@@ -426,8 +444,8 @@ mod tests {
         let (ImageState::Ready(n), ImageState::Ready(g)) = (normal.get("a.png"), gfx.get("a.png")) else {
             panic!("esperava Ready");
         };
-        assert!(n.width() <= 80 && n.height() <= 48);
-        assert!(g.width() <= 640 && g.height() <= 480 && g.width() > 80);
+        assert!(n.width() as usize <= MAX_IMAGE_COLS && n.height() as usize <= MAX_IMAGE_ROWS * 2);
+        assert!(g.width() <= GFX_MAX_W && g.height() <= GFX_MAX_H && g.width() as usize > MAX_IMAGE_COLS);
     }
 
     #[test]

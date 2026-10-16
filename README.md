@@ -206,6 +206,7 @@ TECLAS (modo interativo):
     w                  código sem quebra: h/l (ou ←/→) rolam 8 colunas, 0/$ início/fim; w de novo volta a quebrar
     v                  (JSON) alterna tabela / esquema / texto
     t                  zoom da tabela na tela (h/l colunas, Esc volta)
+    i                  zoom do diagrama Mermaid na tela (+/- zoom, h/j/k/l movem, espaço/b página, g/G topo/fim, 0 ajusta, Esc volta)
     } / {              próxima / anterior mudança marcada no reload; c limpa as marcas
     z / Z              dobra ou abre a seção atual / dobra todas (ou abre todas); título dobrado mostra ▸ N linhas
     y / Y              copia o bloco de código da tela / o Markdown da seção (OSC 52, até 64 KiB)
@@ -233,6 +234,8 @@ mdv doc.md                     # diagramas como imagem (renderizador embutido)
 mdv --mermaid doc.md           # idem, e tenta o mmdc se o embutido falhar
 mdv --setup-mermaid            # verifica o ambiente e mostra como instalar o mmdc
 ```
+
+**Zoom (`i`).** No texto o diagrama cabe em até 120×36 células, o que num diagrama grande (uma sequência com muitos participantes, por exemplo) não dá para ler. Na TUI, `i` abre o diagrama que está na tela usando o terminal inteiro: `+`/`-` aproximam e afastam, `h`/`j`/`k`/`l` movem a janela, espaço/`b` rolam uma página, `g`/`G` vão ao topo e ao fim, `0` volta a mostrar tudo e `Esc` fecha. Com `--graphics kitty` o recorte é reenviado em resolução nativa (nítido); sem ele sai em meio-bloco na resolução do terminal. O zoom usa só o renderizador embutido, sem `mmdc`.
 
 Se o renderizador embutido não conseguir desenhar um diagrama (muito complexo, ou sintaxe que ele não conhece), o bloco aparece como código com o motivo e, **com `--mermaid`** (a rede de segurança), o `mdv` tenta o [`mmdc`](https://github.com/mermaid-js/mermaid-cli) (`npm install -g @mermaid-js/mermaid-cli`; binário trocável com `MDV_MMDC`), que exige Node e baixa um Chromium. `mdv --setup-mermaid` diz o que falta e o comando de instalação do seu sistema; ele **não instala nada sozinho**. Sem nenhum dos dois, o bloco continua aparecendo como código, com o motivo no cabeçalho. Limites: 64 KiB, 400 linhas e 100 conexões (setas `>` e `&`) por diagrama para o renderizador embutido, imagem de até 1200×3000 px, 20 s no `mmdc`. Diagramas acima desse teto de conexões só saem com `--mermaid` e o `mmdc` instalado.
 

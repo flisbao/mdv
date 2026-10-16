@@ -104,6 +104,17 @@ pub struct Rendered {
     pub code_overflow: usize,
     /// Imagens gráficas usadas, sem repetir `id`. Vazio sem `--graphics`.
     pub graphics: Vec<GraphicRef>,
+    /// Diagramas Mermaid desenhados como imagem, em ordem (alvo do zoom de imagem).
+    pub mermaids: Vec<MermaidSpan>,
+}
+
+/// Diagrama Mermaid desenhado como imagem: linhas renderizadas `[start, end)` e a chave do PNG
+/// original em `ImageStore::mermaid_png`.
+#[derive(Clone)]
+pub struct MermaidSpan {
+    pub start: usize,
+    pub end: usize,
+    pub key: String,
 }
 
 /// Bloco de código desenhado: linhas renderizadas `[start, end)` e o texto cru (já saneado).
@@ -1379,7 +1390,10 @@ impl<'a> Renderer<'a> {
             if let Some(store) = self.images.filter(|s| s.mermaid_enabled()) {
                 match store.get_mermaid(&block.buf) {
                     ImageState::Ready(img) => {
+                        let start = self.out.lines.len();
                         self.push_image(&img);
+                        let key = ImageStore::mermaid_key(&block.buf);
+                        self.out.mermaids.push(MermaidSpan { start, end: self.out.lines.len(), key });
                         return;
                     }
                     ImageState::Loading => label = "mermaid (renderizando…)".into(),
