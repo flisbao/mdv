@@ -36,15 +36,15 @@ Baixe o binário da última release, extraia e coloque `mdv` no seu `PATH`:
 <!-- mdv:install:start -->
 | Plataforma | Download |
 |------------|----------|
-| Linux x86_64 (glibc 2.35+) | [`mdv-v0.4.4-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.4/mdv-v0.4.4-linux-x86_64.tar.gz) |
-| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.4.4-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.4/mdv-v0.4.4-linux-x86_64-musl.tar.gz) |
-| Linux aarch64 | [`mdv-v0.4.4-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.4/mdv-v0.4.4-linux-aarch64.tar.gz) |
-| macOS Apple Silicon | [`mdv-v0.4.4-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.4/mdv-v0.4.4-macos-aarch64.tar.gz) |
-| macOS Intel | [`mdv-v0.4.4-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.4.4/mdv-v0.4.4-macos-x86_64.tar.gz) |
-| Windows x86_64 | [`mdv-v0.4.4-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.4.4/mdv-v0.4.4-windows-x86_64.zip) |
-| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.4.4) |
+| Linux x86_64 (glibc 2.35+) | [`mdv-v0.5.0-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.5.0/mdv-v0.5.0-linux-x86_64.tar.gz) |
+| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.5.0-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.5.0/mdv-v0.5.0-linux-x86_64-musl.tar.gz) |
+| Linux aarch64 | [`mdv-v0.5.0-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.5.0/mdv-v0.5.0-linux-aarch64.tar.gz) |
+| macOS Apple Silicon | [`mdv-v0.5.0-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.5.0/mdv-v0.5.0-macos-aarch64.tar.gz) |
+| macOS Intel | [`mdv-v0.5.0-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.5.0/mdv-v0.5.0-macos-x86_64.tar.gz) |
+| Windows x86_64 | [`mdv-v0.5.0-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.5.0/mdv-v0.5.0-windows-x86_64.zip) |
+| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.5.0) |
 
-Versão atual: **v0.4.4**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
+Versão atual: **v0.5.0**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
 <!-- mdv:install:end -->
 
 Instaladores de uma linha (o `mdv --version` roda no fim; os binários de macOS e Windows **não são assinados**):
@@ -108,6 +108,8 @@ USO:
     cat arquivo.md | mdv
     mdv json [opções] <arquivo|->
     mdv csv|tsv [opções] <arquivo|->
+    mdv [opções] <arquivo.md> -o <saída.pdf|docx|odt|xlsx|ods>
+    mdv csv|tsv [opções] <arquivo|-> -o <saída.xlsx|ods>
     mdv <pasta>            (seletor: .md da pasta por data, filtro ao digitar)
     (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
 
@@ -121,14 +123,20 @@ OPÇÕES:
         --follow       com stdin: acompanha o texto conforme chega
         --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
         --memory-buffer <T>  limite de memória (padrão: 512M; ex.: 256M, 2G; ou $MDV_MEMORY_BUFFER)
+    -o, --output <A>   converte e sai (sem TUI); o formato vem da extensão de A:
+                         .md  → .pdf .docx .odt (documento) ou .xlsx .ods (só as tabelas)
+                         .csv/.tsv → .xlsx .ods
+        --force        com -o: sobrescreve o arquivo de destino se ele já existir
+        --section <T>  com -o e Markdown → planilha: só as tabelas da seção de título T
+                       (com --table N: só a N-ésima tabela do documento)
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
-OPÇÕES DE JSON:
+OPÇÕES DE JSON (só valem para este formato):
         --path <p>     mostra só um trecho, ex.: .itens[0].nome
         --as <vista>   auto (padrão), text, table ou schema
 
-OPÇÕES DE CSV/TSV:
+OPÇÕES DE CSV/TSV (só valem para este formato):
         --head <N>     mostra só as N primeiras linhas (padrão: 1000)
         --cols <a,b>   mostra só estas colunas, pelo nome do cabeçalho
         --no-header    a primeira linha é dado, não cabeçalho
@@ -250,6 +258,87 @@ O `mdv` usa no máximo **512 MiB**. Se um arquivo precisar de mais, ele para e m
 ## Changelog
 
 <!-- mdv:changelog:start -->
+### v0.5.0
+
+_2026-10-17_
+
+- fix(export): Mermaid sem exigir gráficos, symlink para fora recusado, aviso de memória e fsync no -o
+- fix(export): %00 recusado e testes de dupla codificação e hex inválido
+- fix(export): nome da aba medido em unidades UTF-16 (teto do Excel)
+- fix(export): espaço único após tab ou quebra de linha não colapsa no ODS
+- test(export): script de validação com LibreOffice
+- fix(export): confinar imagem também depois do percent-decode
+- feat(cli): mdv -o converte Markdown em PDF/DOCX/ODT e tabelas em XLSX/ODS
+- feat(cli): -o/--output, --force e --section viram Command::Export
+- feat(export): convert despacha Markdown e CSV/TSV para os cinco formatos
+- test(export): renomear teste de check_parse e documentar a ordem em from_markdown
+- fix(export): table 0, ordem de check_parse e <br> em células de tabela
+- feat(export): fontes de planilha: CSV/TSV e tabelas do Markdown por seção
+- test(export): corrigir avisos do clippy nos testes do modelo de planilha
+- feat(export): escritor ODS com mimetype primeiro e textos literais
+- feat(export): escritor XLSX com cabeçalho congelado e textos literais
+- feat(export): modelo de planilha com número estrito e nome de aba válido
+- feat(export): portar escritores de PDF, DOCX e ODT para a crate mdv-export
+- feat(export): esqueleto da crate mdv-export com Budget, PictureProvider e Format
+- refactor(text): find_section, section_range e summary_text sobem para mdv-text
+- fix: abrir link externo e achar config no Windows; mermaid_native::available substitui cfg! em image.rs
+- fix(app): r avisa quando a releitura falha
+- fix(stream): --follow avisa no texto quando a entrada passa do teto
+- fix(stats): --stats respeita o limite de memória antes de analisar
+- fix(image): decodifica percent-encoding em imagem local; data: gigante recusado antes do hash e sem copiar em acerto de cache
+- fix(mdv-tools): cerca fechada em citação não é reportada como aberta; teste de nome com ESC só em unix
+- fix(app): reenvia imagens Kitty ao trocar de arquivo; seletor só fecha se o arquivo abriu
+- test(config): comparar caminhos com PathBuf para passar no Windows
+- build: resvg 0.45 elimina duplicatas de fontdb/roxmltree; docs da fase 7
+- build: ratatui sem features padrão
+- ci: release e empacotamento usam o perfil dist
+- build: release com LTO thin e perfil dist com LTO fat
+- feat(mermaid): liga sozinho em terminal com Kitty; config mermaid = on|off
+- ci: testa --no-default-features; documenta as features
+- docs: images permanece sempre ligada (decisão da fase 6)
+- feat(build): feature remote; --remote sem ela devolve erro claro
+- feat(build): feature mermaid; sem ela o diagrama sai como código
+- docs: ajuda e documentação do Cli por tipo (fase 5)
+- refactor(cli): Cli por tipo (Common + Command), parser por formato
+- test(cli): fixa as mensagens de erro antes da fase 5
+- refactor(main): teto de tamanho dos arquivos e docs da fase 4
+- refactor(app): teclas viram Action (input.rs)
+- refactor(app): enum Modal substitui os cinco Option de modal
+- refactor(app): App em src/app/ (viewport, search, zoom, ui, terminal)
+- refactor(app): Document separa o conteúdo do estado de tela
+- refactor(main): load.rs e plain.rs
+- test(app): caracteriza o que cada modal captura (rede da fase 4)
+- docs/test: alinha README e CLAUDE.md ao Mermaid só com gráficos; cobre erro com nativo real
+- feat(render): Mermaid só é desenhado com gráficos ativos; docs da fase 3
+- refactor(render): renderer.rs; mod.rs só com a API; teto de 500 linhas
+- refactor(render): highlight.rs
+- refactor(render): ImageProvider e images.rs; testes com fake
+- refactor(render): inline.rs, list.rs e table.rs
+- refactor(render): ansi.rs e wrap.rs
+- refactor(render): model.rs, outline.rs e theme.rs
+- refactor(render): render.rs vira render/mod.rs; testes em tests.rs e testutil.rs
+- fix(tools): sanitiza nome de arquivo no rótulo e nos erros do mdv-tools
+- docs: CI, empacotamento e documentação do workspace (fase 2)
+- refactor: remove extract, links e as flags movidas para o mdv-tools
+- feat(tools): binário mdv-tools com extract-code, section e check-links
+- refactor: copia extract e links para a crate mdv-tools
+- refactor: cria o workspace e a crate mdv-text
+- docs: registra os cortes da fase 1 (README, CLAUDE.md)
+- refactor: remove mmdc, --mermaid e --setup-mermaid
+- refactor: remove a dobra de seções e a camada display
+- refactor: remove o reload automático por mtime (r continua)
+- refactor: remove marcas de mudança, { } c e a crate similar
+- refactor: remove --latest
+- refactor: remove --idle
+- refactor: remove a tecla ? e MDV_AI_CMD
+- refactor: remove o tratamento de <think>
+- refactor: remove mdv chat
+- refactor: remove mdv diff e --split
+- test: goldens robustos a CRLF (.gitattributes) e vistas --as do JSON
+- test: caracterização das teclas de rolagem, busca, saída e recarga
+- test: goldens de ANSI com cor para o renderizador
+- test: goldens de texto do modo --plain, --toc e --stats
+
 ### v0.4.4
 
 _2026-10-16_
