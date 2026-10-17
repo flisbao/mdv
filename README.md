@@ -303,6 +303,11 @@ mdv relatorio.md -o tabela2.xlsx --table 2           # só a 2ª tabela do docum
 | Markdown | `.xlsx`, `.ods` (só as tabelas; `--section` e `--table` escolhem quais) |
 | CSV / TSV | `.xlsx`, `.ods` |
 
+Imagens e diagramas:
+
+- Imagens locais entram no arquivo só se o caminho for relativo e ficar dentro da pasta do documento (com stdin, do diretório atual): caminho absoluto, `..` (também codificado, `%2e%2e`) e **links simbólicos que saem da pasta** são recusados, com aviso, e a imagem vira `[imagem: alt]`. Imagens por URL só com `--remote`.
+- Blocos <code>```mermaid</code> viram imagem no PDF/DOCX/ODT sempre que o renderizador embutido está compilado e ligado (`mermaid = on`, o padrão), **sem precisar de terminal com protocolo gráfico**. Com `mermaid = off`, num binário sem a feature `mermaid` ou sem fontes no sistema, o bloco fica como código (no último caso, com aviso).
+
 Limitações:
 
 - PDF com fontes padrão; caracteres fora de Latin-1 viram `?`, com aviso; sem realce de sintaxe.

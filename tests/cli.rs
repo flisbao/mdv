@@ -600,3 +600,14 @@ fn exporta_as_amostras_do_repositorio() {
         assert!(res.status.success(), "{sample} → {name}: {}", String::from_utf8_lossy(&res.stderr));
     }
 }
+
+#[test]
+fn exportar_com_limite_acima_da_memoria_livre_avisa_uma_vez_no_stderr() {
+    if !std::path::Path::new("/proc/meminfo").exists() {
+        return;
+    }
+    let (_d, out) = tmp_out("a.pdf");
+    let res = mdv(&["--memory-buffer", "999999G", "-o", &out], "# x\n");
+    assert!(res.status.success(), "{}", String::from_utf8_lossy(&res.stderr));
+    assert_eq!(String::from_utf8_lossy(&res.stderr).matches("aviso: o limite de memória").count(), 1);
+}

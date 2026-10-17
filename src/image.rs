@@ -278,6 +278,17 @@ impl ImageStore {
         crate::mermaid_native::available() && self.mermaid.is_some() && self.graphics
     }
 
+    /// O renderizador nativo está compilado e o Mermaid ligado na configuração, com ou sem
+    /// gráficos: é o que vale no `-o`, que embute o PNG no arquivo e não precisa do Kitty.
+    pub fn mermaid_configured(&self) -> bool {
+        crate::mermaid_native::available() && self.mermaid.is_some()
+    }
+
+    /// Pasta de onde as imagens locais são lidas (`None`: a pasta atual).
+    pub fn base_dir(&self) -> Option<&Path> {
+        self.base_dir.as_deref()
+    }
+
     /// Mermaid só com o renderizador nativo (padrão): em processo, sem subprocesso.
     pub fn with_native_mermaid(mut self, blocking: bool) -> Self {
         self.mermaid = Some(blocking);
@@ -403,7 +414,7 @@ impl ImageStore {
 
     /// O destino de uma imagem em Markdown vem codificado (`a%20b.png`): usa o nome literal se
     /// existir, senão o decodificado.
-    fn local_name(&self, src: &str) -> String {
+    pub fn local_name(&self, src: &str) -> String {
         let exists = |n: &str| match &self.base_dir {
             Some(b) => b.join(n).exists(),
             None => Path::new(n).exists(),

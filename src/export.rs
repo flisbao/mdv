@@ -28,8 +28,30 @@ impl Budget for MemBudget {
 /// O `ImageStore` (disco, `data:`, rede com `--remote`, Mermaid nativo) visto pelo `mdv-export`.
 struct StorePictures<'a>(&'a ImageStore);
 
+/// Recusa a imagem local cujo caminho real (links simbólicos resolvidos) sai da pasta do
+/// documento: o `mdv-export` só confere a forma do caminho, e um `link.png -> /etc/...` dentro da
+/// pasta levaria para o arquivo compartilhado um arquivo qualquer do computador. Usa o mesmo nome
+/// que o `ImageStore` abriria (`local_name`). Arquivo inexistente segue para o erro do store.
+fn confined_to_base(store: &ImageStore, src: &str) -> Result<(), String> {
+    let lower = src.to_ascii_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("data:") {
+        return Ok(());
+    }
+    let base = store.base_dir().unwrap_or(Path::new("."));
+    let Ok(real) = std::fs::canonicalize(base.join(store.local_name(src))) else {
+        return Ok(());
+    };
+    let base = std::fs::canonicalize(base).map_err(|e| format!("não consegui resolver a pasta do documento: {e}"))?;
+    if real.starts_with(&base) {
+        Ok(())
+    } else {
+        Err("a imagem aponta para fora da pasta do documento (link simbólico?)".to_string())
+    }
+}
+
 impl PictureProvider for StorePictures<'_> {
     fn load(&self, src: &str) -> Result<Arc<image::DynamicImage>, String> {
+        confined_to_base(self.0, src)?;
         match self.0.get(src) {
             ImageState::Ready(img) => Ok(img),
             ImageState::Loading => Err("ainda carregando".to_string()),
@@ -37,7 +59,8 @@ impl PictureProvider for StorePictures<'_> {
         }
     }
     fn mermaid(&self, source: &str) -> Option<Result<Arc<image::DynamicImage>, String>> {
-        if !self.0.mermaid_enabled() {
+        // Sem exigir gráficos (Kitty): o PNG vai para dentro do arquivo.
+        if !self.0.mermaid_configured() {
             return None;
         }
         Some(match self.0.get_mermaid(source) {
@@ -82,6 +105,7 @@ fn write_atomic(out: &Path, bytes: &[u8], force: bool) -> Result<(), String> {
     let mut tmp = temp_file_in(dir).map_err(fail)?;
     tmp.write_all(bytes).map_err(fail)?;
     tmp.flush().map_err(fail)?;
+    tmp.as_file().sync_all().map_err(fail)?;
     let result = if force { tmp.persist(out) } else { tmp.persist_noclobber(out) };
     result.map(|_| ()).map_err(|e| fail(e.error))
 }
@@ -107,7 +131,11 @@ fn sheet_label(source: &Source) -> String {
     }
 }
 
-pub(crate) fn run_export(cli: &cli::Cli, e: &cli::Export) -> Result<(), Failure> {
+/// `-o` nunca abre a TUI: o aviso de memória (`mem::warn_if_above`) vai sempre para o stderr.
+pub(crate) fn run_export(cli: &cli::Cli, e: &cli::Export, mem_warning: Option<&str>) -> Result<(), Failure> {
+    if let Some(w) = mem_warning {
+        eprintln!("mdv: {w}");
+    }
     let (source, text) = load_source(cli.common.path.as_deref())?;
     let side = mdv_export::images::MAX_SIDE;
     let store = image_store(&source, cli, true).with_max_pixels(side, side);
@@ -208,6 +236,63 @@ mod tests {
         let mode = std::fs::metadata(&out).unwrap().permissions().mode();
         assert_eq!(mode & 0o111, 0, "nunca executável: {mode:o}");
         assert_ne!(mode & 0o400, 0, "o dono lê: {mode:o}");
+    }
+
+    /// Os nomes das entradas do ZIP ficam em claro no arquivo: basta procurar o prefixo.
+    fn has_entry(path: &std::path::Path, prefix: &str) -> bool {
+        std::fs::read(path).unwrap().windows(prefix.len()).any(|w| w == prefix.as_bytes())
+    }
+
+    #[cfg(feature = "mermaid")]
+    #[test]
+    fn mermaid_vira_imagem_no_docx_e_no_odt_sem_graficos() {
+        let d = tempfile::tempdir().unwrap();
+        let st = store(None).with_native_mermaid(true);
+        assert!(!st.mermaid_enabled(), "sem Kitty a TUI continua mostrando código");
+        let doc = "```mermaid\ngraph TD\n  A --> B\n```\n";
+        for (name, dir) in [("m.docx", "word/media/"), ("m.odt", "Pictures/")] {
+            let out = d.path().join(name);
+            let w = export_to_file(&md(doc), &Select::default(), &out, false, &st).unwrap();
+            if !crate::mermaid_native::fonts_available() {
+                assert!(w.iter().any(|x| x.contains("mermaid")), "sem fontes o aviso volta: {w:?}");
+                continue;
+            }
+            assert!(w.is_empty(), "{name}: {w:?}");
+            assert!(has_entry(&out, dir), "{name}");
+        }
+    }
+
+    #[test]
+    fn mermaid_desligado_fica_como_codigo_sem_imagem() {
+        let d = tempfile::tempdir().unwrap();
+        let out = d.path().join("m.odt");
+        let w = export_to_file(&md("```mermaid\ngraph TD\n  A --> B\n```\n"), &Select::default(), &out, false, &store(None)).unwrap();
+        assert!(w.is_empty(), "{w:?}");
+        assert!(!has_entry(&out, "Pictures/"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn link_simbolico_para_fora_da_pasta_e_recusado() {
+        let fora = tempfile::tempdir().unwrap();
+        image::RgbImage::new(4, 4).save(fora.path().join("s.png")).unwrap();
+        let d = tempfile::tempdir().unwrap();
+        image::RgbImage::new(4, 4).save(d.path().join("a.png")).unwrap();
+        std::os::unix::fs::symlink(fora.path().join("s.png"), d.path().join("link.png")).unwrap();
+        std::os::unix::fs::symlink(d.path().join("a.png"), d.path().join("dentro.png")).unwrap();
+        let st = store(Some(d.path()));
+        for src in ["link.png", "%6Cink.png"] {
+            let out = d.path().join("o.odt");
+            let w = export_to_file(&md(&format!("![alt]({src})\n")), &Select::default(), &out, true, &st).unwrap();
+            assert!(w.len() == 1 && w[0].contains("fora da pasta"), "{src}: {w:?}");
+            assert!(!has_entry(&out, "Pictures/"), "{src}");
+        }
+        for src in ["dentro.png", "a.png"] {
+            let out = d.path().join("o.odt");
+            let w = export_to_file(&md(&format!("![alt]({src})\n")), &Select::default(), &out, true, &st).unwrap();
+            assert!(w.is_empty(), "{src}: {w:?}");
+            assert!(has_entry(&out, "Pictures/"), "{src}");
+        }
     }
 
     #[test]
