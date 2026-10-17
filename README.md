@@ -2,12 +2,12 @@
 
 **Leia Markdown no terminal como deveria ser: com cor, estrutura e sem sair do teclado.**
 
-`mdv` transforma qualquer arquivo `.md` numa página bem formatada direto no terminal — títulos em destaque, tabelas alinhadas, listas aninhadas, código colorido — e abre num leitor interativo com busca, navegação por títulos e recarga automática. Um único binário, sem runtime, sem navegador.
+`mdv` transforma qualquer arquivo `.md` numa página bem formatada direto no terminal — títulos em destaque, tabelas alinhadas, listas aninhadas, código colorido — e abre num leitor interativo com busca, navegação por títulos e recarga com `r`. Um único binário, sem runtime, sem navegador.
 
 [![release](https://img.shields.io/github/v/release/flisbao/mdv)](https://github.com/flisbao/mdv/releases/latest)
 [![ci](https://github.com/flisbao/mdv/actions/workflows/ci.yml/badge.svg)](https://github.com/flisbao/mdv/actions/workflows/ci.yml)
 
-Além de Markdown, abre **JSON, CSV e TSV** como dados formatados, desenha **imagens e diagramas Mermaid** no próprio terminal e acompanha a saída de **agentes e LLMs** em tempo real.
+Além de Markdown, abre **JSON, CSV e TSV** como dados formatados, desenha **imagens e diagramas Mermaid** no próprio terminal e acompanha a saída de **agentes e LLMs** em tempo real (`--follow`).
 
 ```bash
 mdv README.md                 # leitor interativo
@@ -15,8 +15,6 @@ mdv -p README.md              # só imprime, como um `cat` colorido
 curl -s https://exemplo/doc.md | mdv    # lê da entrada padrão
 agente | mdv --follow         # acompanha um texto que ainda está chegando
 mdv csv vendas.csv --cols produto,total   # CSV como tabela
-git diff | mdv diff --split              # diff colorido, em duas colunas
-mdv chat samples/conversa.jsonl          # transcrição de agente: papéis, ferramentas e raciocínio recolhidos
 mdv json dados.json --path .itens[0]      # só um trecho do JSON
 ```
 
@@ -28,14 +26,14 @@ mdv json dados.json --path .itens[0]      # só um trecho do JSON
 - **Quebra de linha correta.** O texto é quebrado na largura do terminal respeitando caracteres largos: acentos, emojis e CJK (日本語) não desalinham nada.
 - **Leitor interativo.** Rolagem, página, meia página, busca com `/`, `n`/`N` entre ocorrências e `]`/`[` para pular de título em título.
 - **Imagens no terminal.** `![alt](arquivo.png)` e, com `--remote`, imagens por URL, desenhadas em meio-bloco, sem protocolo gráfico. [Detalhes](#imagens).
-- **Diagramas Mermaid.** Blocos <code>```mermaid</code> viram imagem com o renderizador embutido, sem instalar nada e sem flag; `--mermaid` acrescenta o `mmdc` para os casos complexos. [Detalhes](#mermaid).
+- **Diagramas Mermaid.** Blocos <code>```mermaid</code> viram imagem com o renderizador embutido, sem instalar nada e sem flag. [Detalhes](#mermaid).
 - **Andamento de tarefas.** Listas `- [x]`/`- [ ]` mostram o progresso: o rodapé da leitura traz `☑ feitas/total` do documento e da seção atual, e o `--toc` acrescenta `[feitas/total]` aos títulos. Sem tarefas no documento (e no modo fonte, JSON e CSV) nada disso aparece.
-- **Feito para saída de agentes e LLMs.** Front matter YAML, alertas GFM, notas de rodapé, `<details>` e `<think>` aparecem formatados; `--follow`, `--latest <pasta>` e `--toc` acompanham e resumem. Na TUI, `m` alterna para a fonte crua. [Detalhes](#markdown-de-agentes-e-llms).
+- **Feito para saída de agentes e LLMs.** Front matter YAML, alertas GFM, notas de rodapé e `<details>` aparecem formatados; `--follow` e `--toc` acompanham e resumem. Na TUI, `m` alterna para a fonte crua. [Detalhes](#markdown-de-agentes-e-llms).
 - **JSON, CSV e TSV.** `mdv json|csv|tsv` com `--as table|schema|text`, `--path`, `--head`, `--cols`, `--no-header` e `--delimiter`. [Detalhes](#json-csv-e-tsv).
-- **Live reload.** Edite o arquivo no seu editor e veja o resultado atualizar sozinho no `mdv` ao lado. Ótimo para escrever README.
+- **Recarga com `r`.** Edite o arquivo no seu editor e aperte `r` no `mdv` ao lado para ver o resultado. Ótimo para escrever README.
 - **Funciona em pipe.** Com `-p` ou quando a saída não é um terminal, imprime texto com ANSI. Serve em scripts, `less -R` e CI.
 - **Responsivo.** Redesenha ao redimensionar a janela; `-w` fixa a largura máxima.
-- **Seguro com entrada não confiável.** Caracteres de controle e sequências de escape do documento são neutralizados, então um `.md` malicioso não consegue mexer no seu terminal. Tamanho de entrada é limitado, e rede e subprocessos só entram com `--remote` e `--mermaid`. Veja as [pendências conhecidas](docs/pendencias.md).
+- **Seguro com entrada não confiável.** Caracteres de controle e sequências de escape do documento são neutralizados, então um `.md` malicioso não consegue mexer no seu terminal. Tamanho de entrada é limitado, e a rede só entra com `--remote`. Veja as [pendências conhecidas](docs/pendencias.md).
 - **Rápido e portátil.** Binário único em Rust para Linux (glibc e estático musl), macOS e Windows.
 
 ## Instalação
@@ -155,24 +153,17 @@ USO:
     mdv json [opções] <arquivo|->
     mdv csv|tsv [opções] <arquivo|->
     mdv <pasta>            (seletor: .md da pasta por data, filtro ao digitar)
-    mdv chat <transcricao.jsonl|->   (conversa de agente: papéis, ferramentas e raciocínio recolhidos)
-    git diff | mdv diff    (ou mdv diff <arquivo.diff|.patch>)
     (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
 
 OPÇÕES:
     -p, --plain        imprime no terminal (sem TUI), como `cat` com cores
     -w, --width <N>    largura máxima do texto (padrão: 100)
         --remote       baixa imagens de http(s):// (nunca de rede privada)
-        --mermaid      diagramas Mermaid: se o renderizador embutido falhar, tenta o `mmdc` (ou $MDV_MMDC)
-        --setup-mermaid  verifica o ambiente dos diagramas e mostra como instalar o mmdc
         --graphics <G> imagens em alta resolução: off (padrão), kitty ou auto (Kitty/Ghostty; só no modo interativo)
         --toc          imprime só o índice de títulos
         --check-links  confere offline links relativos, âncoras e cercas sem fechar; sai com 1 se houver problema
         --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
         --follow       com stdin: acompanha o texto conforme chega
-        --split        com diff: duas colunas (removidas à esquerda, adicionadas à direita)
-        --idle <S>     com --follow ou --latest: toca o sino quando nada muda por S segundos
-        --latest       o argumento é uma pasta: abre e segue o .md mais novo
         --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
         --memory-buffer <T>  limite de memória (padrão: 512M; ex.: 256M, 2G; ou $MDV_MEMORY_BUFFER)
         --extract-code imprime só o texto dos blocos de código (sem cor)
@@ -207,11 +198,8 @@ TECLAS (modo interativo):
     v                  (JSON) alterna tabela / esquema / texto
     t                  zoom da tabela mais visível na tela (h/l colunas, n/p troca de tabela, Esc volta)
     i                  zoom do diagrama Mermaid mais visível na tela: n/p troca de diagrama, +/- zoom, h/j/k/l movem, espaço/b página, g/G topo/fim, 0 ajusta, Esc volta
-    } / {              próxima / anterior mudança marcada no reload; c limpa as marcas
-    z / Z              dobra ou abre a seção atual / dobra todas (ou abre todas); título dobrado mostra ▸ N linhas
     y / Y              copia o bloco de código da tela / o Markdown da seção (OSC 52, até 64 KiB)
     r                  recarrega o arquivo
-    ?                  envia a seção atual ao comando de $MDV_AI_CMD e mostra a resposta (opt-in)
     q, Esc             sai
 ```
 <!-- mdv:help:end -->
@@ -222,7 +210,7 @@ Imagens `![alt](caminho)` aparecem desenhadas no próprio terminal, em **meio-bl
 
 - **Locais:** PNG, JPEG, GIF e WebP, até 10 MiB e 8192×8192 px. Se não abrir, aparece `[imagem: alt — motivo]`. Imagens embutidas como `data:image/...;base64,...` (mesmos limites) também funcionam, sem rede; até 32 por documento.
 - **Por URL:** só com `--remote`. Sem a flag, o `mdv` nunca acessa a rede. O download recusa endereços de rede privada, loopback e link-local, limita o tamanho a 10 MiB, segue no máximo 3 redirecionamentos e aceita até 32 imagens por documento. Na TUI o texto aparece na hora e a imagem entra quando o download termina.
-- **Alta resolução (opt-in):** `--graphics kitty` (ou `auto`, que detecta Kitty e Ghostty fora do `tmux`/`screen`) desenha as imagens e os diagramas Mermaid pelo protocolo gráfico do Kitty, com *placeholders Unicode*, então rolam, dobram e somem com o texto. Só vale no modo interativo: `--plain` e saída redirecionada seguem em meio-bloco. Sixel não é suportado.
+- **Alta resolução (opt-in):** `--graphics kitty` (ou `auto`, que detecta Kitty e Ghostty fora do `tmux`/`screen`) desenha as imagens e os diagramas Mermaid pelo protocolo gráfico do Kitty, com *placeholders Unicode*, então rolam e somem com o texto. Só vale no modo interativo: `--plain` e saída redirecionada seguem em meio-bloco. Sixel não é suportado.
 - **Não suportados:** SVG e `data:` sem `;base64`. A resolução é baixa (meio-bloco); imagem dentro de célula de tabela vira `[imagem: alt ↓n]` na célula e é desenhada logo abaixo da tabela, com a legenda `↓n alt`.
 
 ## Mermaid
@@ -231,13 +219,11 @@ Blocos <code>```mermaid</code> viram imagem **sem instalar nada e sem flag**: o 
 
 ```bash
 mdv doc.md                     # diagramas como imagem (renderizador embutido)
-mdv --mermaid doc.md           # idem, e tenta o mmdc se o embutido falhar
-mdv --setup-mermaid            # verifica o ambiente e mostra como instalar o mmdc
 ```
 
-**Zoom (`i`).** No texto o diagrama cabe em até 120×36 células, o que num diagrama grande (uma sequência com muitos participantes, por exemplo) não dá para ler. Na TUI, `i` abre o diagrama que ocupa mais linhas da tela (a barra mostra `N/M` e o título da seção) usando o terminal inteiro; `n`/`p` passam ao próximo ou ao anterior, dando a volta nos extremos: `+`/`-` aproximam e afastam, `h`/`j`/`k`/`l` movem a janela, espaço/`b` rolam uma página, `g`/`G` vão ao topo e ao fim, `0` volta a mostrar tudo e `Esc` fecha. Com `--graphics kitty` o recorte é reenviado em resolução nativa (nítido); sem ele sai em meio-bloco na resolução do terminal. O zoom usa só o renderizador embutido, sem `mmdc`.
+**Zoom (`i`).** No texto o diagrama cabe em até 120×36 células, o que num diagrama grande (uma sequência com muitos participantes, por exemplo) não dá para ler. Na TUI, `i` abre o diagrama que ocupa mais linhas da tela (a barra mostra `N/M` e o título da seção) usando o terminal inteiro; `n`/`p` passam ao próximo ou ao anterior, dando a volta nos extremos: `+`/`-` aproximam e afastam, `h`/`j`/`k`/`l` movem a janela, espaço/`b` rolam uma página, `g`/`G` vão ao topo e ao fim, `0` volta a mostrar tudo e `Esc` fecha. Com `--graphics kitty` o recorte é reenviado em resolução nativa (nítido); sem ele sai em meio-bloco na resolução do terminal.
 
-Se o renderizador embutido não conseguir desenhar um diagrama (muito complexo, ou sintaxe que ele não conhece), o bloco aparece como código com o motivo e, **com `--mermaid`** (a rede de segurança), o `mdv` tenta o [`mmdc`](https://github.com/mermaid-js/mermaid-cli) (`npm install -g @mermaid-js/mermaid-cli`; binário trocável com `MDV_MMDC`), que exige Node e baixa um Chromium. `mdv --setup-mermaid` diz o que falta e o comando de instalação do seu sistema; ele **não instala nada sozinho**. Sem nenhum dos dois, o bloco continua aparecendo como código, com o motivo no cabeçalho. Limites: 64 KiB, 400 linhas e 100 conexões (setas `>` e `&`) por diagrama para o renderizador embutido, imagem de até 1200×3000 px, 20 s no `mmdc`. Diagramas acima desse teto de conexões só saem com `--mermaid` e o `mmdc` instalado.
+Se o renderizador embutido não conseguir desenhar um diagrama (muito complexo, ou sintaxe que ele não conhece), o bloco aparece como código, com o motivo no cabeçalho. Limites: 64 KiB, 400 linhas e 100 conexões (setas `>` e `&`) por diagrama, imagem de até 1200×3000 px.
 
 Onde o diagrama aparece:
 
@@ -247,16 +233,14 @@ Onde o diagrama aparece:
 | WezTerm, iTerm2, Warp, Konsole | varia | meio-bloco; `--graphics kitty` por sua conta (suporte a *placeholders* Unicode não confirmado) |
 | Windows Terminal, demais terminais com cores 24 bits | Windows, Linux, macOS | meio-bloco (baixa resolução, funciona em qualquer um) |
 
-> O `mmdc` abre um Chromium headless: só `--mermaid` o aciona, então use-o apenas com documentos em que você confia. O renderizador embutido roda dentro do próprio `mdv`, sem processos externos, com tetos de tamanho, conexões e memória.
+> O renderizador embutido roda dentro do próprio `mdv`, sem processos externos, com tetos de tamanho, conexões e memória.
 
 ## Markdown de agentes e LLMs
 
-Construções comuns em saídas de LLMs aparecem formatadas, sem tags cruas: front matter YAML (como bloco `yaml`), alertas GFM (`> [!WARNING]`), notas de rodapé, `<details>`/`<summary>` e blocos `<think>`/`<thinking>` (em itálico apagado). Para acompanhar uma saída em andamento:
+Construções comuns em saídas de LLMs aparecem formatadas, sem tags cruas: front matter YAML (como bloco `yaml`), alertas GFM (`> [!WARNING]`), notas de rodapé, `<details>`/`<summary>`. Para acompanhar uma saída em andamento:
 
 ```bash
 agente | mdv --follow          # o texto cresce ao vivo e a tela acompanha o fim
-agente | mdv --follow --idle 30  # sino e aviso quando nada chega por 30 s
-mdv --latest ./respostas       # abre e segue o .md mais novo da pasta
 mdv --toc relatorio.md         # só o índice de títulos
 ```
 
@@ -275,7 +259,7 @@ mdv --section "Instalação" --extract-code plano.md | sh
 
 `--lang` não distingue maiúsculas; `-n` conta a partir de 1, depois do filtro. O título casa por igualdade (sem distinguir caixa) ou por trecho único; se for ambíguo, o `mdv` lista os candidatos e sai com código 1, o mesmo código de quando nada é encontrado.
 
-Para dimensionar um documento antes de colá-lo num prompt, `mdv --stats plano.md` imprime palavras, blocos de código e tokens estimados, no total e por seção (a seção pai soma as subseções; `[feitas/total]` aparece quando há tarefas). Os tokens são uma estimativa: caracteres do texto, prosa e código, divididos por 4. Só vale para Markdown e não combina com `--toc`, `--extract-code`, `--section`, `--follow` nem `--latest`.
+Para dimensionar um documento antes de colá-lo num prompt, `mdv --stats plano.md` imprime palavras, blocos de código e tokens estimados, no total e por seção (a seção pai soma as subseções; `[feitas/total]` aparece quando há tarefas). Os tokens são uma estimativa: caracteres do texto, prosa e código, divididos por 4. Só vale para Markdown e não combina com `--toc`, `--extract-code`, `--section`, nem `--follow`.
 
 ## Conferir links
 
@@ -288,7 +272,7 @@ plano.md:55: cerca de código aberta aqui e sem fechamento
 3 problemas
 ```
 
-O que confere: âncoras `#título` (mesma regra de slug do GitHub, com `-1`, `-2` para títulos repetidos), arquivos e imagens relativos (resolvidos a partir da pasta do documento; com stdin, do diretório atual), âncoras em outro `.md` (`outro.md#título`), links de referência sem definição (`[texto][ref]`) e cercas de código sem fechamento. Ignora `http(s)://`, `mailto:`, `data:`, caminhos absolutos, UNC (`\\servidor\pasta`) e com unidade (`C:`), que nunca são consultados no disco (nem depois de decodificar `%XX`), e tudo que está dentro de blocos de código. Limites: 200 problemas listados, 20 000 links e 50 outros `.md` lidos (até 5 MiB cada). Só vale para Markdown e não combina com `--toc`, `--stats`, `--extract-code`, `--section`, `--follow` nem `--latest`.
+O que confere: âncoras `#título` (mesma regra de slug do GitHub, com `-1`, `-2` para títulos repetidos), arquivos e imagens relativos (resolvidos a partir da pasta do documento; com stdin, do diretório atual), âncoras em outro `.md` (`outro.md#título`), links de referência sem definição (`[texto][ref]`) e cercas de código sem fechamento. Ignora `http(s)://`, `mailto:`, `data:`, caminhos absolutos, UNC (`\\servidor\pasta`) e com unidade (`C:`), que nunca são consultados no disco (nem depois de decodificar `%XX`), e tudo que está dentro de blocos de código. Limites: 200 problemas listados, 20 000 links e 50 outros `.md` lidos (até 5 MiB cada). Só vale para Markdown e não combina com `--toc`, `--stats`, `--extract-code`, `--section`, nem `--follow`.
 
 ## JSON, CSV e TSV
 
@@ -317,17 +301,12 @@ MDV_MEMORY_BUFFER=2G mdv grande.md      # a flag vence a variável
 
 Aceita `256M`, `1G`, `512MiB`, `65536K` (múltiplos de 1024); o mínimo é 32 MiB. Se o valor passar da memória livre do computador, o `mdv` avisa e segue. A memória livre é detectada no Linux; no macOS e no Windows a mensagem só não traz o número.
 
-## Pergunte à IA (opt-in)
-
-Defina `MDV_AI_CMD` com um comando que lê o texto no stdin e responde no stdout (sem shell e sem aspas: programa e argumentos separados por espaço), por exemplo `export MDV_AI_CMD='claude -p'`. Na TUI, `?` envia a **seção atual** (até 64 KiB) ao comando e mostra a resposta, renderizada como Markdown e saneada, num painel (`j`/`k` rolam, `Esc` fecha). O `mdv` não tem rede embutida: quem fala com o serviço é o seu comando. Limites: 60 s de tempo e 256 KiB de resposta; passando disso o processo é morto. Sem `MDV_AI_CMD` a tecla só avisa como ativar.
-
 ## Limitações conhecidas
 
 - Linhas de código largas são quebradas na largura da tela; a tecla `w` desliga a quebra e `h`/`l` rolam na horizontal (a busca, nesse modo, só enxerga o trecho visível).
 - A busca opera nas linhas já renderizadas: acha texto que atravessa trechos estilizados (`foo**bar**`), mas não uma frase que a largura da tela quebrou em duas linhas.
 - Imagens usam meio-bloco (baixa resolução); para mais nitidez use `--graphics kitty` (Sixel não é suportado).
 - A memória livre do computador só é informada no Linux.
-- Quando o arquivo muda, as linhas novas ou alteradas ganham uma barra amarela `▌` na margem esquerda, relativa à versão imediatamente anterior. Remoções não são marcadas. Acima de 20 000 linhas o `mdv` não calcula a diferença. No `--plain` não há marcas.
 - `y`/`Y` dependem de o terminal aceitar OSC 52 (no tmux, `set -g set-clipboard on`); terminais sem suporte ignoram em silêncio.
 
 ## Changelog
@@ -443,9 +422,28 @@ cargo run --release -- -p -w 60 sample.md   # saída plain
 cargo test
 ```
 
-O pipeline é um só: entrada (Markdown, JSON, CSV/TSV) → linhas do `ratatui` → TUI ou ANSI. `src/render.rs` renderiza; `src/main.rs` cuida da TUI, busca e live reload; `src/cli.rs` interpreta os argumentos; `src/image.rs`, `src/net.rs` e `src/mermaid.rs` fazem o I/O de imagens e diagramas (nunca dentro de `render.rs`); `src/stream.rs` trata `--follow` e `--latest`; `src/data.rs` trata JSON e CSV/TSV.
+O pipeline é um só: entrada (Markdown, JSON, CSV/TSV) → linhas do `ratatui` → TUI ou ANSI. `src/render.rs` renderiza; `src/main.rs` cuida da TUI, busca e a recarga (`r`); `src/cli.rs` interpreta os argumentos; `src/image.rs`, `src/net.rs` e `src/mermaid_native.rs` fazem o I/O de imagens e diagramas (nunca dentro de `render.rs`); `src/stream.rs` trata `--follow`; `src/data.rs` trata JSON e CSV/TSV.
 
 Os blocos de **instalação** e **uso** acima são gerados pela CI a cada release (`scripts/update-readme.sh`), a partir dos arquivos publicados e da saída real de `mdv --help`; não edite o que está entre os marcadores `<!-- mdv:… -->`.
+
+## Removido na 0.5.0
+
+Estas funcionalidades saíram para manter o `mdv` focado em **ler documentos**. O código continua disponível no commit `c6c7a01` (tag `v0.4.4`): `git show v0.4.4:src/<arquivo>.rs`.
+
+| Funcionalidade | Onde estava |
+|---|---|
+| Dobra de seções (`z` / `Z`) | `src/fold.rs` |
+| `mmdc`, `--mermaid`, `--setup-mermaid`, `MDV_MMDC` | `src/mermaid.rs`, `src/setup.rs` |
+| Tecla `?` e `MDV_AI_CMD` | `src/ai.rs` |
+| `mdv chat` | `src/chat.rs` |
+| `<think>` / `<thinking>` | `src/render.rs` |
+| `--idle` | `src/main.rs` |
+| `--latest` | `src/main.rs`, `src/stream.rs` |
+| Reload automático por `mtime` (a tecla `r` continua) | `src/main.rs` |
+| Marcas de mudança e teclas `{` / `}` / `c` | `src/diff.rs` |
+| `mdv diff` e `--split` (blocos ` ```diff ` continuam coloridos; `.diff` abre como Markdown) | `src/render.rs` |
+
+`--extract-code`, `--section` e `--check-links` continuam nesta versão e passam para o binário `mdv-tools` na próxima fase.
 
 ## Licença
 

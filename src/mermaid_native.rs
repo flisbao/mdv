@@ -4,10 +4,9 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use resvg::{tiny_skia, usvg};
 
-
-/// Mais linhas que isso é recusado antes de qualquer trabalho (o layout cresce com o grafo).
 /// Tamanho máximo do fonte de um diagrama.
 pub const MAX_MERMAID_BYTES: usize = 64 * 1024;
+/// Mais linhas que isso é recusado antes de qualquer trabalho (o layout cresce com o grafo).
 pub const MAX_LINES: usize = 400;
 /// Mais conexões (`>` para setas, `&` para cada ponto extra) que isso é recusado: o custo do
 /// layout cresce mais que linearmente com as arestas (399 arestas levaram 44 s).
