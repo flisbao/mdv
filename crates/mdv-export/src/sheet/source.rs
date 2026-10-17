@@ -112,10 +112,15 @@ struct MdTable {
     rows: Vec<Vec<String>>,
 }
 
+/// `<br>`, `<br/>` ou `<br />` (qualquer caixa).
+fn is_br(h: &str) -> bool {
+    let t = h.trim().to_ascii_lowercase();
+    matches!(t.as_str(), "<br>" | "<br/>" | "<br />")
+}
+
 /// Tabelas do Markdown, em ordem. Tabela dentro de bloco de código não é tabela (o `pulldown-cmark`
 /// já não a reconhece). O texto da célula é o texto puro: negrito, código, link e imagem perdem a marcação.
 fn md_tables(md: &str, budget: &dyn Budget) -> Result<Vec<MdTable>, String> {
-    budget.check_parse(md.len())?;
     let mut out: Vec<MdTable> = Vec::new();
     let mut cur: Option<MdTable> = None;
     let mut row: Vec<String> = Vec::new();
@@ -128,6 +133,11 @@ fn md_tables(md: &str, budget: &dyn Budget) -> Result<Vec<MdTable>, String> {
             Event::Text(t) | Event::Code(t) => {
                 if let Some(c) = &mut cell {
                     c.push_str(&t);
+                }
+            }
+            Event::InlineHtml(h) if is_br(&h) => {
+                if let Some(c) = &mut cell {
+                    c.push(' ');
                 }
             }
             Event::SoftBreak | Event::HardBreak => {
@@ -155,6 +165,7 @@ pub fn from_markdown(
     budget: &dyn Budget,
     warnings: &mut Vec<String>,
 ) -> Result<Workbook, String> {
+    budget.check_parse(md.len())?;
     let heads = headings(md);
     let mut tables = md_tables(md, budget)?;
     if let Some(query) = select.section {
@@ -171,6 +182,9 @@ pub fn from_markdown(
     // Número de cada tabela no documento inteiro (para o nome padrão) antes de selecionar.
     let mut numbered: Vec<(usize, MdTable)> = tables.into_iter().enumerate().map(|(i, t)| (i + 1, t)).collect();
     if let Some(n) = select.table {
+        if n == 0 {
+            return Err("--table começa em 1".to_string());
+        }
         if n > numbered.len() {
             return Err(format!("--table {n}: o documento tem {} tabela(s)", numbered.len()));
         }
@@ -410,5 +424,32 @@ intro
         let wb = from_markdown(&doc, &MdSelect { section: None, table: None }, &Unlimited, &mut w).unwrap();
         assert_eq!(wb.sheets.len(), MAX_SHEETS);
         assert!(w.iter().any(|x| x.contains("tabelas")), "{w:?}");
+    }
+
+    #[test]
+    fn table_zero_e_erro_claro_sem_panico() {
+        let e = md(DOC, None, Some(0)).unwrap_err();
+        assert!(e.contains("começa em 1"), "{e}");
+    }
+
+    #[test]
+    fn check_parse_vem_antes_de_qualquer_analise() {
+        struct Ordem;
+        impl crate::Budget for Ordem {
+            fn check(&self) -> Result<(), String> {
+                panic!("check chamado antes de check_parse");
+            }
+            fn check_parse(&self, _len: usize) -> Result<(), String> {
+                Err("limite de memória".to_string())
+            }
+        }
+        let e = from_markdown(DOC, &MdSelect { section: None, table: None }, &Ordem, &mut Vec::new()).unwrap_err();
+        assert!(e.contains("memória"), "{e}");
+    }
+
+    #[test]
+    fn br_na_celula_vira_espaco_e_outro_html_some() {
+        let wb = md("| a |\n|---|\n| x<br>y<BR/>z<br />w<b>k</b> |\n", None, None).unwrap();
+        assert_eq!(wb.sheets[0].rows[1], vec![t("x y z wk")]);
     }
 }
