@@ -179,3 +179,12 @@ fn r_com_stdin_nao_muda_nada() {
     assert!(!press(&mut a, KeyCode::Char('r')));
     assert_eq!(a.md, "# Igual\n");
 }
+
+#[test]
+fn interrogacao_foi_removida_e_nao_faz_nada() {
+    let mut a = app(&longo());
+    let antes = a.view.scroll;
+    assert!(!press(&mut a, KeyCode::Char('?')));
+    assert_eq!(a.view.scroll, antes);
+    assert!(a.notice.is_none(), "sem aviso de MDV_AI_CMD: {:?}", a.notice);
+}
