@@ -18,6 +18,7 @@ cargo run --release -- -p json samples/itens.json   # tabela; --as schema para o
 cargo run --release -- -p sample.md              # diagramas Mermaid só viram imagem com --graphics (terminal Kitty); sem isso saem como código
 cargo run --release -p mdv-tools -- check-links sample.md   # binário mdv-tools
 cargo clippy --workspace --all-targets
+cargo test --workspace --no-default-features   # sem Mermaid nem rede (features `mermaid`, `remote`)
 ```
 
 `cargo test --workspace` roda os testes unitários (`render/`, `main.rs`, `cli.rs`, `image.rs`, `net.rs`, `mermaid_native.rs`, `stream.rs`, `data.rs`, `golden_ansi.rs`, `app/keys_tests.rs`, mais os de `crates/mdv-text` e `crates/mdv-tools`), `tests/cli.rs` (executa o binário) e `tests/golden.rs` (saída ANSI contra `tests/golden/`, sem `UPDATE_GOLDEN=1`). Para validar mudanças de renderização, também use `-p` com `sample.md` ou com `samples/` — funciona sem terminal interativo.
@@ -54,6 +55,8 @@ Um único pipeline: entrada (Markdown, JSON, CSV/TSV) → `Vec<Line>` do ratatui
 - `src/nav.rs` e `src/browse.rs`: navegação na TUI. `nav::resolve` classifica o destino de um link (âncora, `.md` relativo confinado, `http(s)`/`mailto` sem `?attach=`); `open_external` roda `xdg-open`/`open` só depois do `y`. O texto de cada link carrega o índice em `Rendered.links` na cor do sublinhado (`render::link_id`; `strip_link_marks` tira a marca antes de desenhar). `browse.rs` tem `Tab`/`Enter`/`Backspace`, a pilha `App.back` e `open_file`. `open_file` recebe o `Doc` do documento aberto (links seguem como Markdown) e `Back::File` guarda o `Doc` para o `Backspace` restaurar. Textos vindos de URL, âncora e nome de arquivo passam por `render::sanitize` antes de ir para a barra ou o seletor.
 - `src/picker.rs`: seletor de `mdv <pasta>` (não recursivo, teto de 5000 arquivos, filtro fuzzy). `App.picker` ocupa a tela enquanto existe.
 - `src/data.rs`: visualizadores de dados: JSON/JSONL (`render_json` com as vistas texto, tabela e esquema, escolhidas por `--as`/tecla `v`) e CSV/TSV (`render_table_data`); as duas tabelas passam por `finish_table` (tetos `MAX_TABLE_COLS`/`MAX_CELL_CHARS`), reaproveitando `render_code_only` e `render_table_only`.
+
+**Regra: `#[cfg(feature)]` só nas fachadas** (`mermaid_native.rs` e `net.rs`, cada um com uma versão vazia que devolve erro claro); testes que usam Mermaid ou rede levam `#[cfg(feature = "…")]`. `images` é sempre compilada (decisão da fase 6). Não rode `cargo fmt` (o repositório não é rustfmt-clean).
 
 **Regra: I/O fica fora de `render/`.** Disco, rede e subprocesso vivem em `ImageStore`/`net`/`mermaid_native`; `render` só consulta o cache, por meio do `trait ImageProvider` (`render/images.rs`; o `ImageStore` o implementa e os testes usam um fake). `mermaid_enabled()` só é verdadeiro com gráficos ativos: sem eles o bloco ` ```mermaid ` sai como código. A rede é opt-in (`--remote`); o Mermaid roda em processo (sem subprocesso).
 

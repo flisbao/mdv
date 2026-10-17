@@ -416,8 +416,19 @@ _2026-10-13_
 cargo run --release -- sample.md        # TUI
 cargo run --release -- -p -w 60 sample.md   # saída plain
 cargo test --workspace
+cargo test --workspace --no-default-features   # núcleo sem Mermaid nem rede
 cargo run --release -p mdv-tools -- --help   # o binário mdv-tools
 ```
+
+### Features do Cargo
+
+Todas vêm ligadas por padrão; `cargo build --release --no-default-features` gera um binário bem menor (cerca de 134 crates contra 241).
+
+| Feature | O que liga | Sem ela |
+|---------|-----------|---------|
+| `images` | decodificação de imagens (sempre compilada; existe para `mermaid` e `remote` dependerem dela) | — |
+| `mermaid` | diagramas Mermaid nativos (`mermaid-rs-renderer` + `resvg`) | o bloco ` ```mermaid ` sai como código |
+| `remote` | `--remote` (`ureq` + `url`) | `--remote` é aceita, mas a imagem remota mostra `recompile com --features remote` |
 
 O pipeline é um só: entrada (Markdown, JSON, CSV/TSV) → linhas do `ratatui` → TUI ou ANSI. `src/render/` renderiza; `src/main.rs` escolhe o modo e `src/app/` cuida da TUI, da busca e da recarga (`r`); `src/cli.rs` interpreta os argumentos; `src/image.rs`, `src/net.rs` e `src/mermaid_native.rs` fazem o I/O de imagens e diagramas (nunca dentro de `render/`); `src/stream.rs` trata `--follow`; `src/data.rs` trata JSON e CSV/TSV.
 

@@ -27,6 +27,9 @@ jobs:
       - name: Testes
         run: cargo test --release --workspace
 
+      - name: Testes sem features
+        run: cargo test --release --workspace --no-default-features
+
       - name: Saída plain do sample
         shell: bash
         run: cargo run --release -- -p -w 60 sample.md
