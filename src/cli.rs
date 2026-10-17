@@ -385,6 +385,44 @@ mod tests {
         }
 
     #[test]
+    fn valor_faltando_no_fim_mantem_a_mensagem() {
+        assert_eq!(run(&["a.md", "-w"]).unwrap_err(), "a opção -w precisa de uma largura");
+        assert_eq!(run(&["a.md", "--path"]).unwrap_err(), "a opção --path precisa de um valor");
+        assert_eq!(run(&["a.md", "--head"]).unwrap_err(), "a opção --head precisa de um valor");
+        assert_eq!(run(&["a.md", "--cols"]).unwrap_err(), "a opção --cols precisa de um valor");
+    }
+
+    #[test]
+    fn delimiter_forca_o_modo_tabela_mesmo_com_extensao_md() {
+        let cli = run(&["--delimiter", ";", "a.md"]).unwrap();
+        assert_eq!(cli.mode, Mode::Table { delimiter: b';' });
+    }
+
+    #[test]
+    fn delimiter_tab_e_barra_t() {
+        for v in ["tab", "\\t"] {
+            assert_eq!(run(&["--delimiter", v, "a.txt"]).unwrap().mode, Mode::Table { delimiter: b'\t' });
+        }
+        assert_eq!(run(&["--delimiter", "ab", "a.txt"]).unwrap_err(), "delimitador inválido: ab");
+    }
+
+    #[test]
+    fn head_e_limitado_ao_intervalo() {
+        assert_eq!(run(&["a.csv", "--head", "0"]).unwrap().head, 1);
+        assert_eq!(run(&["a.csv", "--head", "999999999"]).unwrap().head, MAX_HEAD);
+        assert_eq!(run(&["a.csv", "--head", "x"]).unwrap_err(), "--head inválido: x");
+    }
+
+    #[test]
+    fn caminho_duplicado_e_graphics_invalido_mantem_mensagem() {
+        assert_eq!(run(&["a.md", "b.md"]).unwrap_err(), "informe um único arquivo");
+        assert_eq!(
+            run(&["--graphics", "x", "a.md"]).unwrap_err(),
+            "--graphics inválido: x (use off, kitty ou auto)"
+        );
+    }
+
+    #[test]
     fn idle_foi_removido() {
         let e = run(&["--follow", "--idle", "5"]).unwrap_err();
         assert!(e.contains("opção desconhecida: --idle"), "{e}");
