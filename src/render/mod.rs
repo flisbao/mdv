@@ -33,6 +33,8 @@ const MIN_BODY_WIDTH: usize = 10;
 /// então blocos que estourem o que resta do orçamento (ou o teto de um único bloco) saem sem cor.
 const MAX_HIGHLIGHT_BYTES: usize = 256 * 1024;
 
+mod ansi;
+mod wrap;
 mod theme;
 mod model;
 mod outline;
@@ -41,6 +43,8 @@ pub(crate) use self::theme::DIM;
 use self::theme::*;
 pub use self::model::*;
 pub use self::outline::*;
+pub use self::ansi::*;
+use self::wrap::*;
 
 const REPLACEMENT: char = '\u{FFFD}';
 
@@ -289,61 +293,6 @@ fn sanitize_event(ev: Event<'_>) -> Event<'_> {
         }
         other => other,
     }
-}
-
-/// Converte linhas estilizadas em texto com escapes ANSI (ou texto puro se `color` for falso).
-pub fn to_ansi(lines: &[Line<'_>], color: bool) -> String {
-    let mut out = String::new();
-    for line in lines {
-        for span in &line.spans {
-            let opened = color && write_sgr(&mut out, &span.style);
-            out.push_str(&span.content);
-            if opened {
-                out.push_str("\x1b[0m");
-            }
-        }
-        out.push('\n');
-    }
-    out
-}
-
-/// Abre a sequência SGR do estilo em `out`; devolve `false` (sem escrever nada) se o estilo é vazio.
-fn write_sgr(out: &mut String, st: &Style) -> bool {
-    const MODIFIERS: [(Modifier, &str); 5] = [
-        (Modifier::BOLD, "1"),
-        (Modifier::DIM, "2"),
-        (Modifier::ITALIC, "3"),
-        (Modifier::UNDERLINED, "4"),
-        (Modifier::CROSSED_OUT, "9"),
-    ];
-    let start = out.len();
-    out.push_str("\x1b[");
-    let params_start = out.len();
-    let param = |out: &mut String, args: std::fmt::Arguments<'_>| {
-        if out.len() > params_start {
-            out.push(';');
-        }
-        // Escrever em `String` não falha.
-        let _ = out.write_fmt(args);
-    };
-    for (modifier, code) in MODIFIERS {
-        if st.add_modifier.contains(modifier) {
-            param(out, format_args!("{code}"));
-        }
-    }
-    for (color, base) in [(st.fg, 38), (st.bg, 48)] {
-        match color {
-            Some(Color::Rgb(r, g, b)) => param(out, format_args!("{base};2;{r};{g};{b}")),
-            Some(Color::Indexed(i)) => param(out, format_args!("{base};5;{i}")),
-            _ => {}
-        }
-    }
-    if out.len() == params_start {
-        out.truncate(start);
-        return false;
-    }
-    out.push('m');
-    true
 }
 
 fn hl() -> &'static (SyntaxSet, Theme) {
@@ -1177,10 +1126,6 @@ fn layout_table(
     TableView { lines, pinned, first_col, shown_cols: shown, total_cols: total }
 }
 
-fn spans_width(spans: &[Span<'_>]) -> usize {
-    spans.iter().map(|s| s.content.width()).sum()
-}
-
 /// Maior largura de conteúdo de cada coluna de `idx` (mínimo 1).
 fn natural_widths(rows: &[Vec<Vec<Piece>>], idx: &[usize]) -> Vec<usize> {
     let mut natural = vec![1usize; idx.len()];
@@ -1394,221 +1339,6 @@ fn fit(cell: &[Piece], w: usize) -> (Vec<Span<'static>>, usize) {
         out.push(Span::styled(buf, st));
     }
     (out, used)
-}
-
-/// Janela de `avail` colunas que começa na coluna `skip` de `pieces`. Marca com `‹`/`›` as
-/// bordas onde há conteúdo cortado. Caractere largo que cruza a borda sai da janela (a linha
-/// fica uma coluna mais curta; quem desenha completa com espaços).
-fn window_by_width(pieces: &[Styled], skip: usize, avail: usize) -> Vec<Styled> {
-    let mut cells: Vec<(char, Style)> = Vec::new();
-    let (mut col, mut used) = (0usize, 0usize);
-    let (mut left, mut right) = (false, false);
-    for (text, style) in pieces {
-        for ch in text.chars() {
-            let cw = ch.width().unwrap_or(0);
-            let start = col;
-            col += cw;
-            if right {
-                continue;
-            }
-            if start < skip {
-                left |= cw > 0;
-                continue;
-            }
-            if used + cw > avail {
-                right = true;
-                continue;
-            }
-            cells.push((ch, *style));
-            used += cw;
-        }
-    }
-    let edge = Style::default().fg(DIM).bg(CODE_BG);
-    if left {
-        if let Some(first) = cells.first_mut() {
-            *first = ('‹', edge);
-        }
-    }
-    if right {
-        if let Some(last) = cells.last_mut() {
-            *last = ('›', edge);
-        }
-    }
-    let mut out: Vec<Styled> = Vec::new();
-    for (ch, st) in cells {
-        match out.last_mut() {
-            Some((s, last)) if *last == st => s.push(ch),
-            _ => out.push((ch.to_string(), st)),
-        }
-    }
-    out
-}
-
-/// Quebra em pedaços de no máximo `avail` colunas, caractere a caractere.
-fn split_by_width(pieces: &[Styled], avail: usize) -> Vec<Vec<Styled>> {
-    let avail = avail.max(1);
-    let mut done: Vec<Vec<Styled>> = Vec::new();
-    let mut line: Vec<Styled> = Vec::new();
-    let mut w = 0;
-    for (text, style) in pieces {
-        for ch in text.chars() {
-            let mut cw = ch.width().unwrap_or(0);
-            if w + cw > avail && w > 0 {
-                done.push(std::mem::take(&mut line));
-                w = 0;
-            }
-            // Caractere mais largo que a linha inteira (1 coluna): não cabe de jeito nenhum.
-            let ch = if cw > avail {
-                cw = REPLACEMENT.width().unwrap_or(1);
-                REPLACEMENT
-            } else {
-                ch
-            };
-            match line.last_mut() {
-                Some((s, st)) if *st == *style => s.push(ch),
-                _ => line.push((ch.to_string(), *style)),
-            }
-            w += cw;
-        }
-    }
-    done.push(line);
-    done
-}
-
-enum Unit {
-    Space(Style),
-    Word(Vec<Styled>),
-    Break,
-}
-
-/// Espaços que separam palavras; os "sem quebra" (NBSP e similares) fazem parte da palavra.
-fn is_breaking_space(ch: char) -> bool {
-    ch.is_whitespace() && !matches!(ch, '\u{a0}' | '\u{2007}' | '\u{202f}')
-}
-
-fn push_run(units: &mut Vec<Unit>, text: String, is_space: bool, style: Style) {
-    if is_space {
-        if !matches!(units.last(), Some(Unit::Space(_))) {
-            units.push(Unit::Space(style));
-        }
-        return;
-    }
-    match units.last_mut() {
-        Some(Unit::Word(p)) => p.push((text, style)),
-        _ => units.push(Unit::Word(vec![(text, style)])),
-    }
-}
-
-/// Monta linhas quebradas a partir de espaços e palavras.
-struct LineBuilder {
-    avail: usize,
-    done: Vec<Vec<Span<'static>>>,
-    line: Vec<Span<'static>>,
-    /// Colunas já usadas na linha atual.
-    cur: usize,
-    /// A linha atual termina num espaço que ainda pode ser descartado.
-    trailing: bool,
-}
-
-impl LineBuilder {
-    fn new(avail: usize) -> Self {
-        LineBuilder { avail: avail.max(1), done: Vec::new(), line: Vec::new(), cur: 0, trailing: false }
-    }
-
-    fn trim_trailing(&mut self) {
-        if self.trailing {
-            self.line.pop();
-            self.cur = self.cur.saturating_sub(1);
-            self.trailing = false;
-        }
-    }
-
-    fn new_line(&mut self) {
-        self.done.push(std::mem::take(&mut self.line));
-        self.cur = 0;
-    }
-
-    fn break_line(&mut self) {
-        self.trim_trailing();
-        self.new_line();
-    }
-
-    fn space(&mut self, style: Style) {
-        if self.cur == 0 || self.cur + 1 > self.avail {
-            return;
-        }
-        self.line.push(Span::styled(" ", style));
-        self.cur += 1;
-        self.trailing = true;
-    }
-
-    fn word(&mut self, pieces: Vec<Styled>) {
-        let ww: usize = pieces.iter().map(|(t, _)| t.width()).sum();
-        if self.cur > 0 && self.cur + ww > self.avail {
-            self.break_line();
-        }
-        self.trailing = false;
-        if ww <= self.avail {
-            self.line.extend(pieces.into_iter().map(|(t, st)| Span::styled(t, st)));
-            self.cur += ww;
-            return;
-        }
-        for (i, chunk) in split_by_width(&pieces, self.avail).into_iter().enumerate() {
-            if i > 0 {
-                self.new_line();
-            }
-            self.cur = chunk.iter().map(|(t, _)| t.width()).sum();
-            self.line.extend(chunk.into_iter().map(|(t, st)| Span::styled(t, st)));
-        }
-    }
-
-    fn finish(mut self) -> Vec<Vec<Span<'static>>> {
-        self.trim_trailing();
-        self.done.push(self.line);
-        self.done
-    }
-}
-
-/// Quebra de linha por palavras preservando o estilo de cada trecho.
-/// Trechos colados (ex.: `**negrito**,`) formam uma única "palavra" e não se separam.
-fn wrap(toks: &[Piece], avail: usize) -> Vec<Vec<Span<'static>>> {
-    let mut units: Vec<Unit> = Vec::new();
-    for piece in toks {
-        let (text, style) = match piece {
-            Piece::Text(text, style) => (text, style),
-            Piece::Code(text, style) => {
-                push_run(&mut units, text.clone(), false, *style);
-                continue;
-            }
-            Piece::Break => {
-                units.push(Unit::Break);
-                continue;
-            }
-        };
-        let mut buf = String::new();
-        let mut buf_space = false;
-        for ch in text.chars() {
-            let sp = is_breaking_space(ch);
-            if !buf.is_empty() && sp != buf_space {
-                push_run(&mut units, std::mem::take(&mut buf), buf_space, *style);
-            }
-            buf_space = sp;
-            buf.push(ch);
-        }
-        if !buf.is_empty() {
-            push_run(&mut units, buf, buf_space, *style);
-        }
-    }
-
-    let mut lines = LineBuilder::new(avail);
-    for unit in units {
-        match unit {
-            Unit::Break => lines.break_line(),
-            Unit::Space(st) => lines.space(st),
-            Unit::Word(pieces) => lines.word(pieces),
-        }
-    }
-    lines.finish()
 }
 
 #[cfg(test)]
