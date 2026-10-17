@@ -419,7 +419,7 @@ cargo test --workspace
 cargo run --release -p mdv-tools -- --help   # o binário mdv-tools
 ```
 
-O pipeline é um só: entrada (Markdown, JSON, CSV/TSV) → linhas do `ratatui` → TUI ou ANSI. `src/render/` renderiza; `src/main.rs` cuida da TUI, busca e a recarga (`r`); `src/cli.rs` interpreta os argumentos; `src/image.rs`, `src/net.rs` e `src/mermaid_native.rs` fazem o I/O de imagens e diagramas (nunca dentro de `render/`); `src/stream.rs` trata `--follow`; `src/data.rs` trata JSON e CSV/TSV.
+O pipeline é um só: entrada (Markdown, JSON, CSV/TSV) → linhas do `ratatui` → TUI ou ANSI. `src/render/` renderiza; `src/main.rs` escolhe o modo e `src/app/` cuida da TUI, da busca e da recarga (`r`); `src/cli.rs` interpreta os argumentos; `src/image.rs`, `src/net.rs` e `src/mermaid_native.rs` fazem o I/O de imagens e diagramas (nunca dentro de `render/`); `src/stream.rs` trata `--follow`; `src/data.rs` trata JSON e CSV/TSV.
 
 Os blocos de **instalação** e **uso** acima são gerados pela CI a cada release (`scripts/update-readme.sh`), a partir dos arquivos publicados e da saída real de `mdv --help`; não edite o que está entre os marcadores `<!-- mdv:… -->`.
 

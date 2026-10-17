@@ -870,3 +870,26 @@ fn table_alem_do_que_existe_avisa_e_nao_abre() {
         .as_deref()
         .is_some_and(|n| n.contains("tabela 5 não existe (há 1)")));
 }
+
+/// Spec 5: `main.rs` enxuto; nenhum arquivo novo acima de ~500 linhas de produção.
+#[test]
+fn arquivos_de_producao_dentro_do_teto() {
+    let arquivos: &[(&str, &str, usize)] = &[
+        ("main.rs", include_str!("../main.rs"), 120),
+        ("load.rs", include_str!("../load.rs"), 500),
+        ("plain.rs", include_str!("../plain.rs"), 500),
+        ("doc.rs", include_str!("../doc.rs"), 500),
+        ("app/mod.rs", include_str!("mod.rs"), 500),
+        ("app/viewport.rs", include_str!("viewport.rs"), 500),
+        ("app/search.rs", include_str!("search.rs"), 500),
+        ("app/zoom.rs", include_str!("zoom.rs"), 500),
+        ("app/modal.rs", include_str!("modal.rs"), 500),
+        ("app/input.rs", include_str!("input.rs"), 500),
+        ("app/ui.rs", include_str!("ui.rs"), 500),
+        ("app/terminal.rs", include_str!("terminal.rs"), 500),
+    ];
+    for (nome, src, teto) in arquivos {
+        let producao = src.split("#[cfg(test)]\nmod tests {").next().unwrap().lines().count();
+        assert!(producao <= *teto, "{nome} tem {producao} linhas de produção (teto {teto})");
+    }
+}
