@@ -188,3 +188,30 @@ fn interrogacao_foi_removida_e_nao_faz_nada() {
     assert_eq!(a.view.scroll, antes);
     assert!(a.notice.is_none(), "sem aviso de MDV_AI_CMD: {:?}", a.notice);
 }
+
+#[test]
+fn append_md_acumula_o_texto_na_ordem() {
+    let mut a = app("");
+    a.append_md("a\n");
+    a.append_md("b\nc");
+    a.append_md("d\n");
+    assert_eq!(a.md, "a\nb\ncd\n");
+}
+
+#[test]
+fn set_md_troca_o_texto_e_pede_redesenho() {
+    let mut a = app("# Antes\n");
+    a.dirty = false;
+    a.set_md("# Depois\n".to_string());
+    assert_eq!(a.md, "# Depois\n");
+    assert!(a.dirty);
+}
+
+#[test]
+fn chaves_e_c_foram_removidas_e_nao_fazem_nada() {
+    let mut a = app(&longo());
+    for c in ['}', '{', 'c'] {
+        assert!(!press(&mut a, KeyCode::Char(c)));
+        assert!(a.notice.is_none(), "{c}: {:?}", a.notice);
+    }
+}

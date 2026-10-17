@@ -163,8 +163,6 @@ impl App {
         self.md = md;
         self.raw = false;
         self.doc.mode = mode;
-        self.changed.clear();
-        self.marks.clear();
         self.folded.clear();
         self.link_at = None;
         self.search.clear();
