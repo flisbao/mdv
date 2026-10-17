@@ -393,6 +393,15 @@ fn limite_maior_que_a_memoria_livre_avisa_no_stderr_e_segue() {
 }
 
 #[test]
+fn stats_de_markdown_que_expande_alem_do_limite_da_erro_limpo() {
+    let md = "a\n\n".repeat(4 * 1024 * 1024 / 3);
+    let out = mdv(&["--stats", "--memory-buffer", "32M", "-"], &md);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert!(err.contains("limite de memória de 32 MiB atingido"), "{}", &err[..err.len().min(300)]);
+}
+
+#[test]
 fn markdown_que_expande_alem_do_limite_para_com_mensagem() {
     // 4 MiB de parágrafos de uma letra: ~1,4 milhão de parágrafos, centenas de MiB renderizados.
     let md = "a\n\n".repeat(4 * 1024 * 1024 / 3);
