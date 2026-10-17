@@ -26,7 +26,7 @@ mdv json dados.json --path .itens[0]      # só um trecho do JSON
 - **Quebra de linha correta.** O texto é quebrado na largura do terminal respeitando caracteres largos: acentos, emojis e CJK (日本語) não desalinham nada.
 - **Leitor interativo.** Rolagem, página, meia página, busca com `/`, `n`/`N` entre ocorrências e `]`/`[` para pular de título em título.
 - **Imagens no terminal.** `![alt](arquivo.png)` e, com `--remote`, imagens por URL, desenhadas em meio-bloco, sem protocolo gráfico. [Detalhes](#imagens).
-- **Diagramas Mermaid.** Blocos <code>```mermaid</code> viram imagem com o renderizador embutido, sem instalar nada, quando o terminal tem protocolo gráfico (`--graphics`); sem ele ficam como código. [Detalhes](#mermaid).
+- **Diagramas Mermaid.** Blocos <code>```mermaid</code> viram imagem com o renderizador embutido, sem instalar nada, automaticamente quando o terminal tem protocolo gráfico (Kitty/Ghostty); sem ele, ou com `mermaid = off` na [configuração](#configuração), ficam como código. [Detalhes](#mermaid).
 - **Andamento de tarefas.** Listas `- [x]`/`- [ ]` mostram o progresso: o rodapé da leitura traz `☑ feitas/total` do documento e da seção atual, e o `--toc` acrescenta `[feitas/total]` aos títulos. Sem tarefas no documento (e no modo fonte, JSON e CSV) nada disso aparece.
 - **Feito para saída de agentes e LLMs.** Front matter YAML, alertas GFM, notas de rodapé e `<details>` aparecem formatados; `--follow` e `--toc` acompanham e resumem. Na TUI, `m` alterna para a fonte crua. [Detalhes](#markdown-de-agentes-e-llms).
 - **JSON, CSV e TSV.** `mdv json|csv|tsv` com `--as table|schema|text`, `--path`, `--head`, `--cols`, `--no-header` e `--delimiter`. [Detalhes](#json-csv-e-tsv).
@@ -159,7 +159,7 @@ OPÇÕES:
     -p, --plain        imprime no terminal (sem TUI), como `cat` com cores
     -w, --width <N>    largura máxima do texto (padrão: 100)
         --remote       baixa imagens de http(s):// (nunca de rede privada)
-        --graphics <G> imagens em alta resolução: off (padrão), kitty ou auto (Kitty/Ghostty; só no modo interativo)
+        --graphics <G> imagens em alta resolução: auto (padrão; detecta Kitty/Ghostty), kitty ou off (só no modo interativo)
         --toc          imprime só o índice de títulos
         --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
         --follow       com stdin: acompanha o texto conforme chega
@@ -205,15 +205,15 @@ Imagens `![alt](caminho)` aparecem desenhadas no próprio terminal, em **meio-bl
 
 - **Locais:** PNG, JPEG, GIF e WebP, até 10 MiB e 8192×8192 px. Se não abrir, aparece `[imagem: alt — motivo]`. Imagens embutidas como `data:image/...;base64,...` (mesmos limites) também funcionam, sem rede; até 32 por documento.
 - **Por URL:** só com `--remote`. Sem a flag, o `mdv` nunca acessa a rede. O download recusa endereços de rede privada, loopback e link-local, limita o tamanho a 10 MiB, segue no máximo 3 redirecionamentos e aceita até 32 imagens por documento. Na TUI o texto aparece na hora e a imagem entra quando o download termina.
-- **Alta resolução (opt-in):** `--graphics kitty` (ou `auto`, que detecta Kitty e Ghostty fora do `tmux`/`screen`) desenha as imagens e os diagramas Mermaid pelo protocolo gráfico do Kitty, com *placeholders Unicode*, então rolam e somem com o texto. Só vale no modo interativo: `--plain` e saída redirecionada seguem em meio-bloco para imagens, e os diagramas Mermaid ficam como código (o Mermaid só é desenhado com protocolo gráfico). Sixel não é suportado.
+- **Alta resolução (automática):** o padrão é `--graphics auto`, que detecta Kitty e Ghostty fora do `tmux`/`screen`; `--graphics kitty` força e `--graphics off` desliga. Nesses terminais o `mdv` desenha as imagens e os diagramas Mermaid pelo protocolo gráfico do Kitty, com *placeholders Unicode*, então rolam e somem com o texto. Só vale no modo interativo: `--plain` e saída redirecionada seguem em meio-bloco para imagens, e os diagramas Mermaid ficam como código (o Mermaid só é desenhado com protocolo gráfico). Sixel não é suportado.
 - **Não suportados:** SVG e `data:` sem `;base64`. A resolução é baixa (meio-bloco); imagem dentro de célula de tabela vira `[imagem: alt ↓n]` na célula e é desenhada logo abaixo da tabela, com a legenda `↓n alt`.
 
 ## Mermaid
 
-Blocos <code>```mermaid</code> viram imagem **sem instalar nada** quando o terminal suporta o protocolo gráfico do Kitty (`--graphics kitty` ou `auto`); sem suporte gráfico (`--plain`, saída redirecionada, `--graphics off`, terminais sem Kitty) o bloco fica como código. O `mdv` traz um renderizador embutido (flowchart, sequence, class, state, ER, pie, Gantt, timeline, journey, mindmap e outros). Ele precisa de ao menos uma fonte instalada no sistema para desenhar o texto.
+Blocos <code>```mermaid</code> viram imagem **sem instalar nada** automaticamente quando o terminal suporta o protocolo gráfico do Kitty (detecção `--graphics auto`, que é o padrão; não precisa de flag); sem suporte gráfico (`--plain`, saída redirecionada, `--graphics off`, terminais sem Kitty) o bloco fica como código. O `mdv` traz um renderizador embutido (flowchart, sequence, class, state, ER, pie, Gantt, timeline, journey, mindmap e outros). Ele precisa de ao menos uma fonte instalada no sistema para desenhar o texto.
 
 ```bash
-mdv --graphics auto doc.md      # diagramas como imagem (renderizador embutido, terminal com Kitty)
+mdv doc.md                      # diagramas como imagem sozinhos, em terminal com Kitty/Ghostty
 mdv doc.md                     # sem gráficos: o diagrama aparece como código
 ```
 
@@ -285,6 +285,17 @@ mdv csv dados.txt --delimiter ';'
 Uma lista de objetos (ou JSONL) abre como **tabela**: uma coluna por chave, objetos aninhados achatados como `endereco.cidade` e listas mostradas de forma compacta. `--head` e `--cols` valem também aqui. Os outros JSONs abrem **indentados**, com um resumo de tipo e tamanho. `--as table|schema|text` força a vista, e na TUI a tecla `v` alterna entre tabela, esquema e texto. O **esquema** mostra o tipo de cada campo (`itens: lista · 120 × objeto`, `tags?: ...` quando o campo falta em alguns itens) a partir de uma amostra dos 1000 primeiros itens.
 
 O formato também é deduzido da extensão (`.json`, `.jsonl`, `.csv`, `.tsv`) e funciona com `-` (stdin). Tabelas mostram até 200 colunas (o rodapé avisa `+N omitidas`) e cortam células com mais de 500 caracteres; para tabelas com muitas colunas use `t` (zoom) ou `--cols`. CSV/TSV têm colunas numéricas alinhadas à direita e rodapé `N de M linhas · K colunas`. A entrada de dados é limitada a 5 MiB.
+
+## Configuração
+
+Arquivo opcional `$XDG_CONFIG_HOME/mdv/config` (ou `~/.config/mdv/config`), com linhas `chave = valor` e `#` para comentários:
+
+```
+# desenha os blocos mermaid como imagem quando o terminal suporta (padrão: on)
+mermaid = off
+```
+
+Com `mermaid = off` os blocos <code>```mermaid</code> ficam sempre como código. Chaves ou valores desconhecidos são ignorados.
 
 ## Limite de memória
 

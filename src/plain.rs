@@ -26,7 +26,7 @@ OPÇÕES:
     -p, --plain        imprime no terminal (sem TUI), como `cat` com cores
     -w, --width <N>    largura máxima do texto (padrão: 100)
         --remote       baixa imagens de http(s):// (nunca de rede privada)
-        --graphics <G> imagens em alta resolução: off (padrão), kitty ou auto (Kitty/Ghostty; só no modo interativo)
+        --graphics <G> imagens em alta resolução: auto (padrão; detecta Kitty/Ghostty), kitty ou off (só no modo interativo)
         --toc          imprime só o índice de títulos
         --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
         --follow       com stdin: acompanha o texto conforme chega
