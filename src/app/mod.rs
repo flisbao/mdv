@@ -264,8 +264,11 @@ impl App {
         let Source::File(p) = &self.source else {
             return;
         };
-        if let Ok(md) = read_markdown_file(p) {
-            self.doc.set_md(md);
+        match read_markdown_file(p) {
+            Ok(md) => self.doc.set_md(md),
+            Err(e) => {
+                self.notice = Some(render::sanitize(&format!("não consegui reler {}: {e}", p.display())).into_owned());
+            }
         }
     }
 

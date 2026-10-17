@@ -315,6 +315,18 @@ fn seletor_continua_na_tela_se_o_segundo_arquivo_falha() {
 }
 
 #[test]
+fn reload_avisa_quando_a_leitura_falha_e_mantem_o_documento() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("a.md");
+    fs::write(&f, "# A\n").unwrap();
+    let mut app = test_app(Source::File(f.clone()), "# A\n");
+    fs::remove_file(&f).unwrap();
+    app.reload();
+    assert_eq!(app.doc.md, "# A\n");
+    assert!(app.notice.as_deref().is_some_and(|n| n.contains("não consegui reler")), "{:?}", app.notice);
+}
+
+#[test]
 fn stream_acumula_pedacos_e_marca_para_redesenhar() {
     let (tx, rx) = std::sync::mpsc::channel();
     let mut app = test_app(Source::Stdin, "").with_stream(rx);
