@@ -6,7 +6,6 @@ use super::*;
 #[derive(Default)]
 pub(crate) struct SearchState {
     /// Texto sendo digitado (`Some` enquanto o prompt `/` está aberto).
-    pub(crate) input: Option<String>,
     pub(crate) query: String,
     pub(crate) matches: Vec<usize>,
     pub(crate) current: usize,
@@ -155,13 +154,13 @@ impl App {
             KeyCode::Enter => self.set_search(buf),
             KeyCode::Backspace => {
                 buf.pop();
-                self.search.input = Some(buf);
+                self.modal = Modal::Search(buf);
             }
             KeyCode::Char(c) => {
                 buf.push(c);
-                self.search.input = Some(buf);
+                self.modal = Modal::Search(buf);
             }
-            _ => self.search.input = Some(buf),
+            _ => self.modal = Modal::Search(buf),
         }
     }
 }

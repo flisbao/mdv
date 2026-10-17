@@ -35,7 +35,7 @@ impl App {
     }
 
     pub(crate) fn draw(&mut self, f: &mut Frame) {
-        if self.picker.is_some() {
+        if self.picker().is_some() {
             self.draw_picker(f);
             return;
         }
@@ -49,11 +49,11 @@ impl App {
         }
         self.open_pending_table();
         self.apply_pending_jump();
-        if self.img_zoom.is_some() {
+        if self.img_zoom().is_some() {
             self.draw_img_zoom(f, content, status);
             return;
         }
-        if self.zoom.is_some() {
+        if self.zoom().is_some() {
             self.draw_zoom(f, content, status);
             return;
         }
@@ -86,7 +86,7 @@ impl App {
     }
 
     pub(crate) fn status_line(&self, width: usize) -> Line<'static> {
-        let left = match &self.search.input {
+        let left = match self.search_input() {
             Some(buf) => format!(" /{buf}█"),
             None => self.status_left(),
         };

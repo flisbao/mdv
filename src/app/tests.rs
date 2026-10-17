@@ -126,14 +126,14 @@ fn tecla_i_abre_o_zoom_do_diagrama_mermaid() {
         "o diagrama virou imagem"
     );
     app.on_key(ev(KeyCode::Char('i')));
-    assert!(app.img_zoom.is_some(), "{:?}", app.notice);
+    assert!(app.img_zoom().is_some(), "{:?}", app.notice);
     app.prepare_img_zoom(100, 30, 8.0);
     term.draw(|f| app.draw(f)).unwrap();
     let text = screen_text(term.backend().buffer()).join("\n");
     assert!(text.contains("diagrama 1/1"), "{text}");
     app.on_key(ev(KeyCode::Char('+')));
     app.on_key(ev(KeyCode::Esc));
-    assert!(app.img_zoom.is_none());
+    assert!(app.img_zoom().is_none());
 }
 
 #[test]
@@ -141,7 +141,7 @@ fn tecla_i_sem_diagrama_avisa() {
     let mut app = test_app(Source::Stdin, "# só texto\n");
     app.prepare(80);
     app.on_key(ev(KeyCode::Char('i')));
-    assert!(app.img_zoom.is_none());
+    assert!(app.img_zoom().is_none());
     assert_eq!(app.notice.as_deref(), Some("nenhum diagrama na tela"));
 }
 
@@ -236,12 +236,12 @@ fn link_externo_so_abre_com_y_e_link_fora_da_pasta_e_recusado() {
     app.rerender(60);
     key(&mut app, KeyCode::Tab);
     key(&mut app, KeyCode::Enter);
-    assert_eq!(app.pending_open.as_deref(), Some("https://exemplo.org"));
+    assert_eq!(app.pending_open(), Some("https://exemplo.org"));
     key(&mut app, KeyCode::Char('n'));
-    assert!(app.pending_open.is_none());
+    assert!(app.pending_open().is_none());
     key(&mut app, KeyCode::Tab);
     key(&mut app, KeyCode::Enter);
-    assert!(app.pending_open.is_none());
+    assert!(app.pending_open().is_none());
     assert!(
         app.notice
             .as_deref()
@@ -274,15 +274,15 @@ fn seletor_abre_arquivo_e_backspace_volta_a_ele() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("um.md"), "# Um\n").unwrap();
     let mut app = test_app(Source::Stdin, "");
-    app.picker = Some(picker::Picker::scan(dir.path()).unwrap());
+    app.modal = Modal::Picker(picker::Picker::scan(dir.path()).unwrap());
     for c in "um".chars() {
         key(&mut app, KeyCode::Char(c));
     }
     key(&mut app, KeyCode::Enter);
-    assert!(app.picker.is_none());
+    assert!(app.picker().is_none());
     assert_eq!(app.name, "um.md");
     key(&mut app, KeyCode::Backspace);
-    let p = app.picker.as_ref().expect("voltou ao seletor");
+    let p = app.picker().expect("voltou ao seletor");
     assert_eq!(p.query, "um", "a consulta é mantida");
     assert!(
         !app.on_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
@@ -700,13 +700,13 @@ fn n_e_p_trocam_de_tabela_no_zoom_dando_a_volta() {
     app.on_key(ev(KeyCode::Char('t')));
     app.on_key(ev(KeyCode::Char('p')));
     assert_eq!(
-        app.zoom.as_ref().map(|z| z.table),
+        app.zoom().map(|z| z.table),
         Some(1),
         "do primeiro volta ao último"
     );
     app.on_key(ev(KeyCode::Char('n')));
     assert_eq!(
-        app.zoom.as_ref().map(|z| z.table),
+        app.zoom().map(|z| z.table),
         Some(0),
         "do último vai ao primeiro"
     );
@@ -717,14 +717,14 @@ fn n_e_p_trocam_de_tabela_no_zoom_dando_a_volta() {
 fn t_abre_o_zoom_da_tabela_visivel() {
     let mut app = app_com_tabela(TABELA);
     assert!(!app.on_key(ev(KeyCode::Char('t'))));
-    assert_eq!(app.zoom.as_ref().map(|z| z.table), Some(0));
+    assert_eq!(app.zoom().map(|z| z.table), Some(0));
 }
 
 #[test]
 fn t_sem_tabela_na_tela_avisa_e_nao_abre() {
     let mut app = app_com_tabela("# só texto\n");
     app.on_key(ev(KeyCode::Char('t')));
-    assert!(app.zoom.is_none());
+    assert!(app.zoom().is_none());
     assert!(app
         .notice
         .as_deref()
@@ -740,7 +740,7 @@ fn t_escolhe_a_tabela_que_aparece_na_tela() {
     let segunda = app.doc.rendered.tables[1].start;
     app.view.scroll = segunda.saturating_sub(1);
     app.on_key(ev(KeyCode::Char('t')));
-    assert_eq!(app.zoom.as_ref().map(|z| z.table), Some(1));
+    assert_eq!(app.zoom().map(|z| z.table), Some(1));
 }
 
 #[test]
@@ -749,7 +749,7 @@ fn esc_e_q_fecham_o_zoom_sem_sair() {
         let mut app = app_com_tabela(TABELA);
         app.on_key(ev(KeyCode::Char('t')));
         assert!(!app.on_key(ev(k)), "{k:?} no zoom só fecha");
-        assert!(app.zoom.is_none());
+        assert!(app.zoom().is_none());
     }
 }
 
@@ -765,7 +765,7 @@ fn colunas_rolam_com_h_l_zero_e_cifrao() {
     let mut app = app_com_tabela(&tabela_larga(12));
     app.on_key(ev(KeyCode::Char('t')));
     app.refresh_zoom(20);
-    let first = |app: &App| app.zoom.as_ref().unwrap().first_col;
+    let first = |app: &App| app.zoom().unwrap().first_col;
     assert_eq!(first(&app), 1);
 
     app.on_key(ev(KeyCode::Char('l')));
@@ -774,26 +774,12 @@ fn colunas_rolam_com_h_l_zero_e_cifrao() {
 
     app.on_key(ev(KeyCode::Char('$')));
     app.refresh_zoom(20);
-    let v = app
-        .zoom
-        .as_ref()
-        .unwrap()
-        .drawn
-        .as_ref()
-        .map(|d| &d.2)
-        .unwrap();
+    let v = app.zoom().unwrap().drawn.as_ref().map(|d| &d.2).unwrap();
     assert_eq!(v.first_col + v.shown_cols - 1, v.total_cols);
 
     app.on_key(ev(KeyCode::Right));
     app.refresh_zoom(20);
-    let v = app
-        .zoom
-        .as_ref()
-        .unwrap()
-        .drawn
-        .as_ref()
-        .map(|d| &d.2)
-        .unwrap();
+    let v = app.zoom().unwrap().drawn.as_ref().map(|d| &d.2).unwrap();
     assert_eq!(
         v.first_col + v.shown_cols - 1,
         v.total_cols,
@@ -816,10 +802,10 @@ fn rolagem_vertical_do_zoom_nao_passa_do_fim() {
     app.on_key(ev(KeyCode::Char('t')));
     app.refresh_zoom(30);
     app.on_key(ev(KeyCode::Char('G')));
-    let z = app.zoom.as_ref().unwrap();
+    let z = app.zoom().unwrap();
     assert!(z.view.scroll > 0);
     app.on_key(ev(KeyCode::Char('g')));
-    assert_eq!(app.zoom.as_ref().unwrap().view.scroll, 0);
+    assert_eq!(app.zoom().unwrap().view.scroll, 0);
 }
 
 #[test]
@@ -828,7 +814,7 @@ fn recarregar_com_a_tabela_sumida_fecha_o_zoom() {
     app.on_key(ev(KeyCode::Char('t')));
     app.doc.md = "sem tabela\n".to_string();
     app.rerender(60);
-    assert!(app.zoom.is_none());
+    assert!(app.zoom().is_none());
 }
 
 #[test]
@@ -837,7 +823,7 @@ fn rerender_com_a_tabela_ainda_presente_mantem_o_zoom_e_refaz_o_desenho() {
     app.on_key(ev(KeyCode::Char('t')));
     app.refresh_zoom(30);
     app.rerender(60);
-    let z = app.zoom.as_ref().expect("continua aberto");
+    let z = app.zoom().expect("continua aberto");
     assert!(z.drawn.is_none(), "o cache do desenho é descartado");
 }
 
@@ -869,7 +855,7 @@ fn table_n_abre_o_zoom_na_primeira_renderizacao() {
     let mut app = app_com_cli(&["--table", "2", "-"], &md);
     app.rerender(60);
     app.open_pending_table();
-    assert_eq!(app.zoom.as_ref().map(|z| z.table), Some(1));
+    assert_eq!(app.zoom().map(|z| z.table), Some(1));
     assert!(app.open_table.is_none());
 }
 
@@ -878,7 +864,7 @@ fn table_alem_do_que_existe_avisa_e_nao_abre() {
     let mut app = app_com_cli(&["--table", "5", "-"], TABELA);
     app.rerender(60);
     app.open_pending_table();
-    assert!(app.zoom.is_none());
+    assert!(app.zoom().is_none());
     assert!(app
         .notice
         .as_deref()

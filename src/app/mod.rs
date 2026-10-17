@@ -2,6 +2,7 @@
 
 #[cfg(test)]
 mod keys_tests;
+mod modal;
 mod search;
 mod terminal;
 #[cfg(test)]
@@ -28,6 +29,7 @@ use crate::doc::{DocOpts, Document};
 use crate::load::{image_store, read_markdown_file, Source};
 use crate::{browse, cli, clip, data, graphics, image, imgview, mem, picker, render, Failure};
 
+pub(crate) use modal::Modal;
 pub(crate) use search::{highlight_line, SearchState};
 pub(crate) use terminal::run_tui;
 pub(crate) use viewport::Viewport;
@@ -45,9 +47,8 @@ pub(crate) struct App {
     pub(crate) max_width: usize,
     pub(crate) view: Viewport,
     pub(crate) search: SearchState,
-    pub(crate) zoom: Option<Zoom>,
+    pub(crate) modal: Modal,
     /// Zoom de imagem (`i`): um diagrama Mermaid na tela inteira.
-    pub(crate) img_zoom: Option<imgview::ImgZoom>,
     /// O zoom de imagem já enviou algo ao terminal (limpar ao sair).
     pub(crate) zoom_sent: bool,
     pub(crate) notice: Option<String>,
@@ -57,10 +58,8 @@ pub(crate) struct App {
     /// Link selecionado: (linha renderizada, índice em `Rendered.links`).
     pub(crate) link_at: Option<(usize, usize)>,
     /// URL externa esperando confirmação (`y`).
-    pub(crate) pending_open: Option<String>,
     pub(crate) back: Vec<browse::Back>,
     /// Seletor de arquivos aberto (`mdv <pasta>`); enquanto existe, ocupa a tela.
-    pub(crate) picker: Option<picker::Picker>,
     pub(crate) pending_jump: Option<browse::Jump>,
     /// Ids gráficos (Kitty) já enviados ao terminal.
     pub(crate) sent_graphics: HashSet<u32>,
@@ -90,17 +89,14 @@ impl App {
             max_width: render::clamp_width(max_width),
             view: Viewport::default(),
             search: SearchState::default(),
-            zoom: None,
-            img_zoom: None,
+            modal: Modal::None,
             zoom_sent: false,
             notice: None,
             open_table: cli.table.map(|n| n - 1),
             pending_osc: None,
             cli: cli.clone(),
             link_at: None,
-            pending_open: None,
             back: Vec::new(),
-            picker: None,
             pending_jump: None,
             sent_graphics: HashSet::new(),
             pending_gfx: String::new(),
@@ -243,9 +239,9 @@ impl App {
             .scroll
             .min(self.view.max_scroll(self.total_lines()));
         let n = self.doc.rendered.tables.len();
-        if self.zoom.as_ref().is_some_and(|z| z.table >= n) {
-            self.zoom = None;
-        } else if let Some(z) = &mut self.zoom {
+        if self.zoom().is_some_and(|z| z.table >= n) {
+            self.modal = Modal::None;
+        } else if let Some(z) = self.zoom_mut() {
             z.drawn = None;
         }
         self.sync_img_zoom();
@@ -311,30 +307,30 @@ impl App {
 
     /// Retorna `true` quando o usuário pediu para sair.
     pub(crate) fn on_key(&mut self, k: KeyEvent) -> bool {
-        if self.picker.is_some() {
-            if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
-                return true;
-            }
-            return self.on_picker_key(k);
-        }
         if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
             return true;
         }
-        if self.img_zoom.is_some() {
-            self.on_img_zoom_key(k.code);
-            return false;
-        }
-        if self.zoom.is_some() {
-            self.on_zoom_key(k.code);
-            return false;
-        }
-        if self.pending_open.is_some() {
-            self.confirm_open(k.code == KeyCode::Char('y'));
-            return false;
+        match self.modal {
+            Modal::Picker(_) => return self.on_picker_key(k),
+            Modal::ImageZoom(_) => {
+                self.on_img_zoom_key(k.code);
+                return false;
+            }
+            Modal::TableZoom(_) => {
+                self.on_zoom_key(k.code);
+                return false;
+            }
+            Modal::ConfirmOpen(_) => {
+                self.confirm_open(k.code == KeyCode::Char('y'));
+                return false;
+            }
+            Modal::Search(_) | Modal::None => {}
         }
         self.notice = None;
-        if let Some(buf) = self.search.input.take() {
-            self.on_search_key(k.code, buf);
+        if matches!(self.modal, Modal::Search(_)) {
+            if let Modal::Search(buf) = std::mem::replace(&mut self.modal, Modal::None) {
+                self.on_search_key(k.code, buf);
+            }
             return false;
         }
 
@@ -391,7 +387,7 @@ impl App {
                     self.scroll_to(h);
                 }
             }
-            KeyCode::Char('/') => self.search.input = Some(String::new()),
+            KeyCode::Char('/') => self.modal = Modal::Search(String::new()),
             KeyCode::Char('n') => self.step_match(true),
             KeyCode::Char('N') => self.step_match(false),
             KeyCode::Char('r') => self.reload(),

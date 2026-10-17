@@ -4,7 +4,7 @@ use crate::nav::{self, Target};
 use crate::picker::{self, Picker};
 use crate::render::{self, link_id};
 use crate::load::{image_store, read_markdown_file, Source};
-use crate::App;
+use crate::app::{App, Modal};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Style};
@@ -95,7 +95,7 @@ impl App {
             Target::Anchor(a) => self.jump_anchor(&a),
             Target::External(u) => {
                 self.notice = Some(format!("abrir no navegador: {u}  (y confirma, outra tecla cancela)"));
-                self.pending_open = Some(u);
+                self.modal = Modal::ConfirmOpen(u);
             }
             Target::Local { path, anchor } => {
                 self.open_file(path, anchor.map(Jump::Anchor), true, crate::cli::Mode::Markdown)
@@ -106,7 +106,7 @@ impl App {
 
     /// Resposta à confirmação de `pending_open`.
     pub fn confirm_open(&mut self, yes: bool) {
-        let Some(url) = self.pending_open.take() else { return };
+        let Modal::ConfirmOpen(url) = std::mem::replace(&mut self.modal, Modal::None) else { return };
         if !yes {
             self.notice = Some("cancelado".to_string());
             return;
@@ -161,7 +161,7 @@ impl App {
         self.doc.opts.mode = mode;
         self.link_at = None;
         self.search.clear();
-        self.zoom = None;
+        self.modal = Modal::None;
         self.view.scroll = 0;
         self.pending_jump = jump;
         self.doc.dirty = true;
@@ -172,7 +172,7 @@ impl App {
         match self.back.pop() {
             Some(Back::File { path, line, mode }) => self.open_file(path, Some(Jump::Line(line)), false, mode),
             Some(Back::Picker(p)) => {
-                self.picker = Some(*p);
+                self.modal = Modal::Picker(*p);
                 self.link_at = None;
             }
             None => self.notice = Some("nada para voltar".to_string()),
@@ -203,7 +203,7 @@ impl App {
 impl App {
     /// Teclas no seletor: digitar filtra, ↑/↓ escolhem, Enter abre, Esc sai.
     pub fn on_picker_key(&mut self, k: KeyEvent) -> bool {
-        let Some(p) = self.picker.as_mut() else { return false };
+        let Some(p) = self.picker_mut() else { return false };
         match k.code {
             KeyCode::Esc => return true,
             KeyCode::Up => p.step(-1),
@@ -217,13 +217,13 @@ impl App {
             KeyCode::Enter => {
                 if let Some(path) = p.current().map(|e| e.path.clone()) {
                     let keep = Box::new(p.clone());
-                    self.picker = None;
+                    self.modal = Modal::None;
                     self.open_file(path, None, false, crate::cli::Mode::Markdown);
                     // Só empilha se o arquivo abriu (senão o seletor continua na tela).
                     if matches!(self.source, Source::File(_)) {
                         self.back.push(Back::Picker(keep));
                     } else {
-                        self.picker = Some(*keep);
+                        self.modal = Modal::Picker(*keep);
                     }
                 }
             }
@@ -233,7 +233,7 @@ impl App {
     }
 
     pub fn draw_picker(&self, f: &mut Frame) {
-        let Some(p) = &self.picker else { return };
+        let Some(p) = self.picker() else { return };
         let area = f.area();
         let [body, status] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
         let rows = usize::from(body.height).saturating_sub(2).max(1);

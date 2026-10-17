@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use image::imageops::FilterType;
 use image::DynamicImage;
+use crate::app::Modal;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
@@ -142,7 +143,7 @@ impl App {
         match crate::image::decode(&png) {
             Ok(img) => {
                 self.notice = None;
-                self.img_zoom = Some(ImgZoom::new(index, key, img));
+                self.modal = Modal::ImageZoom(ImgZoom::new(index, key, img));
             }
             Err(e) => self.notice = Some(format!("não consegui abrir o diagrama: {}", crate::render::sanitize(&e))),
         }
@@ -150,18 +151,18 @@ impl App {
 
     /// Fecha o zoom se o documento mudou e o diagrama sumiu.
     pub(crate) fn sync_img_zoom(&mut self) {
-        let gone = self.img_zoom.as_ref().is_some_and(|z| {
+        let gone = self.img_zoom().is_some_and(|z| {
             self.doc.rendered.mermaids.get(z.index).is_none_or(|m| m.key != z.key)
         });
         if gone {
-            self.img_zoom = None;
+            self.modal = Modal::None;
         }
     }
 
     /// Antes de cada quadro: recorta o diagrama para a tela e enfileira o envio ao terminal.
     pub(crate) fn prepare_img_zoom(&mut self, cols: u16, rows: u16, px_per_col: f64) {
         let kitty = self.images.graphics_enabled();
-        let Some(z) = self.img_zoom.as_mut() else { return };
+        let Some(z) = self.img_zoom_mut() else { return };
         let area_rows = usize::from(rows.saturating_sub(1)).max(1);
         if let Some(seq) = z.refresh(usize::from(cols).max(1), area_rows, px_per_col, kitty) {
             self.pending_gfx.push_str(&seq);
@@ -170,20 +171,20 @@ impl App {
     }
 
     pub(crate) fn on_img_zoom_key(&mut self, code: KeyCode) {
-        if let (KeyCode::Char(c @ ('n' | 'p')), Some(z)) = (code, self.img_zoom.as_ref()) {
+        if let (KeyCode::Char(c @ ('n' | 'p')), Some(z)) = (code, self.img_zoom()) {
             if let Some(next) = crate::app::zoom::step_index(z.index, self.doc.rendered.mermaids.len(), c == 'n') {
                 self.open_mermaid(next);
             }
             return;
         }
-        let keep = self.img_zoom.as_mut().is_none_or(|z| z.on_key(code));
+        let keep = self.img_zoom_mut().is_none_or(|z| z.on_key(code));
         if !keep {
-            self.img_zoom = None;
+            self.modal = Modal::None;
         }
     }
 
     pub(crate) fn draw_img_zoom(&mut self, f: &mut Frame, content: Rect, status: Rect) {
-        let Some(z) = self.img_zoom.as_ref() else { return };
+        let Some(z) = self.img_zoom() else { return };
         let (cols, rows) = z.shown.map_or((0, 0), |(c, _, _)| (c.cols, c.rows));
         let w = u16::try_from(cols).unwrap_or(u16::MAX).min(content.width);
         let h = u16::try_from(rows).unwrap_or(u16::MAX).min(content.height);

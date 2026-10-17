@@ -98,7 +98,7 @@ impl App {
             return;
         }
         self.notice = None;
-        self.zoom = Some(Zoom::new(table));
+        self.modal = Modal::TableZoom(Zoom::new(table));
     }
 
     /// Abre o zoom da primeira tabela que aparece na tela.
@@ -115,7 +115,9 @@ impl App {
 
     /// Redesenha a tabela do zoom se a largura ou a coluna mudaram.
     pub(crate) fn refresh_zoom(&mut self, width: usize) {
-        let Some(z) = self.zoom.as_mut() else { return };
+        let Modal::TableZoom(z) = &mut self.modal else {
+            return;
+        };
         let Some(span) = self.doc.rendered.tables.get(z.table) else {
             return;
         };
@@ -128,13 +130,15 @@ impl App {
     }
 
     pub(crate) fn on_zoom_key(&mut self, code: KeyCode) {
-        let Some(z) = self.zoom.as_mut() else { return };
+        let Modal::TableZoom(z) = &mut self.modal else {
+            return;
+        };
         let body = z.body_total();
         let h = z.view.height;
         let page = isize::try_from(h.saturating_sub(1).max(1)).unwrap_or(isize::MAX);
         let half = isize::try_from((h / 2).max(1)).unwrap_or(isize::MAX);
         match code {
-            KeyCode::Esc | KeyCode::Char('q' | 't') => self.zoom = None,
+            KeyCode::Esc | KeyCode::Char('q' | 't') => self.modal = Modal::None,
             KeyCode::Char('j') | KeyCode::Down | KeyCode::Enter => z.view.scroll_by(1, body),
             KeyCode::Char('k') | KeyCode::Up => z.view.scroll_by(-1, body),
             KeyCode::Char(' ' | 'f') | KeyCode::PageDown => z.view.scroll_by(page, body),
@@ -159,7 +163,9 @@ impl App {
     /// Nome do arquivo, posição no documento e estado da busca.
     pub(crate) fn draw_zoom(&mut self, f: &mut Frame, content: Rect, status: Rect) {
         self.refresh_zoom(render::clamp_width(usize::from(content.width)));
-        let Some(z) = self.zoom.as_mut() else { return };
+        let Modal::TableZoom(z) = &mut self.modal else {
+            return;
+        };
         let Some((_, _, tv)) = &z.drawn else { return };
         let pinned = tv.pinned.min(tv.lines.len());
         z.view.height = usize::from(content.height).saturating_sub(pinned).max(1);

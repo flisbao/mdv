@@ -98,7 +98,7 @@ fn run_cli() -> Result<(), Failure> {
                 .map_err(|e| Failure::Runtime(format!("não consegui ler {}: {e}", dir.display())))?;
             let mut app = App::new(Source::Stdin, String::new(), width, &cli);
             app.name = render::sanitize(&dir.display().to_string()).into_owned();
-            app.picker = Some(picker);
+            app.modal = app::Modal::Picker(picker);
             app.notice = app.notice.or(mem_warning);
             return run_tui(app);
         }
