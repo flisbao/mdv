@@ -90,9 +90,9 @@ mod tests {
             "HOME" => Some("/h".to_string()),
             _ => None,
         };
-        assert_eq!(path_from(env).unwrap().to_str().unwrap(), "/x/mdv/config");
+        assert_eq!(path_from(env).unwrap(), PathBuf::from("/x").join("mdv").join("config"));
         let env = |k: &str| (k == "HOME").then(|| "/h".to_string());
-        assert_eq!(path_from(env).unwrap().to_str().unwrap(), "/h/.config/mdv/config");
+        assert_eq!(path_from(env).unwrap(), PathBuf::from("/h").join(".config").join("mdv").join("config"));
         assert!(path_from(|_| None).is_none());
     }
 }
