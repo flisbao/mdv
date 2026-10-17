@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Comandos
 
 ```bash
-cargo build --release
+cargo build --release                 # LTO thin (rebuild mais rápido)
+cargo build --profile dist            # distribuição: LTO fat, codegen-units = 1 (target/dist/)
 cargo run --profile fast -- sample.md  # sem LTO: recompila bem mais rápido para testar à mão
 cargo run --release -- sample.md     # TUI interativa
 cargo run --release -- -p sample.md  # modo --plain (imprime ANSI, sem TUI)

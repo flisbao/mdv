@@ -424,6 +424,7 @@ _2026-10-13_
 ## Desenvolvimento
 
 ```bash
+cargo build --profile dist                # binário de distribuição (LTO completo, mais lento)
 cargo run --release -- sample.md        # TUI
 cargo run --release -- -p -w 60 sample.md   # saída plain
 cargo test --workspace

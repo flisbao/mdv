@@ -22,7 +22,7 @@ description = "Visualizador de Markdown no terminal (renderizador + TUI)"
 [dependencies]
 pulldown-cmark.workspace = true
 mdv-text.workspace = true
-ratatui = "0.30"
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 syntect = { version = "5", default-features = false, features = ["parsing", "default-syntaxes", "default-themes", "regex-fancy"] }
 unicode-width = "0.2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
@@ -31,7 +31,7 @@ url = { version = "2", optional = true }
 serde_json = { version = "1", features = ["preserve_order"] }
 csv = "1"
 mermaid-rs-renderer = { version = "0.3.1", default-features = false, optional = true }
-resvg = { version = "0.48", default-features = false, features = ["text", "system-fonts"], optional = true }
+resvg = { version = "0.45", default-features = false, features = ["text", "system-fonts"], optional = true }
 
 [features]
 default = ["images", "mermaid", "remote"]
@@ -44,20 +44,26 @@ remote = ["images", "dep:ureq", "dep:url"]
 tempfile.workspace = true
 
 [profile.release]
-lto = true
+lto = "thin"
 strip = true
 overflow-checks = true
 
+# Distribuição: LTO completo e uma única unidade de codegen (mais lento de compilar, binário menor).
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+
 [package.metadata.generate-rpm]
 assets = [
-    { source = "target/release/mdv", dest = "/usr/bin/mdv", mode = "755" },
-    { source = "target/release/mdv-tools", dest = "/usr/bin/mdv-tools", mode = "755" },
+    { source = "target/dist/mdv", dest = "/usr/bin/mdv", mode = "755" },
+    { source = "target/dist/mdv-tools", dest = "/usr/bin/mdv-tools", mode = "755" },
 ]
 
 [package.metadata.deb]
 assets = [
-    ["target/release/mdv", "usr/bin/", "755"],
-    ["target/release/mdv-tools", "usr/bin/", "755"],
+    ["target/dist/mdv", "usr/bin/", "755"],
+    ["target/dist/mdv-tools", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/mdv/README", "644"],
 ]
 
