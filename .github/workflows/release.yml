@@ -64,27 +64,27 @@ jobs:
       - name: Build (musl, estático)
         if: matrix.musl
         run: |
-          cargo build --release --workspace --target x86_64-unknown-linux-musl
-          echo "BIN=target/x86_64-unknown-linux-musl/release/mdv" >> "$GITHUB_ENV"
-          echo "TOOLS=target/x86_64-unknown-linux-musl/release/mdv-tools" >> "$GITHUB_ENV"
+          cargo build --profile dist --workspace --target x86_64-unknown-linux-musl
+          echo "BIN=target/x86_64-unknown-linux-musl/dist/mdv" >> "$GITHUB_ENV"
+          echo "TOOLS=target/x86_64-unknown-linux-musl/dist/mdv-tools" >> "$GITHUB_ENV"
 
       - name: Build (cruzado)
         if: ${{ matrix.target }}
         run: |
-          cargo build --release --workspace --target "${{ matrix.target }}"
-          echo "BIN=target/${{ matrix.target }}/release/mdv" >> "$GITHUB_ENV"
-          echo "TOOLS=target/${{ matrix.target }}/release/mdv-tools" >> "$GITHUB_ENV"
+          cargo build --profile dist --workspace --target "${{ matrix.target }}"
+          echo "BIN=target/${{ matrix.target }}/dist/mdv" >> "$GITHUB_ENV"
+          echo "TOOLS=target/${{ matrix.target }}/dist/mdv-tools" >> "$GITHUB_ENV"
 
       - name: Build
         if: ${{ !matrix.musl && !matrix.target }}
         run: |
-          cargo build --release --workspace
+          cargo build --profile dist --workspace
           if [ "${{ matrix.windows }}" = "true" ]; then
-            echo "BIN=target/release/mdv.exe" >> "$GITHUB_ENV"
-            echo "TOOLS=target/release/mdv-tools.exe" >> "$GITHUB_ENV"
+            echo "BIN=target/dist/mdv.exe" >> "$GITHUB_ENV"
+            echo "TOOLS=target/dist/mdv-tools.exe" >> "$GITHUB_ENV"
           else
-            echo "BIN=target/release/mdv" >> "$GITHUB_ENV"
-            echo "TOOLS=target/release/mdv-tools" >> "$GITHUB_ENV"
+            echo "BIN=target/dist/mdv" >> "$GITHUB_ENV"
+            echo "TOOLS=target/dist/mdv-tools" >> "$GITHUB_ENV"
           fi
 
       - name: Instalar cargo-deb e cargo-generate-rpm
@@ -96,8 +96,8 @@ jobs:
       - name: Gerar .deb e .rpm
         if: matrix.pkg
         run: |
-          cargo deb --no-build
-          cargo generate-rpm
+          cargo deb --no-build --profile dist
+          cargo generate-rpm --profile dist
 
       - name: Empacotar (tar.gz)
         if: ${{ !matrix.windows }}

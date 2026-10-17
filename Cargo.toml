@@ -56,14 +56,14 @@ codegen-units = 1
 
 [package.metadata.generate-rpm]
 assets = [
-    { source = "target/release/mdv", dest = "/usr/bin/mdv", mode = "755" },
-    { source = "target/release/mdv-tools", dest = "/usr/bin/mdv-tools", mode = "755" },
+    { source = "target/dist/mdv", dest = "/usr/bin/mdv", mode = "755" },
+    { source = "target/dist/mdv-tools", dest = "/usr/bin/mdv-tools", mode = "755" },
 ]
 
 [package.metadata.deb]
 assets = [
-    ["target/release/mdv", "usr/bin/", "755"],
-    ["target/release/mdv-tools", "usr/bin/", "755"],
+    ["target/dist/mdv", "usr/bin/", "755"],
+    ["target/dist/mdv-tools", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/mdv/README", "644"],
 ]
 
