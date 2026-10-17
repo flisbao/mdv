@@ -35,6 +35,7 @@ resvg = { version = "0.48", default-features = false, features = ["text", "syste
 
 [features]
 default = ["images", "mermaid", "remote"]
+# `image` não é opcional: `images` existe só para `mermaid`/`remote` dependerem dela (decisão da fase 6).
 images = []
 mermaid = ["images", "dep:mermaid-rs-renderer", "dep:resvg"]
 remote = ["images", "dep:ureq", "dep:url"]
