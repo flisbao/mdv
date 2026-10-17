@@ -255,3 +255,100 @@ fn z_e_maiusculo_foram_removidos_e_nao_dobram() {
     assert_eq!(a.total_lines(), total, "nenhuma linha some");
     assert!(a.notice.is_none(), "{:?}", a.notice);
 }
+
+fn ctrl_c(a: &mut App) -> bool {
+    a.on_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+}
+
+#[test]
+fn ctrl_c_sai_no_modo_normal_e_na_busca() {
+    let mut a = app(&longo());
+    assert!(ctrl_c(&mut a));
+    let mut a = app(&longo());
+    press(&mut a, KeyCode::Char('/'));
+    assert!(ctrl_c(&mut a), "Ctrl-C com o prompt de busca aberto");
+}
+
+#[test]
+fn busca_aberta_nao_deixa_teclas_vazarem_para_o_modo_normal() {
+    let mut a = app(&longo());
+    press(&mut a, KeyCode::Char('/'));
+    let antes = a.view.scroll;
+    for c in ['j', 'q', 'g', 'G', 'w', 'm', 'y'] {
+        assert!(!press(&mut a, KeyCode::Char(c)), "{c} saiu com a busca aberta");
+    }
+    assert_eq!(a.view.scroll, antes);
+    assert_eq!(a.search.input.as_deref(), Some("jqgGwmy"));
+    assert!(!a.raw, "m não alterna a fonte crua dentro do prompt");
+}
+
+#[test]
+fn esc_na_busca_cancela_so_o_prompt() {
+    let mut a = app(&longo());
+    press(&mut a, KeyCode::Char('/'));
+    digita(&mut a, "abc");
+    assert!(!press(&mut a, KeyCode::Esc));
+    assert!(a.search.input.is_none());
+    assert!(a.search.query.is_empty());
+}
+
+#[test]
+fn zoom_de_tabela_captura_as_teclas_e_esc_volta() {
+    let md = "| a | b |\n|---|---|\n| 1 | 2 |\n\ntexto\n";
+    let mut a = app(md);
+    press(&mut a, KeyCode::Char('t'));
+    assert!(a.zoom.is_some(), "t abre o zoom da tabela visível");
+    let antes = a.view.scroll;
+    press(&mut a, KeyCode::Char('j'));
+    assert_eq!(a.view.scroll, antes, "j rola o zoom, não o documento");
+    assert!(a.zoom.is_some());
+    assert!(!press(&mut a, KeyCode::Char('q')), "q fecha o zoom, não sai do app");
+    assert!(a.zoom.is_none());
+    press(&mut a, KeyCode::Char('t'));
+    assert!(ctrl_c(&mut a), "Ctrl-C sai com o zoom aberto");
+    let mut a = app(md);
+    press(&mut a, KeyCode::Char('t'));
+    press(&mut a, KeyCode::Esc);
+    assert!(a.zoom.is_none());
+}
+
+#[test]
+fn confirmacao_de_link_externo_so_aceita_y() {
+    let mut a = app("[site](https://example.com)\n");
+    a.pending_open = Some("https://example.com".into());
+    let antes = a.view.scroll;
+    assert!(!press(&mut a, KeyCode::Char('q')), "q cancela, não sai");
+    assert!(a.pending_open.is_none());
+    assert_eq!(a.view.scroll, antes);
+    a.pending_open = Some("https://example.com".into());
+    assert!(ctrl_c(&mut a), "Ctrl-C sai com a confirmação aberta");
+}
+
+#[test]
+fn picker_captura_teclas_e_ctrl_c_sai() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.md"), "# a\n").unwrap();
+    let mut a = app("");
+    a.picker = Some(picker::Picker::scan(dir.path()).unwrap());
+    press(&mut a, KeyCode::Char('j'));
+    assert!(a.picker.is_some());
+    assert!(ctrl_c(&mut a));
+}
+
+#[test]
+fn tecla_i_sem_diagrama_so_avisa() {
+    let mut a = app("texto\n");
+    let antes = a.view.scroll;
+    press(&mut a, KeyCode::Char('i'));
+    assert!(a.img_zoom.is_none(), "sem diagrama, i só avisa");
+    assert!(a.notice.is_some());
+    assert_eq!(a.view.scroll, antes);
+}
+
+#[test]
+fn redimensionar_com_zoom_aberto_nao_fecha_o_zoom() {
+    let mut a = app("| a |\n|---|\n| 1 |\n");
+    press(&mut a, KeyCode::Char('t'));
+    a.rerender(40);
+    assert!(a.zoom.is_some());
+}
