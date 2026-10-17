@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn numero_so_aceita_decimal_simples() {
-        for (s, n) in [("0", 0.0), ("12", 12.0), ("-3", -3.0), ("3.14", 3.14), ("0.5", 0.5), ("-0.25", -0.25)] {
+        for (s, n) in [("0", 0.0), ("12", 12.0), ("-3", -3.0), ("3.25", 3.25), ("0.5", 0.5), ("-0.25", -0.25)] {
             assert_eq!(parse_number(s), Some(n), "{s}");
         }
     }
@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn sufixo_nao_estoura_31_caracteres() {
         let base = "x".repeat(31);
-        let nome = sheet_name(&base, &[base.clone()]);
+        let nome = sheet_name(&base, std::slice::from_ref(&base));
         assert_eq!(nome.chars().count(), 31);
         assert!(nome.ends_with(" (2)"));
     }
