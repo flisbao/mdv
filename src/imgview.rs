@@ -125,7 +125,7 @@ impl ImgZoom {
 impl App {
     /// `i`: abre o zoom do diagrama Mermaid com mais linhas na tela.
     pub(crate) fn open_visible_mermaid(&mut self) {
-        let achado = crate::most_visible(self.doc.rendered.mermaids.iter().map(|m| (m.start, m.end)), self.window());
+        let achado = crate::app::zoom::most_visible(self.doc.rendered.mermaids.iter().map(|m| (m.start, m.end)), self.window());
         match achado {
             Some(index) => self.open_mermaid(index),
             None => self.notice = Some("nenhum diagrama na tela".to_string()),
@@ -171,7 +171,7 @@ impl App {
 
     pub(crate) fn on_img_zoom_key(&mut self, code: KeyCode) {
         if let (KeyCode::Char(c @ ('n' | 'p')), Some(z)) = (code, self.img_zoom.as_ref()) {
-            if let Some(next) = crate::step_index(z.index, self.doc.rendered.mermaids.len(), c == 'n') {
+            if let Some(next) = crate::app::zoom::step_index(z.index, self.doc.rendered.mermaids.len(), c == 'n') {
                 self.open_mermaid(next);
             }
             return;
@@ -201,7 +201,7 @@ impl App {
             .rendered
             .mermaids
             .get(z.index)
-            .and_then(|m| crate::section_title(&self.doc.rendered, m.start))
+            .and_then(|m| crate::app::zoom::section_title(&self.doc.rendered, m.start))
             .map_or(String::new(), |t| format!("  «{t}»"));
         let left = format!(
             " {}  diagrama {}/{}{titulo}  zoom {:.1}×  {}×{} px",

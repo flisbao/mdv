@@ -106,7 +106,11 @@ fn colchetes_pulam_de_titulo_em_titulo() {
 
 #[test]
 fn busca_confirma_com_enter_e_n_maiusculo_navegam() {
-    let md = format!("{}alvo\n\n{}alvo\n\n", "texto\n\n".repeat(6), "texto\n\n".repeat(30));
+    let md = format!(
+        "{}alvo\n\n{}alvo\n\n",
+        "texto\n\n".repeat(6),
+        "texto\n\n".repeat(30)
+    );
     let mut a = app(&md);
     press(&mut a, KeyCode::Char('/'));
     assert_eq!(a.search.input.as_deref(), Some(""));
@@ -134,7 +138,10 @@ fn com_o_prompt_de_busca_aberto_as_teclas_viram_texto() {
     press(&mut a, KeyCode::Backspace);
     assert_eq!(a.search.input.as_deref(), Some(""));
     press(&mut a, KeyCode::Esc);
-    assert_eq!(a.search.input, None, "Esc fecha o prompt sem sair do programa");
+    assert_eq!(
+        a.search.input, None,
+        "Esc fecha o prompt sem sair do programa"
+    );
 }
 
 #[test]
@@ -153,7 +160,10 @@ fn esc_limpa_a_busca_confirmada_e_so_depois_sai() {
     digita(&mut a, "alvo");
     press(&mut a, KeyCode::Enter);
     assert_eq!(a.search.matches.len(), 1);
-    assert!(!press(&mut a, KeyCode::Esc), "primeiro Esc só limpa a busca");
+    assert!(
+        !press(&mut a, KeyCode::Esc),
+        "primeiro Esc só limpa a busca"
+    );
     assert!(a.search.matches.is_empty());
     assert!(press(&mut a, KeyCode::Esc), "sem busca, Esc sai");
 }
@@ -171,7 +181,11 @@ fn r_rele_o_arquivo_sob_demanda() {
     fs::write(&p, "# Depois\n").unwrap();
     assert!(a.doc.md.contains("Antes"));
     assert!(!press(&mut a, KeyCode::Char('r')));
-    assert!(a.doc.md.contains("Depois"), "r relê o arquivo: {:?}", a.doc.md);
+    assert!(
+        a.doc.md.contains("Depois"),
+        "r relê o arquivo: {:?}",
+        a.doc.md
+    );
 }
 
 #[test]
@@ -187,7 +201,11 @@ fn interrogacao_foi_removida_e_nao_faz_nada() {
     let antes = a.view.scroll;
     assert!(!press(&mut a, KeyCode::Char('?')));
     assert_eq!(a.view.scroll, antes);
-    assert!(a.notice.is_none(), "sem aviso de MDV_AI_CMD: {:?}", a.notice);
+    assert!(
+        a.notice.is_none(),
+        "sem aviso de MDV_AI_CMD: {:?}",
+        a.notice
+    );
 }
 
 #[test]
@@ -229,7 +247,11 @@ fn arquivo_alterado_no_disco_nao_recarrega_sozinho() {
     let mut a = App::new(Source::File(p.clone()), "# Antes\n".to_string(), 80, &cli);
     fs::write(&p, "# Depois\n").unwrap();
     a.poll_background();
-    assert!(a.doc.md.contains("Antes"), "só a tecla r recarrega: {:?}", a.doc.md);
+    assert!(
+        a.doc.md.contains("Antes"),
+        "só a tecla r recarrega: {:?}",
+        a.doc.md
+    );
 }
 
 #[test]
@@ -276,7 +298,10 @@ fn busca_aberta_nao_deixa_teclas_vazarem_para_o_modo_normal() {
     press(&mut a, KeyCode::Char('/'));
     let antes = a.view.scroll;
     for c in ['j', 'q', 'g', 'G', 'w', 'm', 'y'] {
-        assert!(!press(&mut a, KeyCode::Char(c)), "{c} saiu com a busca aberta");
+        assert!(
+            !press(&mut a, KeyCode::Char(c)),
+            "{c} saiu com a busca aberta"
+        );
     }
     assert_eq!(a.view.scroll, antes);
     assert_eq!(a.search.input.as_deref(), Some("jqgGwmy"));
@@ -303,7 +328,10 @@ fn zoom_de_tabela_captura_as_teclas_e_esc_volta() {
     press(&mut a, KeyCode::Char('j'));
     assert_eq!(a.view.scroll, antes, "j rola o zoom, não o documento");
     assert!(a.zoom.is_some());
-    assert!(!press(&mut a, KeyCode::Char('q')), "q fecha o zoom, não sai do app");
+    assert!(
+        !press(&mut a, KeyCode::Char('q')),
+        "q fecha o zoom, não sai do app"
+    );
     assert!(a.zoom.is_none());
     press(&mut a, KeyCode::Char('t'));
     assert!(ctrl_c(&mut a), "Ctrl-C sai com o zoom aberto");
