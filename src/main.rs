@@ -105,8 +105,7 @@ fn run_cli() -> Result<(), Failure> {
     }
     let (source, md) = load_source(cli.common.path.as_deref())?;
     if cli.command == cli::Command::Stats {
-        mem::check_parse(md.len()).map_err(|e| Failure::Runtime(e.to_string()))?;
-        return write_stdout(&stats::format(&stats::stats(&md)));
+        return mem::check_parse(md.len()).map_err(|e| Failure::Runtime(e.to_string())).and_then(|()| write_stdout(&stats::format(&stats::stats(&md))));
     }
     if cli.command == cli::Command::Toc {
         return write_stdout(&render::toc(&render::render(&md, width)));

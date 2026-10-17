@@ -264,7 +264,7 @@ impl ImageStore {
 
     /// Diagrama só vira figura com o protocolo gráfico ativo; sem ele o bloco fica como código.
     pub fn mermaid_enabled(&self) -> bool {
-        cfg!(feature = "mermaid") && self.mermaid.is_some() && self.graphics
+        crate::mermaid_native::available() && self.mermaid.is_some() && self.graphics
     }
 
     /// Mermaid só com o renderizador nativo (padrão): em processo, sem subprocesso.

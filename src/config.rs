@@ -1,4 +1,4 @@
-//! Arquivo de configuração do usuário (`$XDG_CONFIG_HOME/mdv/config` ou `~/.config/mdv/config`).
+//! Arquivo de configuração do usuário (`$XDG_CONFIG_HOME/mdv/config`, `%APPDATA%/mdv/config` ou `~/.config/mdv/config`).
 //!
 //! Formato: linhas `chave = valor`, `#` começa comentário. Chave conhecida: `mermaid` (`on`/`off`).
 //! Chave ou valor desconhecido é ignorado, para um arquivo antigo ou errado nunca impedir a leitura.
@@ -51,7 +51,8 @@ impl Config {
 }
 
 fn path_from(var: impl Fn(&str) -> Option<String>) -> Option<PathBuf> {
-    let base = match var("XDG_CONFIG_HOME").filter(|v| !v.is_empty()) {
+    let set = |k: &str| var(k).filter(|v| !v.is_empty());
+    let base = match set("XDG_CONFIG_HOME").or_else(|| set("APPDATA")) {
         Some(x) => PathBuf::from(x),
         None => PathBuf::from(var("HOME").filter(|v| !v.is_empty())?).join(".config"),
     };
@@ -93,6 +94,13 @@ mod tests {
         assert_eq!(path_from(env).unwrap(), PathBuf::from("/x").join("mdv").join("config"));
         let env = |k: &str| (k == "HOME").then(|| "/h".to_string());
         assert_eq!(path_from(env).unwrap(), PathBuf::from("/h").join(".config").join("mdv").join("config"));
+        // Windows: `%APPDATA%` vem antes de `HOME`.
+        let env = |k: &str| match k {
+            "APPDATA" => Some("/a".to_string()),
+            "HOME" => Some("/h".to_string()),
+            _ => None,
+        };
+        assert_eq!(path_from(env).unwrap(), PathBuf::from("/a").join("mdv").join("config"));
         assert!(path_from(|_| None).is_none());
     }
 }

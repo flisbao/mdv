@@ -90,8 +90,16 @@ pub fn open_external(url: &str) -> Result<(), String> {
     if url.starts_with('-') {
         return Err("URL recusada".to_string());
     }
-    let program = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    // No Windows, `rundll32` evita o `cmd /c start`, que interpretaria `&` e `^` da URL.
+    let (program, prefix): (&str, &[&str]) = if cfg!(target_os = "macos") {
+        ("open", &[])
+    } else if cfg!(windows) {
+        ("rundll32", &["url.dll,FileProtocolHandler"])
+    } else {
+        ("xdg-open", &[])
+    };
     let mut child = Command::new(program)
+        .args(prefix)
         .arg(url)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
