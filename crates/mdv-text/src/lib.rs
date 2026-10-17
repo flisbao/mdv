@@ -3,9 +3,11 @@
 mod link;
 mod outline;
 mod parse;
+mod section;
 mod text;
 
 pub use link::{is_confined, is_external, percent_decode, slugify};
 pub use outline::{headings, section_text, Heading};
 pub use parse::parse_options;
+pub use section::{find_section, section_range, summary_text};
 pub use text::sanitize;

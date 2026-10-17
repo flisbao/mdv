@@ -2,7 +2,7 @@
 
 use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag, TagEnd};
 
-use mdv_text::{headings, parse_options, sanitize, section_text, Heading};
+use mdv_text::{find_section, headings, parse_options, sanitize, section_text};
 
 /// Bloco de código do fonte: linguagem (primeira palavra do aviso) e texto cru.
 pub struct Block {
@@ -40,26 +40,6 @@ pub fn code_blocks(md: &str) -> Vec<Block> {
         }
     }
     out
-}
-
-/// Índice do título pedido: igualdade sem caixa, senão substring única, senão erro.
-pub fn find_section(heads: &[Heading], query: &str) -> Result<usize, String> {
-    let q = query.trim().to_lowercase();
-    if q.is_empty() {
-        return Err("o título da seção está vazio".to_string());
-    }
-    if let Some(i) = heads.iter().position(|h| h.title.to_lowercase() == q) {
-        return Ok(i);
-    }
-    let parecidos: Vec<usize> = (0..heads.len()).filter(|&i| heads[i].title.to_lowercase().contains(&q)).collect();
-    match parecidos.as_slice() {
-        [] => Err(format!("nenhuma seção com o título \"{}\"", query.trim())),
-        [i] => Ok(*i),
-        varios => {
-            let nomes: Vec<String> = varios.iter().map(|&i| sanitize(&heads[i].title).into_owned()).collect();
-            Err(format!("o título \"{}\" é ambíguo; candidatos: {}", query.trim(), nomes.join(", ")))
-        }
-    }
 }
 
 pub fn extract(md: &str, o: &ExtractOpts) -> Result<String, String> {
@@ -152,33 +132,6 @@ sem linguagem
         assert_eq!(b.len(), 2);
         assert_eq!((b[0].lang.as_str(), b[0].text.as_str()), ("", "recuado\n"));
         assert_eq!(b[1].text, "");
-    }
-
-    #[test]
-    fn find_section_prefere_igualdade_sem_caixa() {
-        let h = headings("# Instalar\n\n# Instalar tudo\n");
-        assert_eq!(find_section(&h, "instalar").unwrap(), 0);
-    }
-
-    #[test]
-    fn find_section_aceita_substring_unica() {
-        let h = headings("# Guia de uso\n\n# Notas\n");
-        assert_eq!(find_section(&h, "uso").unwrap(), 0);
-    }
-
-    #[test]
-    fn find_section_ambigua_lista_os_candidatos() {
-        let h = headings("# Passo um\n\n# Passo dois\n");
-        let e = find_section(&h, "passo").unwrap_err();
-        assert!(e.contains("Passo um") && e.contains("Passo dois"), "{e}");
-    }
-
-    #[test]
-    fn find_section_inexistente_ou_vazio_e_erro() {
-        let h = headings("# A\n");
-        assert!(find_section(&h, "zzz").unwrap_err().contains("zzz"));
-        assert!(find_section(&h, "   ").is_err());
-        assert!(find_section(&[], "a").is_err());
     }
 
     #[test]
