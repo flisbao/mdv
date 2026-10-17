@@ -26,7 +26,7 @@ mdv json dados.json --path .itens[0]      # só um trecho do JSON
 - **Quebra de linha correta.** O texto é quebrado na largura do terminal respeitando caracteres largos: acentos, emojis e CJK (日本語) não desalinham nada.
 - **Leitor interativo.** Rolagem, página, meia página, busca com `/`, `n`/`N` entre ocorrências e `]`/`[` para pular de título em título.
 - **Imagens no terminal.** `![alt](arquivo.png)` e, com `--remote`, imagens por URL, desenhadas em meio-bloco, sem protocolo gráfico. [Detalhes](#imagens).
-- **Diagramas Mermaid.** Blocos <code>```mermaid</code> viram imagem com o renderizador embutido, sem instalar nada e sem flag. [Detalhes](#mermaid).
+- **Diagramas Mermaid.** Blocos <code>```mermaid</code> viram imagem com o renderizador embutido, sem instalar nada, quando o terminal tem protocolo gráfico (`--graphics`); sem ele ficam como código. [Detalhes](#mermaid).
 - **Andamento de tarefas.** Listas `- [x]`/`- [ ]` mostram o progresso: o rodapé da leitura traz `☑ feitas/total` do documento e da seção atual, e o `--toc` acrescenta `[feitas/total]` aos títulos. Sem tarefas no documento (e no modo fonte, JSON e CSV) nada disso aparece.
 - **Feito para saída de agentes e LLMs.** Front matter YAML, alertas GFM, notas de rodapé e `<details>` aparecem formatados; `--follow` e `--toc` acompanham e resumem. Na TUI, `m` alterna para a fonte crua. [Detalhes](#markdown-de-agentes-e-llms).
 - **JSON, CSV e TSV.** `mdv json|csv|tsv` com `--as table|schema|text`, `--path`, `--head`, `--cols`, `--no-header` e `--delimiter`. [Detalhes](#json-csv-e-tsv).
@@ -210,10 +210,11 @@ Imagens `![alt](caminho)` aparecem desenhadas no próprio terminal, em **meio-bl
 
 ## Mermaid
 
-Blocos <code>```mermaid</code> viram imagem **sem instalar nada e sem flag**: o `mdv` traz um renderizador embutido (flowchart, sequence, class, state, ER, pie, Gantt, timeline, journey, mindmap e outros). Ele precisa de ao menos uma fonte instalada no sistema para desenhar o texto.
+Blocos <code>```mermaid</code> viram imagem **sem instalar nada** quando o terminal suporta o protocolo gráfico do Kitty (`--graphics kitty` ou `auto`); sem suporte gráfico (`--plain`, saída redirecionada, `--graphics off`, terminais sem Kitty) o bloco fica como código. O `mdv` traz um renderizador embutido (flowchart, sequence, class, state, ER, pie, Gantt, timeline, journey, mindmap e outros). Ele precisa de ao menos uma fonte instalada no sistema para desenhar o texto.
 
 ```bash
-mdv doc.md                     # diagramas como imagem (renderizador embutido)
+mdv --graphics auto doc.md      # diagramas como imagem (renderizador embutido, terminal com Kitty)
+mdv doc.md                     # sem gráficos: o diagrama aparece como código
 ```
 
 **Zoom (`i`).** No texto o diagrama cabe em até 120×36 células, o que num diagrama grande (uma sequência com muitos participantes, por exemplo) não dá para ler. Na TUI, `i` abre o diagrama que ocupa mais linhas da tela (a barra mostra `N/M` e o título da seção) usando o terminal inteiro; `n`/`p` passam ao próximo ou ao anterior, dando a volta nos extremos: `+`/`-` aproximam e afastam, `h`/`j`/`k`/`l` movem a janela, espaço/`b` rolam uma página, `g`/`G` vão ao topo e ao fim, `0` volta a mostrar tudo e `Esc` fecha. Com `--graphics kitty` o recorte é reenviado em resolução nativa (nítido); sem ele sai em meio-bloco na resolução do terminal.
@@ -225,8 +226,8 @@ Onde o diagrama aparece:
 | Terminal | Sistemas | Como aparece |
 |---|---|---|
 | kitty, Ghostty | Linux, macOS | alta resolução com `--graphics auto` (confirmado) |
-| WezTerm, iTerm2, Warp, Konsole | varia | meio-bloco; `--graphics kitty` por sua conta (suporte a *placeholders* Unicode não confirmado) |
-| Windows Terminal, demais terminais com cores 24 bits | Windows, Linux, macOS | meio-bloco (baixa resolução, funciona em qualquer um) |
+| WezTerm, iTerm2, Warp, Konsole | varia | código; `--graphics kitty` por sua conta (suporte a *placeholders* Unicode não confirmado) |
+| Windows Terminal, demais terminais com cores 24 bits | Windows, Linux, macOS | código (o diagrama exige protocolo gráfico) |
 
 > O renderizador embutido roda dentro do próprio `mdv`, sem processos externos, com tetos de tamanho, conexões e memória.
 
@@ -418,7 +419,7 @@ cargo test --workspace
 cargo run --release -p mdv-tools -- --help   # o binário mdv-tools
 ```
 
-O pipeline é um só: entrada (Markdown, JSON, CSV/TSV) → linhas do `ratatui` → TUI ou ANSI. `src/render.rs` renderiza; `src/main.rs` cuida da TUI, busca e a recarga (`r`); `src/cli.rs` interpreta os argumentos; `src/image.rs`, `src/net.rs` e `src/mermaid_native.rs` fazem o I/O de imagens e diagramas (nunca dentro de `render.rs`); `src/stream.rs` trata `--follow`; `src/data.rs` trata JSON e CSV/TSV.
+O pipeline é um só: entrada (Markdown, JSON, CSV/TSV) → linhas do `ratatui` → TUI ou ANSI. `src/render/` renderiza; `src/main.rs` cuida da TUI, busca e a recarga (`r`); `src/cli.rs` interpreta os argumentos; `src/image.rs`, `src/net.rs` e `src/mermaid_native.rs` fazem o I/O de imagens e diagramas (nunca dentro de `render/`); `src/stream.rs` trata `--follow`; `src/data.rs` trata JSON e CSV/TSV.
 
 Os blocos de **instalação** e **uso** acima são gerados pela CI a cada release (`scripts/update-readme.sh`), a partir dos arquivos publicados e da saída real de `mdv --help`; não edite o que está entre os marcadores `<!-- mdv:… -->`.
 

@@ -525,12 +525,24 @@ fn bloco_mermaid_vira_imagem_quando_habilitado() {
     if !crate::mermaid_native::fonts_available() {
         return; // máquina sem fontes: o nativo não desenha texto
     }
+    let store = ImageStore::new(None).with_native_mermaid(true).with_graphics(true);
+    let r = render_with(
+        "```mermaid\nflowchart LR\n  A[Início] --> B[Fim]\n```",
+        &RenderOpts { width: 40, images: Some(&store), ..Default::default() },
+    );
+    assert_eq!(r.mermaids.len(), 1, "o diagrama virou figura");
+    assert!(!r.graphics.is_empty(), "figura gráfica registrada");
+}
+
+#[test]
+fn mermaid_sem_graficos_mostra_codigo_mesmo_com_o_nativo_ligado() {
     let store = ImageStore::new(None).with_native_mermaid(true);
     let r = render_with(
         "```mermaid\nflowchart LR\n  A[Início] --> B[Fim]\n```",
         &RenderOpts { width: 40, images: Some(&store), ..Default::default() },
     );
-    assert!(joined_text(&r).contains('▀'));
+    assert!(r.mermaids.is_empty());
+    assert!(joined_text(&r).contains("flowchart LR"));
 }
 
 #[test]
@@ -541,7 +553,7 @@ fn mermaid_sem_flag_mostra_codigo() {
 
 #[test]
 fn mermaid_com_falha_mostra_codigo_e_motivo() {
-    let store = ImageStore::new(None).with_native_mermaid(true);
+    let store = ImageStore::new(None).with_native_mermaid(true).with_graphics(true);
     let r = render_with("```mermaid\nisto não é mermaid\n```", &RenderOpts { width: 60, images: Some(&store), ..Default::default() });
     let t = joined_text(&r);
     assert!(t.contains("isto não é mermaid") && t.contains("erro"), "{t}");
