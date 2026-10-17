@@ -749,10 +749,14 @@ mod tests {
         assert!(matches!(store.get("."), ImageState::Failed(_)));
     }
 
+    #[cfg(feature = "remote")]
     use crate::net::FetchPolicy;
+    #[cfg(feature = "remote")]
     use std::io::{Read, Write};
+    #[cfg(feature = "remote")]
     use std::net::TcpListener;
 
+    #[cfg(feature = "remote")]
     fn serve_png() -> String {
         let body = png_bytes(4, 4);
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -771,16 +775,19 @@ mod tests {
         format!("http://127.0.0.1:{port}/a.png")
     }
 
+    #[cfg(feature = "remote")]
     fn local_ok() -> FetchPolicy {
         FetchPolicy { allow_private: true, ..FetchPolicy::default() }
     }
 
+    #[cfg(feature = "remote")]
     #[test]
     fn remoto_bloqueante_devolve_pronto() {
         let store = ImageStore::new(None).with_remote(local_ok(), true);
         assert!(matches!(store.get(&serve_png()), ImageState::Ready(_)));
     }
 
+    #[cfg(feature = "remote")]
     #[test]
     fn remoto_assincrono_comeca_loading_e_termina_pronto() {
         let store = ImageStore::new(None).with_remote(local_ok(), false);
@@ -796,6 +803,7 @@ mod tests {
         panic!("download não terminou");
     }
 
+    #[cfg(feature = "remote")]
     #[test]
     fn limite_de_imagens_remotas() {
         let store = ImageStore::new(None).with_remote(local_ok(), false);

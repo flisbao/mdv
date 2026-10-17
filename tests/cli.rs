@@ -193,6 +193,18 @@ fn sem_a_feature_mermaid_o_diagrama_sai_como_codigo() {
     assert!(!text.contains("erro:") && !text.contains("renderizando") && !text.contains('▀'), "{text}");
 }
 
+#[cfg(not(feature = "remote"))]
+#[test]
+fn sem_a_feature_remote_a_flag_e_aceita_e_a_imagem_mostra_o_erro_claro() {
+    // `--remote` continua válida; a imagem remota falha com a mensagem clara e o resto do documento sai.
+    let out = mdv(&["-p", "--remote", "-"], "antes\n\n![x](http://127.0.0.1:9/a.png)\n\ndepois\n");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success());
+    assert!(text.contains("antes") && text.contains("depois"), "{text}");
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" "); // a mensagem pode quebrar de linha
+    assert!(flat.contains("recompile com --features remote"), "{text}");
+}
+
 #[cfg(unix)]
 #[test]
 fn arquivo_nao_regular_e_rejeitado() {
