@@ -94,7 +94,7 @@ impl App {
             modal: Modal::None,
             zoom_sent: false,
             notice: None,
-            open_table: cli.table.map(|n| n - 1),
+            open_table: cli.common.table.map(|n| n - 1),
             pending_osc: None,
             cli: cli.clone(),
             link_at: None,
@@ -194,7 +194,7 @@ impl App {
 
     /// Copia o Markdown cru da seção da linha de referência (`Y`).
     pub(crate) fn copy_section(&mut self) {
-        if self.raw || self.doc.opts.mode != cli::Mode::Markdown {
+        if self.raw || self.doc.opts.doc != cli::Doc::Markdown {
             self.notice = Some("seção só existe no Markdown renderizado".to_string());
             return;
         }

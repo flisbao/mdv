@@ -63,21 +63,20 @@ fn main() -> ExitCode {
 }
 
 fn run_cli() -> Result<(), Failure> {
-    let cli = match cli::parse(std::env::args().skip(1)).map_err(Failure::Usage)? {
-        cli::Parsed::Help => return write_stdout(HELP),
-        cli::Parsed::Version => {
-            return write_stdout(&format!("mdv {}\n", env!("CARGO_PKG_VERSION")));
-        }
-        cli::Parsed::Run(cli) => cli,
-    };
-    let limit = mem::resolve(cli.memory_buffer, std::env::var("MDV_MEMORY_BUFFER").ok().as_deref())
+    let cli = cli::parse(std::env::args().skip(1)).map_err(Failure::Usage)?;
+    match cli.command {
+        cli::Command::Help => return write_stdout(HELP),
+        cli::Command::Version => return write_stdout(&format!("mdv {}\n", env!("CARGO_PKG_VERSION"))),
+        _ => {}
+    }
+    let limit = mem::resolve(cli.common.memory_buffer, std::env::var("MDV_MEMORY_BUFFER").ok().as_deref())
         .map_err(Failure::Usage)?;
     mem::set_limit(limit);
     mem::init();
     let mem_warning = mem::warn_if_above(limit, mem::available());
     let stdout_tty = io::stdout().is_terminal();
-    let interactive = !cli.plain && stdout_tty;
-    let width = cli.width.unwrap_or(render::MAX_WIDTH);
+    let interactive = !cli.common.plain && stdout_tty;
+    let width = cli.common.width.unwrap_or(render::MAX_WIDTH);
     if !interactive {
         if let Some(w) = &mem_warning {
             eprintln!("mdv: {w}");
@@ -85,15 +84,15 @@ fn run_cli() -> Result<(), Failure> {
     }
 
     // `--follow` com stdin: a TUI abre na hora e o texto vai chegando aos poucos.
-    if cli.follow && interactive && !cli.toc && reads_stdin(cli.path.as_deref()) {
+    if cli.common.follow && interactive && cli.command != cli::Command::Toc && reads_stdin(cli.common.path.as_deref()) {
         let rx = stream::spawn_stdin_reader(usize::try_from(MAX_INPUT_BYTES).unwrap_or(usize::MAX));
         let mut app = App::new(Source::Stdin, String::new(), width, &cli).with_stream(rx);
         app.notice = app.notice.or(mem_warning);
         return run_tui(app);
     }
 
-    if interactive && !cli.toc && cli.mode == cli::Mode::Markdown {
-        if let Some(dir) = cli.path.as_deref().map(Path::new).filter(|p| p.is_dir()) {
+    if interactive && cli.command == cli::Command::View(cli::Doc::Markdown) {
+        if let Some(dir) = cli.common.path.as_deref().map(Path::new).filter(|p| p.is_dir()) {
             let picker = picker::Picker::scan(dir)
                 .map_err(|e| Failure::Runtime(format!("não consegui ler {}: {e}", dir.display())))?;
             let mut app = App::new(Source::Stdin, String::new(), width, &cli);
@@ -103,11 +102,11 @@ fn run_cli() -> Result<(), Failure> {
             return run_tui(app);
         }
     }
-    let (source, md) = load_source(cli.path.as_deref())?;
-    if cli.stats {
+    let (source, md) = load_source(cli.common.path.as_deref())?;
+    if cli.command == cli::Command::Stats {
         return write_stdout(&stats::format(&stats::stats(&md)));
     }
-    if cli.toc && cli.mode == cli::Mode::Markdown {
+    if cli.command == cli::Command::Toc {
         return write_stdout(&render::toc(&render::render(&md, width)));
     }
     if interactive {
@@ -115,6 +114,6 @@ fn run_cli() -> Result<(), Failure> {
         app.notice = app.notice.or(mem_warning);
         run_tui(app)
     } else {
-        run_plain(&md, &source, cli.width, stdout_tty, &cli)
+        run_plain(&md, &source, cli.common.width, stdout_tty, &cli)
     }
 }

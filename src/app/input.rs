@@ -140,13 +140,14 @@ impl App {
             Action::SearchNext => self.step_match(true),
             Action::SearchPrev => self.step_match(false),
             Action::Reload => self.reload(),
-            Action::CycleJsonView if self.doc.opts.mode == cli::Mode::Json => {
-                let current = if self.doc.opts.json_view == cli::JsonView::Auto {
-                    data::auto_view_of_text(&self.doc.md, self.doc.opts.json_path.as_deref())
+            Action::CycleJsonView if matches!(self.doc.opts.doc, cli::Doc::Json { .. }) => {
+                let cli::Doc::Json { json_path, view } = &mut self.doc.opts.doc else { unreachable!() };
+                let current = if *view == cli::JsonView::Auto {
+                    data::auto_view_of_text(&self.doc.md, json_path.as_deref())
                 } else {
-                    self.doc.opts.json_view
+                    *view
                 };
-                self.doc.opts.json_view = data::next_view(current);
+                *view = data::next_view(current);
                 self.doc.dirty = true;
             }
             Action::CycleJsonView => {}

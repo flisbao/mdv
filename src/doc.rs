@@ -2,56 +2,47 @@
 
 use crate::{cli, data, image, render};
 
-/// Como a entrada é interpretada: o modo e as opções que só valem para JSON ou tabela.
+/// Como a entrada é interpretada: o formato (com as opções que só ele aceita) e a rolagem de código.
 #[derive(Clone)]
 pub(crate) struct DocOpts {
-    pub(crate) mode: cli::Mode,
-    pub(crate) json_path: Option<String>,
-    pub(crate) json_view: cli::JsonView,
-    pub(crate) head: usize,
-    pub(crate) cols: Vec<String>,
-    pub(crate) no_header: bool,
+    pub(crate) doc: cli::Doc,
     pub(crate) code_scroll: Option<usize>,
 }
 
 impl DocOpts {
     pub(crate) fn from_cli(cli: &cli::Cli) -> Self {
-        DocOpts {
-            mode: cli.mode,
-            json_path: cli.json_path.clone(),
-            json_view: cli.json_view,
-            head: cli.head,
-            cols: cli.cols.clone(),
-            no_header: cli.no_header,
-            code_scroll: None,
-        }
+        let doc = match &cli.command {
+            cli::Command::View(d) => d.clone(),
+            _ => cli::Doc::Markdown,
+        };
+        DocOpts { doc, code_scroll: None }
     }
 }
 
 /// Único ponto que decide como o texto da entrada vira linhas, conforme o modo (TUI e `--plain`).
 pub(crate) fn render_doc(doc: &DocOpts, text: &str, width: usize, images: &image::ImageStore) -> render::Rendered {
-    match doc.mode {
-        cli::Mode::Markdown => {
+    match &doc.doc {
+        cli::Doc::Markdown => {
             render::render_with(
                 text,
                 &render::RenderOpts { width, images: Some(images), code_scroll: doc.code_scroll },
             )
         }
-        cli::Mode::Json => {
+        cli::Doc::Json { json_path, view } => {
             let opts = data::JsonOpts {
-                path: doc.json_path.clone(),
-                view: doc.json_view,
-                head: doc.head,
-                cols: doc.cols.clone(),
+                path: json_path.clone(),
+                view: *view,
+                head: cli::DEFAULT_HEAD,
+                cols: Vec::new(),
             };
             data::render_json(text, &opts, width)
         }
-        cli::Mode::Table { delimiter } => {
+        cli::Doc::Table { delimiter, head, cols, no_header } => {
             let opts = data::TableOpts {
-                delimiter,
-                head: doc.head,
-                cols: doc.cols.clone(),
-                no_header: doc.no_header,
+                delimiter: *delimiter,
+                head: *head,
+                cols: cols.clone(),
+                no_header: *no_header,
             };
             data::render_table_data(text, &opts, width)
         }
@@ -59,11 +50,11 @@ pub(crate) fn render_doc(doc: &DocOpts, text: &str, width: usize, images: &image
 }
 
 /// Linguagem usada para mostrar a fonte crua (`m`).
-pub(crate) fn raw_lang(mode: cli::Mode) -> &'static str {
-    match mode {
-        cli::Mode::Markdown => "md",
-        cli::Mode::Json => "json",
-        cli::Mode::Table { .. } => "text",
+pub(crate) fn raw_lang(doc: &cli::Doc) -> &'static str {
+    match doc {
+        cli::Doc::Markdown => "md",
+        cli::Doc::Json { .. } => "json",
+        cli::Doc::Table { .. } => "text",
     }
 }
 
@@ -96,7 +87,7 @@ impl Document {
     /// Renderiza em `width`, sempre. `raw` mostra a fonte em vez do formato interpretado.
     pub(crate) fn render(&mut self, width: usize, raw: bool, images: &image::ImageStore) {
         self.rendered = if raw {
-            render::render_code_only_at(&self.md, raw_lang(self.opts.mode), width, self.opts.code_scroll)
+            render::render_code_only_at(&self.md, raw_lang(&self.opts.doc), width, self.opts.code_scroll)
         } else {
             images.begin_pass();
             render_doc(&self.opts, &self.md, width, images)
@@ -116,10 +107,7 @@ mod tests {
     use super::*;
 
     fn opts() -> DocOpts {
-        DocOpts::from_cli(&match crate::cli::parse(["x.md".to_string()]) {
-            Ok(crate::cli::Parsed::Run(c)) => c,
-            _ => panic!("cli de teste"),
-        })
+        DocOpts::from_cli(&crate::cli::parse(["x.md".to_string()]).expect("cli de teste"))
     }
 
     #[test]

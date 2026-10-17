@@ -4,10 +4,7 @@ use super::*;
 use std::fs;
 
 fn app(md: &str) -> App {
-    let cli = match cli::parse(["x.md".to_string()]) {
-        Ok(cli::Parsed::Run(c)) => c,
-        _ => panic!("cli de teste"),
-    };
+    let cli = cli::parse(["x.md".to_string()]).expect("cli de teste");
     let mut a = App::new(Source::Stdin, md.to_string(), 80, &cli);
     a.rerender(60);
     a.view.height = 10;
@@ -174,10 +171,7 @@ fn r_rele_o_arquivo_sob_demanda() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("doc.md");
     fs::write(&p, "# Antes\n").unwrap();
-    let cli = match cli::parse([p.display().to_string()]) {
-        Ok(cli::Parsed::Run(c)) => c,
-        _ => panic!("cli de teste"),
-    };
+    let cli = cli::parse([p.display().to_string()]).expect("cli de teste");
     let mut a = App::new(Source::File(p.clone()), "# Antes\n".to_string(), 80, &cli);
     fs::write(&p, "# Depois\n").unwrap();
     assert!(a.doc.md.contains("Antes"));
@@ -241,10 +235,7 @@ fn arquivo_alterado_no_disco_nao_recarrega_sozinho() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("doc.md");
     fs::write(&p, "# Antes\n").unwrap();
-    let cli = match cli::parse([p.display().to_string()]) {
-        Ok(cli::Parsed::Run(c)) => c,
-        _ => panic!("cli de teste"),
-    };
+    let cli = cli::parse([p.display().to_string()]).expect("cli de teste");
     let mut a = App::new(Source::File(p.clone()), "# Antes\n".to_string(), 80, &cli);
     fs::write(&p, "# Depois\n").unwrap();
     a.poll_background();
@@ -260,10 +251,7 @@ fn r_com_arquivo_sumido_mantem_o_documento() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("doc.md");
     fs::write(&p, "# Fica\n").unwrap();
-    let cli = match cli::parse([p.display().to_string()]) {
-        Ok(cli::Parsed::Run(c)) => c,
-        _ => panic!("cli de teste"),
-    };
+    let cli = cli::parse([p.display().to_string()]).expect("cli de teste");
     let mut a = App::new(Source::File(p.clone()), "# Fica\n".to_string(), 80, &cli);
     fs::remove_file(&p).unwrap();
     assert!(!press(&mut a, KeyCode::Char('r')));
@@ -482,10 +470,10 @@ fn tabela_de_teclas_do_modo_normal() {
 #[test]
 fn v_so_age_em_json() {
     let mut a = app("[1,2]");
-    let antes = a.doc.opts.json_view;
+    let antes = a.doc.opts.doc.clone();
     press(&mut a, KeyCode::Char('v'));
     assert_eq!(
-        a.doc.opts.json_view, antes,
+        a.doc.opts.doc, antes,
         "no modo Markdown `v` não muda a vista"
     );
 }
