@@ -13,6 +13,7 @@ pub mod parse;
 pub mod pdf;
 pub mod pdf_font;
 pub mod pdf_layout;
+pub mod sheet;
 pub mod xml;
 pub mod zipw;
 
