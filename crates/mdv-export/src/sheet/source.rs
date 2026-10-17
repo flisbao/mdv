@@ -165,6 +165,8 @@ pub fn from_markdown(
     budget: &dyn Budget,
     warnings: &mut Vec<String>,
 ) -> Result<Workbook, String> {
+    // Precisa ser a primeira instrução: `headings` e `md_tables` analisam o texto inteiro. A ordem
+    // é garantida por construção (não há como um teste observá-la).
     budget.check_parse(md.len())?;
     let heads = headings(md);
     let mut tables = md_tables(md, budget)?;
@@ -433,7 +435,9 @@ intro
     }
 
     #[test]
-    fn check_parse_vem_antes_de_qualquer_analise() {
+    fn check_parse_barra_antes_de_qualquer_check_do_laco() {
+        // Prova só que `check_parse` falha primeiro e `check` nem é chamado; a ordem em relação a
+        // `headings` (que não recebe `Budget`) é garantida por construção, não observável aqui.
         struct Ordem;
         impl crate::Budget for Ordem {
             fn check(&self) -> Result<(), String> {
