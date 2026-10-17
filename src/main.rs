@@ -9,22 +9,26 @@ mod golden_ansi;
 mod app_keys_tests;
 mod imgview;
 mod imgzoom;
+mod load;
 mod image;
 mod mem;
 mod mermaid_native;
 mod nav;
 mod net;
 mod picker;
+mod plain;
 mod stats;
 mod stream;
 mod render;
 
 use std::collections::HashSet;
 use std::fmt::Write as _;
-use std::fs;
-use std::io::{self, IsTerminal, Read, Write};
-use std::path::{Path, PathBuf};
+use std::io::{self, IsTerminal, Write};
+use std::path::Path;
 use std::process::ExitCode;
+
+use load::{image_store, load_source, read_markdown_file, reads_stdin, Source, MAX_INPUT_BYTES};
+use plain::{run_plain, write_stdout, HELP};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
@@ -40,11 +44,6 @@ static ALLOC: mem::CountingAlloc = mem::CountingAlloc;
 use ratatui::{DefaultTerminal, Frame};
 use unicode_width::UnicodeWidthStr;
 
-/// Teto de bytes lidos de arquivo ou stdin (protege a memória).
-const MAX_INPUT_BYTES: u64 = 16 * 1024 * 1024;
-
-/// Largura do `--plain` quando o tamanho do terminal é desconhecido.
-const FALLBACK_TERMINAL_WIDTH: usize = 80;
 /// Colunas deixadas livres nas laterais da TUI.
 const TUI_MARGIN: usize = 4;
 /// Menor largura de texto na TUI, mesmo em terminais minúsculos.
@@ -53,65 +52,6 @@ const MIN_TUI_WIDTH: usize = 10;
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 /// Intervalo entre verificações com texto chegando por stdin (`--follow`).
 const STREAM_POLL_INTERVAL: Duration = Duration::from_millis(80);
-
-const HELP: &str = "\
-mdv - visualizador de Markdown no terminal
-
-USO:
-    mdv [opções] <arquivo.md>
-    cat arquivo.md | mdv
-    mdv json [opções] <arquivo|->
-    mdv csv|tsv [opções] <arquivo|->
-    mdv <pasta>            (seletor: .md da pasta por data, filtro ao digitar)
-    (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
-
-OPÇÕES:
-    -p, --plain        imprime no terminal (sem TUI), como `cat` com cores
-    -w, --width <N>    largura máxima do texto (padrão: 100)
-        --remote       baixa imagens de http(s):// (nunca de rede privada)
-        --graphics <G> imagens em alta resolução: off (padrão), kitty ou auto (Kitty/Ghostty; só no modo interativo)
-        --toc          imprime só o índice de títulos
-        --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
-        --follow       com stdin: acompanha o texto conforme chega
-        --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
-        --memory-buffer <T>  limite de memória (padrão: 512M; ex.: 256M, 2G; ou $MDV_MEMORY_BUFFER)
-    -h, --help         mostra esta ajuda
-    -V, --version      mostra a versão
-
-OPÇÕES DE JSON:
-        --path <p>     mostra só um trecho, ex.: .itens[0].nome
-        --as <vista>   auto (padrão), text, table ou schema
-
-OPÇÕES DE CSV/TSV:
-        --head <N>     mostra só as N primeiras linhas (padrão: 1000)
-        --cols <a,b>   mostra só estas colunas, pelo nome do cabeçalho
-        --no-header    a primeira linha é dado, não cabeçalho
-        --delimiter <c>  separador de um caractere (ou `tab`)
-
-TECLAS (modo interativo):
-    j / k, ↓ / ↑       rola uma linha
-    espaço / b         página abaixo / acima
-    d / u              meia página
-    g / G              início / fim
-    ] / [              próximo / título anterior
-    /                  buscar (Enter confirma, Esc cancela)
-    n / N              próxima / anterior ocorrência
-    Tab / Shift-Tab    seleciona o próximo / anterior link; Enter segue (âncora, .md relativo ou URL http(s)/mailto com confirmação `y`), Esc cancela
-    Backspace / H      volta ao documento anterior (pilha de até 100)
-    m                  alterna entre renderizado e fonte crua
-    w                  código sem quebra: h/l (ou ←/→) rolam 8 colunas, 0/$ início/fim; w de novo volta a quebrar
-    v                  (JSON) alterna tabela / esquema / texto
-    t                  zoom da tabela mais visível na tela (h/l colunas, n/p troca de tabela, Esc volta)
-    i                  zoom do diagrama Mermaid mais visível na tela: n/p troca de diagrama, +/- zoom, h/j/k/l movem, espaço/b página, g/G topo/fim, 0 ajusta, Esc volta
-    y / Y              copia o bloco de código da tela / o Markdown da seção (OSC 52, até 64 KiB)
-    r                  recarrega o arquivo
-    q, Esc             sai
-";
-
-enum Source {
-    File(PathBuf),
-    Stdin,
-}
 
 /// Falha que encerra o programa; o código de saída depende do tipo.
 enum Failure {
@@ -200,58 +140,6 @@ fn run_cli() -> Result<(), Failure> {
     }
 }
 
-/// O documento vem de stdin (`-` ou entrada redirecionada sem arquivo)?
-fn reads_stdin(path: Option<&str>) -> bool {
-    match path {
-        Some(p) => p == "-",
-        None => !io::stdin().is_terminal(),
-    }
-}
-
-/// Lê o documento do arquivo informado, de stdin (`-` ou entrada redirecionada).
-fn load_source(path: Option<&str>) -> Result<(Source, String), Failure> {
-    match path {
-        Some("-") => Ok((Source::Stdin, read_stdin().map_err(read_failure("stdin"))?)),
-        Some(p) if Path::new(p).is_dir() => Err(Failure::Usage(format!(
-            "{p} é uma pasta: abra sem -p num terminal para escolher o arquivo"
-        ))),
-        Some(p) => {
-            let md = read_markdown_file(Path::new(p)).map_err(read_failure(p))?;
-            Ok((Source::File(PathBuf::from(p)), md))
-        }
-        None if !io::stdin().is_terminal() => {
-            Ok((Source::Stdin, read_stdin().map_err(read_failure("stdin"))?))
-        }
-        None => Err(Failure::Usage("nenhum arquivo informado".to_string())),
-    }
-}
-
-/// Imagens relativas são resolvidas a partir da pasta do arquivo (ou do diretório atual, com stdin).
-/// `--remote` baixa imagens de URLs; os diagramas Mermaid usam o renderizador nativo
-/// (`blocking`: espera, como no `--plain`).
-fn image_store(source: &Source, cli: &cli::Cli, blocking: bool) -> image::ImageStore {
-    let base = match source {
-        Source::File(p) => p
-            .parent()
-            .map(|d| if d.as_os_str().is_empty() { PathBuf::from(".") } else { d.to_path_buf() }),
-        Source::Stdin => None,
-    };
-    // Gráficos só no modo interativo (`blocking == false`); `--plain` fica sempre em meio-bloco.
-    let graphics = !blocking
-        && match cli.graphics {
-            cli::Graphics::Off => false,
-            cli::Graphics::Kitty => true,
-            cli::Graphics::Auto => graphics::supports_kitty(|k| std::env::var(k).ok()),
-        };
-    let mut store = image::ImageStore::new(base).with_graphics(graphics);
-    if cli.remote {
-        store = store.with_remote(net::FetchPolicy::default(), blocking);
-    }
-    // Diagramas Mermaid saem do renderizador nativo.
-    store = store.with_native_mermaid(blocking);
-    store
-}
-
 /// Como a entrada é interpretada: o modo e as opções que só valem para JSON ou tabela.
 #[derive(Clone)]
 struct DocOpts {
@@ -317,17 +205,6 @@ fn raw_lang(mode: cli::Mode) -> &'static str {
     }
 }
 
-/// Imprime o documento renderizado (com cores só se a saída for um terminal).
-fn run_plain(md: &str, source: &Source, width: Option<usize>, color: bool, cli: &cli::Cli) -> Result<(), Failure> {
-    let width = width.unwrap_or_else(|| {
-        terminal::size()
-            .map_or(FALLBACK_TERMINAL_WIDTH, |(cols, _)| usize::from(cols))
-    });
-    let images = image_store(source, cli, true);
-    let out = render_doc(&DocOpts::from_cli(cli), md, width, &images);
-    write_stdout(&render::to_ansi(&out.lines, color))
-}
-
 fn run_tui(mut app: App) -> Result<(), Failure> {
     let mut term = ratatui::init();
     let res = event_loop(&mut term, &mut app);
@@ -336,53 +213,6 @@ fn run_tui(mut app: App) -> Result<(), Failure> {
     }
     ratatui::restore();
     res.map_err(|e| Failure::Runtime(format!("erro no terminal: {e}")))
-}
-
-fn write_stdout(text: &str) -> Result<(), Failure> {
-    write_tolerating_closed_pipe(io::stdout().lock(), text.as_bytes())
-        .map_err(|e| Failure::Runtime(format!("não consegui escrever a saída: {e}")))
-}
-
-/// Escreve tudo em `out`. Se o leitor fechou o pipe (`mdv -p x | head`), a saída
-/// foi simplesmente encerrada: isso não é erro.
-fn write_tolerating_closed_pipe(mut out: impl Write, bytes: &[u8]) -> io::Result<()> {
-    match out.write_all(bytes).and_then(|()| out.flush()) {
-        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
-        other => other,
-    }
-}
-
-fn read_failure(what: &str) -> impl FnOnce(io::Error) -> Failure + '_ {
-    move |e| Failure::Runtime(format!("não consegui ler {what}: {e}"))
-}
-
-fn read_stdin() -> io::Result<String> {
-    read_limited(io::stdin().lock(), MAX_INPUT_BYTES)
-}
-
-/// Lê um arquivo regular (nunca dispositivo, FIFO ou diretório) respeitando o teto.
-fn read_markdown_file(path: &Path) -> io::Result<String> {
-    let meta = fs::metadata(path)?;
-    if !meta.is_file() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "não é um arquivo regular",
-        ));
-    }
-    mem::check_input(meta.len())
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-    read_limited(fs::File::open(path)?, MAX_INPUT_BYTES)
-}
-
-/// Lê UTF-8 de `reader`, falhando se passar de `max` bytes (sem ler além de `max + 1`).
-fn read_limited(reader: impl Read, max: u64) -> io::Result<String> {
-    let mut bytes = Vec::new();
-    reader.take(max + 1).read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > max {
-        let msg = format!("entrada maior que {} MiB", max / (1024 * 1024));
-        return Err(io::Error::new(io::ErrorKind::InvalidData, msg));
-    }
-    String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 /// Escreve uma sequência de controle direto no terminal (OSC 52 para cópia, APC para Kitty).
@@ -1341,31 +1171,8 @@ fn highlight_line(line: &Line<'static>, q: &str) -> Line<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
-
-    #[test]
-    fn read_limited_aceita_exatamente_o_teto() {
-        let text = read_limited(&b"abcd"[..], 4).unwrap();
-        assert_eq!(text, "abcd");
-    }
-
-    #[test]
-    fn read_limited_rejeita_acima_do_teto() {
-        let err = read_limited(&b"abcde"[..], 4).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-    }
-
-    #[test]
-    fn read_limited_nao_le_alem_do_teto() {
-        let mut infinite = io::repeat(b'a');
-        assert!(read_limited(&mut infinite, 1024).is_err());
-    }
-
-    #[test]
-    fn read_limited_rejeita_utf8_invalido() {
-        let err = read_limited(&[0xff, 0xfe][..], 16).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-    }
 
     #[test]
     fn stdin_para_de_acumular_quando_a_memoria_acaba() {
@@ -1377,41 +1184,6 @@ mod tests {
         assert!(app.stream.is_none());
         assert!(app.notice.as_deref().is_some_and(|n| n.contains("leitura interrompida")));
         assert!(!app.images.mermaid_held(), "libera os diagramas");
-    }
-
-    #[test]
-    fn read_markdown_file_rejeita_diretorio() {
-        let err = read_markdown_file(Path::new(".")).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn read_markdown_file_rejeita_dispositivo() {
-        let err = read_markdown_file(Path::new("/dev/zero")).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
-    }
-
-    struct FailingWriter(io::ErrorKind);
-
-    impl Write for FailingWriter {
-        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
-            Err(self.0.into())
-        }
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn pipe_quebrado_na_escrita_e_saida_normal() {
-        assert!(write_tolerating_closed_pipe(FailingWriter(io::ErrorKind::BrokenPipe), b"x").is_ok());
-    }
-
-    #[test]
-    fn outros_erros_de_escrita_continuam_erros() {
-        let err = write_tolerating_closed_pipe(FailingWriter(io::ErrorKind::PermissionDenied), b"x");
-        assert_eq!(err.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
     }
 
     #[test]

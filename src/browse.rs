@@ -3,7 +3,8 @@
 use crate::nav::{self, Target};
 use crate::picker::{self, Picker};
 use crate::render::{self, link_id};
-use crate::{image_store, read_markdown_file, App, Source};
+use crate::load::{image_store, read_markdown_file, Source};
+use crate::App;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Style};

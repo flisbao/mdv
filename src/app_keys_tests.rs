@@ -1,6 +1,7 @@
 //! Caracterização das teclas do modo normal e de seus modais mais simples (fase 0 da refatoração).
 
 use super::*;
+use std::fs;
 
 fn app(md: &str) -> App {
     let cli = match cli::parse(["x.md".to_string()]) {
