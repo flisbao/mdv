@@ -125,7 +125,7 @@ impl ImgZoom {
 impl App {
     /// `i`: abre o zoom do diagrama Mermaid com mais linhas na tela.
     pub(crate) fn open_visible_mermaid(&mut self) {
-        let achado = crate::most_visible(self.rendered.mermaids.iter().map(|m| (m.start, m.end)), self.window());
+        let achado = crate::most_visible(self.doc.rendered.mermaids.iter().map(|m| (m.start, m.end)), self.window());
         match achado {
             Some(index) => self.open_mermaid(index),
             None => self.notice = Some("nenhum diagrama na tela".to_string()),
@@ -134,7 +134,7 @@ impl App {
 
     /// Abre o zoom do diagrama `index` de `Rendered.mermaids`.
     fn open_mermaid(&mut self, index: usize) {
-        let key = self.rendered.mermaids[index].key.clone();
+        let key = self.doc.rendered.mermaids[index].key.clone();
         let Some(png) = self.images.mermaid_png(&key) else {
             self.notice = Some("diagrama ainda não está pronto".to_string());
             return;
@@ -151,7 +151,7 @@ impl App {
     /// Fecha o zoom se o documento mudou e o diagrama sumiu.
     pub(crate) fn sync_img_zoom(&mut self) {
         let gone = self.img_zoom.as_ref().is_some_and(|z| {
-            self.rendered.mermaids.get(z.index).is_none_or(|m| m.key != z.key)
+            self.doc.rendered.mermaids.get(z.index).is_none_or(|m| m.key != z.key)
         });
         if gone {
             self.img_zoom = None;
@@ -171,7 +171,7 @@ impl App {
 
     pub(crate) fn on_img_zoom_key(&mut self, code: KeyCode) {
         if let (KeyCode::Char(c @ ('n' | 'p')), Some(z)) = (code, self.img_zoom.as_ref()) {
-            if let Some(next) = crate::step_index(z.index, self.rendered.mermaids.len(), c == 'n') {
+            if let Some(next) = crate::step_index(z.index, self.doc.rendered.mermaids.len(), c == 'n') {
                 self.open_mermaid(next);
             }
             return;
@@ -197,16 +197,17 @@ impl App {
 
         let bar = Style::default().bg(Color::Rgb(59, 66, 82)).fg(Color::Rgb(229, 233, 240));
         let titulo = self
+            .doc
             .rendered
             .mermaids
             .get(z.index)
-            .and_then(|m| crate::section_title(&self.rendered, m.start))
+            .and_then(|m| crate::section_title(&self.doc.rendered, m.start))
             .map_or(String::new(), |t| format!("  «{t}»"));
         let left = format!(
             " {}  diagrama {}/{}{titulo}  zoom {:.1}×  {}×{} px",
             self.name,
             z.index + 1,
-            self.rendered.mermaids.len(),
+            self.doc.rendered.mermaids.len(),
             z.factor(),
             z.img.width(),
             z.img.height()

@@ -2,6 +2,7 @@ mod browse;
 mod cli;
 mod clip;
 mod data;
+mod doc;
 mod graphics;
 #[cfg(test)]
 mod golden_ansi;
@@ -27,6 +28,7 @@ use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
+use doc::{DocOpts, Document};
 use load::{image_store, load_source, read_markdown_file, reads_stdin, Source, MAX_INPUT_BYTES};
 use plain::{run_plain, write_stdout, HELP};
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -137,71 +139,6 @@ fn run_cli() -> Result<(), Failure> {
         run_tui(app)
     } else {
         run_plain(&md, &source, cli.width, stdout_tty, &cli)
-    }
-}
-
-/// Como a entrada é interpretada: o modo e as opções que só valem para JSON ou tabela.
-#[derive(Clone)]
-struct DocOpts {
-    mode: cli::Mode,
-    json_path: Option<String>,
-    json_view: cli::JsonView,
-    head: usize,
-    cols: Vec<String>,
-    no_header: bool,
-    code_scroll: Option<usize>,
-}
-
-impl DocOpts {
-    fn from_cli(cli: &cli::Cli) -> Self {
-        DocOpts {
-            mode: cli.mode,
-            json_path: cli.json_path.clone(),
-            json_view: cli.json_view,
-            head: cli.head,
-            cols: cli.cols.clone(),
-            no_header: cli.no_header,
-            code_scroll: None,
-        }
-    }
-}
-
-/// Único ponto que decide como o texto da entrada vira linhas, conforme o modo (TUI e `--plain`).
-fn render_doc(doc: &DocOpts, text: &str, width: usize, images: &image::ImageStore) -> render::Rendered {
-    match doc.mode {
-        cli::Mode::Markdown => {
-            render::render_with(
-                text,
-                &render::RenderOpts { width, images: Some(images), code_scroll: doc.code_scroll },
-            )
-        }
-        cli::Mode::Json => {
-            let opts = data::JsonOpts {
-                path: doc.json_path.clone(),
-                view: doc.json_view,
-                head: doc.head,
-                cols: doc.cols.clone(),
-            };
-            data::render_json(text, &opts, width)
-        }
-        cli::Mode::Table { delimiter } => {
-            let opts = data::TableOpts {
-                delimiter,
-                head: doc.head,
-                cols: doc.cols.clone(),
-                no_header: doc.no_header,
-            };
-            data::render_table_data(text, &opts, width)
-        }
-    }
-}
-
-/// Linguagem usada para mostrar a fonte crua (`m`).
-fn raw_lang(mode: cli::Mode) -> &'static str {
-    match mode {
-        cli::Mode::Markdown => "md",
-        cli::Mode::Json => "json",
-        cli::Mode::Table { .. } => "text",
     }
 }
 
@@ -406,15 +343,11 @@ struct App {
     images: image::ImageStore,
     seen_images_version: u64,
     raw: bool,
-    doc: DocOpts,
+    doc: Document,
     stream: Option<Receiver<String>>,
     stick_bottom: bool,
     name: String,
-    md: String,
     max_width: usize,
-    rendered: render::Rendered,
-    render_width: usize,
-    dirty: bool,
     view: Viewport,
     search: SearchState,
     zoom: Option<Zoom>,
@@ -453,16 +386,12 @@ impl App {
             images: image_store(&source, cli, false),
             seen_images_version: 0,
             raw: false,
-            doc: DocOpts::from_cli(cli),
+            doc: Document::new(md, DocOpts::from_cli(cli)),
             stream: None,
             stick_bottom: false,
             source,
             name,
-            md,
             max_width: render::clamp_width(max_width),
-            rendered: render::Rendered::default(),
-            render_width: 0,
-            dirty: true,
             view: Viewport::default(),
             search: SearchState::default(),
             zoom: None,
@@ -511,7 +440,7 @@ impl App {
             }
         }
         if !chunks.is_empty() {
-            self.append_md(&chunks);
+            self.doc.append_md(&chunks);
         }
         self.stop_stream_for_memory(mem::check().err());
         if finished {
@@ -521,7 +450,7 @@ impl App {
         }
         if got {
             self.stick_bottom |= was_at_bottom;
-            self.dirty = true;
+            self.doc.dirty = true;
         }
     }
 
@@ -531,7 +460,7 @@ impl App {
             if self.stream.take().is_some() {
                 self.images.set_mermaid_hold(false);
                 self.notice = Some(format!("leitura interrompida: {e}"));
-                self.dirty = true;
+                self.doc.dirty = true;
             }
         }
     }
@@ -545,7 +474,7 @@ impl App {
     }
 
     fn total_lines(&self) -> usize {
-        self.rendered.lines.len()
+        self.doc.rendered.lines.len()
     }
 
     fn scroll_by(&mut self, delta: isize) {
@@ -562,21 +491,10 @@ impl App {
         self.view.scroll.min(total)..(self.view.scroll + self.view.height).min(total)
     }
 
-    /// Troca o texto do documento (tecla `r`).
-    fn set_md(&mut self, new: String) {
-        self.md = new;
-        self.dirty = true;
-    }
-
-    /// Acrescenta um pedaço de stdin (`--follow`).
-    fn append_md(&mut self, chunk: &str) {
-        self.md.push_str(chunk);
-    }
-
     /// As linhas da janela como serão desenhadas: com o destaque da busca.
     fn screen_lines(&self) -> Vec<Line<'static>> {
         let q = self.search.query.as_str();
-        self.rendered.lines[self.window()]
+        self.doc.rendered.lines[self.window()]
             .iter()
             .map(|l| {
                 let mut l = if q.is_empty() { l.clone() } else { highlight_line(l, q) };
@@ -591,11 +509,12 @@ impl App {
         let top = self.view.scroll;
         let janela = self.window();
         let achado = self
+            .doc
             .rendered
             .code_blocks
             .iter()
             .find(|c| c.start <= top && top < c.end)
-            .or_else(|| self.rendered.code_blocks.iter().find(|c| c.start < janela.end && c.end > janela.start))
+            .or_else(|| self.doc.rendered.code_blocks.iter().find(|c| c.start < janela.end && c.end > janela.start))
             .map(|c| c.text.clone());
         let Some(text) = achado else {
             self.notice = Some("nenhum bloco de código".to_string());
@@ -606,15 +525,15 @@ impl App {
 
     /// Copia o Markdown cru da seção da linha de referência (`Y`).
     fn copy_section(&mut self) {
-        if self.raw || self.doc.mode != cli::Mode::Markdown {
+        if self.raw || self.doc.opts.mode != cli::Mode::Markdown {
             self.notice = Some("seção só existe no Markdown renderizado".to_string());
             return;
         }
-        let Some(idx) = render::section_at(&self.rendered.outline, self.view.scroll) else {
+        let Some(idx) = render::section_at(&self.doc.rendered.outline, self.view.scroll) else {
             self.notice = Some("nenhuma seção aqui".to_string());
             return;
         };
-        match render::section_source(&self.md, &self.rendered, idx) {
+        match render::section_source(&self.doc.md, &self.doc.rendered, idx) {
             Some(text) => self.copy_text(&text),
             None => self.notice = Some("não consegui recortar a seção".to_string()),
         }
@@ -635,20 +554,13 @@ impl App {
     }
 
     fn rerender(&mut self, w: usize) {
-        self.rendered = if self.raw {
-            render::render_code_only_at(&self.md, raw_lang(self.doc.mode), w, self.doc.code_scroll)
-        } else {
-            self.images.begin_pass();
-            render_doc(&self.doc, &self.md, w, &self.images)
-        };
-        self.render_width = w;
-        self.dirty = false;
-        if self.link_at.is_some_and(|(l, id)| l >= self.rendered.lines.len() || id >= self.rendered.links.len()) {
+        self.doc.render(w, self.raw, &self.images);
+        if self.link_at.is_some_and(|(l, id)| l >= self.doc.rendered.lines.len() || id >= self.doc.rendered.links.len()) {
             self.link_at = None;
         }
-        self.search.refresh(&self.rendered.lines);
+        self.search.refresh(&self.doc.rendered.lines);
         self.view.scroll = self.view.scroll.min(self.view.max_scroll(self.total_lines()));
-        let n = self.rendered.tables.len();
+        let n = self.doc.rendered.tables.len();
         if self.zoom.as_ref().is_some_and(|z| z.table >= n) {
             self.zoom = None;
         } else if let Some(z) = &mut self.zoom {
@@ -663,7 +575,7 @@ impl App {
         let version = self.images.version();
         if version != self.seen_images_version {
             self.seen_images_version = version;
-            self.dirty = true;
+            self.doc.dirty = true;
         }
     }
 
@@ -671,12 +583,12 @@ impl App {
     fn reload(&mut self) {
         let Source::File(p) = &self.source else { return };
         if let Ok(md) = read_markdown_file(p) {
-            self.set_md(md);
+            self.doc.set_md(md);
         }
     }
 
     fn set_search(&mut self, query: String) {
-        self.search.commit(query, &self.rendered.lines, self.view.scroll);
+        self.search.commit(query, &self.doc.rendered.lines, self.view.scroll);
         self.goto_match();
     }
 
@@ -688,11 +600,11 @@ impl App {
         }
 
     fn open_zoom(&mut self, table: usize) {
-            if table >= self.rendered.tables.len() {
+            if table >= self.doc.rendered.tables.len() {
                 self.notice = Some(format!(
                     "tabela {} não existe (há {})",
                     table + 1,
-                    self.rendered.tables.len()
+                    self.doc.rendered.tables.len()
                 ));
                 return;
             }
@@ -702,7 +614,7 @@ impl App {
 
         /// Abre o zoom da primeira tabela que aparece na tela.
         fn open_visible_table(&mut self) {
-            let achada = most_visible(self.rendered.tables.iter().map(|t| (t.start, t.end)), self.window());
+            let achada = most_visible(self.doc.rendered.tables.iter().map(|t| (t.start, t.end)), self.window());
             match achada {
                 Some(i) => self.open_zoom(i),
                 None => self.notice = Some("nenhuma tabela na tela".to_string()),
@@ -712,7 +624,7 @@ impl App {
         /// Redesenha a tabela do zoom se a largura ou a coluna mudaram.
         fn refresh_zoom(&mut self, width: usize) {
             let Some(z) = self.zoom.as_mut() else { return };
-            let Some(span) = self.rendered.tables.get(z.table) else { return };
+            let Some(span) = self.doc.rendered.tables.get(z.table) else { return };
             let fresh = matches!(&z.drawn, Some((w, c, _)) if *w == width && *c == z.first_col);
             if !fresh {
                 let v = span.data.draw(width, z.first_col);
@@ -742,7 +654,7 @@ impl App {
                 KeyCode::Char('0') => z.first_col = 0,
                 KeyCode::Char('$') => z.first_col = usize::MAX,
                 KeyCode::Char(c @ ('n' | 'p')) => {
-                    if let Some(next) = step_index(z.table, self.rendered.tables.len(), c == 'n') {
+                    if let Some(next) = step_index(z.table, self.doc.rendered.tables.len(), c == 'n') {
                         *z = Zoom::new(next);
                     }
                 }
@@ -752,31 +664,31 @@ impl App {
 
     /// `w`: alterna entre código quebrado na largura e código sem quebra, rolável com `h`/`l`.
     fn toggle_code_wrap(&mut self) {
-        self.doc.code_scroll = match self.doc.code_scroll {
+        self.doc.opts.code_scroll = match self.doc.opts.code_scroll {
             None => Some(0),
             Some(_) => None,
         };
-        self.dirty = true;
+        self.doc.dirty = true;
     }
 
     /// Vai para a coluna `to` do código (limitada ao fim do código mais largo).
     fn set_code_scroll(&mut self, to: usize) {
-        let Some(cur) = self.doc.code_scroll else {
+        let Some(cur) = self.doc.opts.code_scroll else {
             self.notice = Some("w: código sem quebra (h/l rolam)".into());
             return;
         };
-        let max = self.rendered.code_overflow;
+        let max = self.doc.rendered.code_overflow;
         let next = to.min(max);
         if next != cur {
-            self.doc.code_scroll = Some(next);
-            self.dirty = true;
+            self.doc.opts.code_scroll = Some(next);
+            self.doc.dirty = true;
         } else if max == 0 {
             self.notice = Some("nenhum código largo aqui".into());
         }
     }
 
     fn scroll_code(&mut self, step: usize, forward: bool) {
-        let Some(cur) = self.doc.code_scroll else {
+        let Some(cur) = self.doc.opts.code_scroll else {
             self.set_code_scroll(0);
             return;
         };
@@ -852,14 +764,14 @@ impl App {
             KeyCode::Char('G') | KeyCode::End => self.scroll_to(usize::MAX),
             KeyCode::Char(']') => {
                 let top = self.view.scroll;
-                let alvo = self.rendered.headings.iter().copied().find(|&h| h > top);
+                let alvo = self.doc.rendered.headings.iter().copied().find(|&h| h > top);
                 if let Some(h) = alvo {
                     self.scroll_to(h);
                 }
             }
             KeyCode::Char('[') => {
                 let top = self.view.scroll;
-                let alvo = self.rendered.headings.iter().rev().copied().find(|&h| h < top);
+                let alvo = self.doc.rendered.headings.iter().rev().copied().find(|&h| h < top);
                 if let Some(h) = alvo {
                     self.scroll_to(h);
                 }
@@ -868,14 +780,14 @@ impl App {
             KeyCode::Char('n') => self.step_match(true),
             KeyCode::Char('N') => self.step_match(false),
             KeyCode::Char('r') => self.reload(),
-                        KeyCode::Char('v') if self.doc.mode == cli::Mode::Json => {
-                            let current = if self.doc.json_view == cli::JsonView::Auto {
-                                data::auto_view_of_text(&self.md, self.doc.json_path.as_deref())
+                        KeyCode::Char('v') if self.doc.opts.mode == cli::Mode::Json => {
+                            let current = if self.doc.opts.json_view == cli::JsonView::Auto {
+                                data::auto_view_of_text(&self.doc.md, self.doc.opts.json_path.as_deref())
                             } else {
-                                self.doc.json_view
+                                self.doc.opts.json_view
                             };
-                            self.doc.json_view = data::next_view(current);
-                            self.dirty = true;
+                            self.doc.opts.json_view = data::next_view(current);
+                            self.doc.dirty = true;
                         }
                         KeyCode::Char('t') => self.open_visible_table(),
                         KeyCode::Char('i') => self.open_visible_mermaid(),
@@ -888,7 +800,7 @@ impl App {
             KeyCode::Char('$') => self.set_code_scroll(usize::MAX),
             KeyCode::Char('m') => {
                 self.raw = !self.raw;
-                self.dirty = true;
+                self.doc.dirty = true;
             }
             _ => {}
         }
@@ -924,14 +836,14 @@ impl App {
     /// **antes** dos placeholders que as mostram.
     fn prepare(&mut self, screen_width: u16) {
         let w = self.text_width(screen_width);
-        if self.dirty || w != self.render_width {
+        if self.doc.needs_render(w) {
             self.rerender(w);
         }
     }
 
     /// Enfileira as imagens do documento atual que o terminal ainda não recebeu.
     fn queue_graphics(&mut self) {
-        for g in &self.rendered.graphics {
+        for g in &self.doc.rendered.graphics {
             if self.sent_graphics.insert(g.id) {
                 self.pending_gfx.push_str(&graphics::transmit(g.id, &g.png, g.cols, g.rows));
             }
@@ -948,7 +860,7 @@ impl App {
             Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
 
         let w = self.text_width(content.width);
-        if self.dirty || w != self.render_width {
+        if self.doc.needs_render(w) {
             self.rerender(w);
         }
         self.open_pending_table();
@@ -1017,16 +929,17 @@ impl App {
 
             let bar = Style::default().bg(Color::Rgb(59, 66, 82)).fg(Color::Rgb(229, 233, 240));
             let titulo = self
+                .doc
                 .rendered
                 .tables
                 .get(z.table)
-                .and_then(|t| section_title(&self.rendered, t.start))
+                .and_then(|t| section_title(&self.doc.rendered, t.start))
                 .map_or(String::new(), |t| format!("  «{t}»"));
             let left = format!(
                 " {}  tabela {}/{}{titulo}  {}",
                 self.name,
                 z.table + 1,
-                self.rendered.tables.len(),
+                self.doc.rendered.tables.len(),
                 columns_label(tv)
             );
             let right = "j/k rolar  h/l colunas  n/p outra tabela  Esc voltar ";
@@ -1038,13 +951,13 @@ impl App {
 
     /// `☑ feitas/total` do documento e, se a seção atual tem tarefas e difere do todo, `(seção f/t)`.
     fn task_summary(&self) -> Option<String> {
-        let all = render::count_tasks(&self.rendered.tasks, 0, usize::MAX);
+        let all = render::count_tasks(&self.doc.rendered.tasks, 0, usize::MAX);
         if all.total == 0 {
             return None;
         }
         let mut s = format!("☑ {}/{}", all.done, all.total);
-        if let Some(idx) = render::section_at(&self.rendered.outline, self.view.scroll) {
-            let c = render::section_tasks(&self.rendered, idx);
+        if let Some(idx) = render::section_at(&self.doc.rendered.outline, self.view.scroll) {
+            let c = render::section_tasks(&self.doc.rendered, idx);
             if c.total > 0 && c != all {
                 let _ = write!(s, " (seção {}/{})", c.done, c.total);
             }
@@ -1060,7 +973,7 @@ impl App {
             .saturating_mul(100)
             .checked_div(self.view.max_scroll(total))
             .unwrap_or(100);
-        let view = match (self.doc.mode, self.doc.json_view) {
+        let view = match (self.doc.opts.mode, self.doc.opts.json_view) {
             (cli::Mode::Json, cli::JsonView::Text) => "  [texto]",
             (cli::Mode::Json, cli::JsonView::Table) => "  [tabela]",
             (cli::Mode::Json, cli::JsonView::Schema) => "  [esquema]",
@@ -1071,7 +984,7 @@ impl App {
             self.name,
             if self.raw { "  [fonte]" } else { "" }
         );
-        if let Some(c) = self.doc.code_scroll {
+        if let Some(c) = self.doc.opts.code_scroll {
             let _ = write!(s, "  [código sem quebra, col {c}]");
         }
         let search = &self.search;
@@ -1278,7 +1191,7 @@ mod tests {
         app.images = image::ImageStore::new(None).with_native_mermaid(true).with_graphics(true);
         let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
         term.draw(|f| app.draw(f)).unwrap();
-        assert_eq!(app.rendered.mermaids.len(), 1, "o diagrama virou imagem");
+        assert_eq!(app.doc.rendered.mermaids.len(), 1, "o diagrama virou imagem");
         app.on_key(ev(KeyCode::Char('i')));
         assert!(app.img_zoom.is_some(), "{:?}", app.notice);
         app.prepare_img_zoom(100, 30, 8.0);
@@ -1328,7 +1241,7 @@ mod tests {
     #[test]
     fn tab_enter_segue_link_md_e_backspace_volta() {
         let dir = tempfile::tempdir().unwrap();
-        let a = dir.path().join("a.md");
+        let a = dir.path().join("a.doc.md");
         fs::write(&a, "# A\n\n[ir](b.md#segundo)\n").unwrap();
         fs::write(dir.path().join("b.md"), "# B\n\ntexto\n\n## Segundo\n\nfim\n").unwrap();
         let mut app = test_app(Source::File(a.clone()), "# A\n\n[ir](b.md#segundo)\n");
@@ -1340,10 +1253,10 @@ mod tests {
         assert_eq!(app.name, "b.md");
         app.rerender(60);
         app.apply_pending_jump();
-        let seg = app.rendered.outline[1].line;
+        let seg = app.doc.rendered.outline[1].line;
         assert!(app.view.scroll <= seg && seg < app.view.scroll + 3, "rolou até a âncora");
         key(&mut app, KeyCode::Backspace);
-        assert_eq!(app.name, "a.md");
+        assert_eq!(app.name, "a.doc.md");
         assert!(app.back.is_empty());
         key(&mut app, KeyCode::Backspace);
         assert_eq!(app.notice.as_deref(), Some("nada para voltar"));
@@ -1357,7 +1270,7 @@ mod tests {
         let mut app = test_app(Source::Stdin, "# A\n");
         app.back.push(browse::Back::File { path: json.clone(), line: 0, mode: cli::Mode::Json });
         key(&mut app, KeyCode::Backspace);
-        assert_eq!(app.doc.mode, cli::Mode::Json);
+        assert_eq!(app.doc.opts.mode, cli::Mode::Json);
         assert!(matches!(&app.source, Source::File(p) if *p == json));
     }
 
@@ -1412,12 +1325,12 @@ mod tests {
     fn stream_acumula_pedacos_e_marca_para_redesenhar() {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut app = test_app(Source::Stdin, "").with_stream(rx);
-        app.dirty = false;
+        app.doc.dirty = false;
         tx.send("# um\n".to_string()).unwrap();
         tx.send("dois".to_string()).unwrap();
         app.drain_stream();
-        assert_eq!(app.md, "# um\ndois");
-        assert!(app.dirty);
+        assert_eq!(app.doc.md, "# um\ndois");
+        assert!(app.doc.dirty);
     }
 
     #[test]
@@ -1429,10 +1342,10 @@ mod tests {
         app.drain_stream();
         assert!(app.images.mermaid_held());
         drop(tx);
-        app.dirty = false;
+        app.doc.dirty = false;
         app.drain_stream();
         assert!(!app.images.mermaid_held(), "entrada terminou: libera os diagramas");
-        assert!(app.dirty, "redesenha para os diagramas aparecerem");
+        assert!(app.doc.dirty, "redesenha para os diagramas aparecerem");
     }
 
     #[test]
@@ -1446,9 +1359,9 @@ mod tests {
     fn stream_sem_novidade_nao_redesenha() {
         let (_tx, rx) = std::sync::mpsc::channel::<String>();
         let mut app = test_app(Source::Stdin, "").with_stream(rx);
-        app.dirty = false;
+        app.doc.dirty = false;
         app.drain_stream();
-        assert!(!app.dirty);
+        assert!(!app.doc.dirty);
     }
 
     #[test]
@@ -1479,9 +1392,9 @@ mod tests {
             let mut png = std::io::Cursor::new(Vec::new());
             img.write_to(&mut png, ::image::ImageFormat::Png).unwrap();
             std::fs::write(dir.join("a.png"), png.into_inner()).unwrap();
-            let md = dir.join("a.md");
+            let md = dir.join("a.doc.md");
             std::fs::write(&md, "![x](a.png)\n").unwrap();
-            let cli = match cli::parse(["--graphics", "kitty", "a.md"].map(String::from)) {
+            let cli = match cli::parse(["--graphics", "kitty", "a.doc.md"].map(String::from)) {
                 Ok(cli::Parsed::Run(c)) => c,
                 _ => panic!("cli de teste"),
             };
@@ -1496,7 +1409,7 @@ mod tests {
             assert!(app.pending_gfx.starts_with("\x1b_Ga=T"), "{:?}", app.pending_gfx);
             assert_eq!(app.sent_graphics.len(), 1);
             app.pending_gfx.clear();
-            app.dirty = true;
+            app.doc.dirty = true;
             app.prepare(100);
             assert!(app.pending_gfx.is_empty(), "já foi enviada");
         }
@@ -1515,37 +1428,37 @@ mod tests {
         #[test]
         fn v_alterna_as_vistas_do_json() {
             let mut app = test_app(Source::Stdin, r#"[{"a":1}]"#);
-            app.doc.mode = cli::Mode::Json;
+            app.doc.opts.mode = cli::Mode::Json;
             tecla(&mut app, 'v'); // Auto já era tabela: o próximo é o esquema
-            assert_eq!(app.doc.json_view, cli::JsonView::Schema);
-            assert!(app.dirty);
+            assert_eq!(app.doc.opts.json_view, cli::JsonView::Schema);
+            assert!(app.doc.dirty);
             tecla(&mut app, 'v');
-            assert_eq!(app.doc.json_view, cli::JsonView::Text);
+            assert_eq!(app.doc.opts.json_view, cli::JsonView::Text);
             tecla(&mut app, 'v');
-            assert_eq!(app.doc.json_view, cli::JsonView::Table);
+            assert_eq!(app.doc.opts.json_view, cli::JsonView::Table);
         }
 
         #[test]
         fn v_em_json_que_nao_e_lista_comeca_pela_tabela() {
             let mut app = test_app(Source::Stdin, r#"{"a":1}"#);
-            app.doc.mode = cli::Mode::Json;
+            app.doc.opts.mode = cli::Mode::Json;
             tecla(&mut app, 'v');
-            assert_eq!(app.doc.json_view, cli::JsonView::Table);
+            assert_eq!(app.doc.opts.json_view, cli::JsonView::Table);
         }
 
         #[test]
         fn v_fora_do_modo_json_nao_faz_nada() {
             let mut app = test_app(Source::Stdin, "# a");
-            app.dirty = false;
+            app.doc.dirty = false;
             tecla(&mut app, 'v');
-            assert_eq!(app.doc.json_view, cli::JsonView::Auto);
-            assert!(!app.dirty);
+            assert_eq!(app.doc.opts.json_view, cli::JsonView::Auto);
+            assert!(!app.doc.dirty);
         }
 
         #[test]
         fn barra_mostra_a_vista_do_json_quando_escolhida() {
             let mut app = test_app(Source::Stdin, r#"[{"a":1}]"#);
-            app.doc.mode = cli::Mode::Json;
+            app.doc.opts.mode = cli::Mode::Json;
             tecla(&mut app, 'v');
             assert!(app.status_left().contains("[esquema]"), "{}", app.status_left());
         }
@@ -1555,22 +1468,22 @@ mod tests {
             let longa = "x".repeat(200);
             let mut app = test_app(Source::Stdin, &format!("```\n{longa}\n```"));
             app.rerender(60); // 58 colunas de código => overflow 142
-            assert_eq!(app.rendered.code_overflow, 142);
+            assert_eq!(app.doc.rendered.code_overflow, 142);
             tecla(&mut app, 'w');
-            assert_eq!(app.doc.code_scroll, Some(0));
-            assert!(app.dirty);
+            assert_eq!(app.doc.opts.code_scroll, Some(0));
+            assert!(app.doc.dirty);
             app.rerender(60);
             tecla(&mut app, 'l');
-            assert_eq!(app.doc.code_scroll, Some(8));
+            assert_eq!(app.doc.opts.code_scroll, Some(8));
             tecla(&mut app, 'h');
             tecla(&mut app, 'h');
-            assert_eq!(app.doc.code_scroll, Some(0));
+            assert_eq!(app.doc.opts.code_scroll, Some(0));
             tecla(&mut app, '$');
-            assert_eq!(app.doc.code_scroll, Some(142));
+            assert_eq!(app.doc.opts.code_scroll, Some(142));
             tecla(&mut app, '0');
-            assert_eq!(app.doc.code_scroll, Some(0));
+            assert_eq!(app.doc.opts.code_scroll, Some(0));
             tecla(&mut app, 'w');
-            assert_eq!(app.doc.code_scroll, None);
+            assert_eq!(app.doc.opts.code_scroll, None);
         }
 
         #[test]
@@ -1578,7 +1491,7 @@ mod tests {
             let mut app = test_app(Source::Stdin, "```\nabc\n```");
             app.rerender(60);
             tecla(&mut app, 'l');
-            assert_eq!(app.doc.code_scroll, None);
+            assert_eq!(app.doc.opts.code_scroll, None);
             assert!(app.notice.as_deref().is_some_and(|n| n.contains('w')), "{:?}", app.notice);
         }
 
@@ -1590,7 +1503,7 @@ mod tests {
             for _ in 0..5 {
                 tecla(&mut app, 'l');
             }
-            assert_eq!(app.doc.code_scroll, Some(12));
+            assert_eq!(app.doc.opts.code_scroll, Some(12));
         }
 
         #[test]
@@ -1638,7 +1551,7 @@ mod tests {
         #[test]
         fn rodape_acrescenta_a_secao_atual_quando_ela_tem_tarefas() {
             let mut app = app_com_texto("# A\n\n- [x] a\n\n# B\n\n- [ ] b\n- [ ] c\n");
-            app.view.scroll = app.rendered.outline[1].line;
+            app.view.scroll = app.doc.rendered.outline[1].line;
             let s = app.status_left();
             assert!(s.contains("☑ 1/3") && s.contains("(seção 0/2)"), "{s}");
         }
@@ -1683,7 +1596,7 @@ mod tests {
         #[test]
         fn y_em_json_nao_entra_em_panico_e_avisa() {
             let mut app = test_app(Source::Stdin, r#"[{"a":1}]"#);
-            app.doc.mode = cli::Mode::Json;
+            app.doc.opts.mode = cli::Mode::Json;
             app.rerender(60);
             app.view.height = 10;
             app.on_key(ev(KeyCode::Char('y')));
@@ -1710,7 +1623,7 @@ mod tests {
         #[test]
         fn y_maiusculo_usa_a_secao_da_primeira_linha_visivel() {
             let mut app = app_com_texto("# A\n\na\n\n# B\n\nb\n");
-            let b = app.rendered.outline[1].line;
+            let b = app.doc.rendered.outline[1].line;
             app.view.scroll = b;
             app.on_key(ev(KeyCode::Char('Y')));
             assert_eq!(copiado(&app), Some(clip::osc52("# B\n\nb\n").unwrap()));
@@ -1781,7 +1694,7 @@ mod tests {
         fn t_escolhe_a_tabela_que_aparece_na_tela() {
             let md = format!("{TABELA}\n{}\n{TABELA}", "texto\n\n".repeat(30));
             let mut app = app_com_tabela(&md);
-            let segunda = app.rendered.tables[1].start;
+            let segunda = app.doc.rendered.tables[1].start;
             app.view.scroll = segunda.saturating_sub(1);
             app.on_key(ev(KeyCode::Char('t')));
             assert_eq!(app.zoom.as_ref().map(|z| z.table), Some(1));
@@ -1852,7 +1765,7 @@ mod tests {
         fn recarregar_com_a_tabela_sumida_fecha_o_zoom() {
             let mut app = app_com_tabela(TABELA);
             app.on_key(ev(KeyCode::Char('t')));
-            app.md = "sem tabela\n".to_string();
+            app.doc.md = "sem tabela\n".to_string();
             app.rerender(60);
             assert!(app.zoom.is_none());
         }

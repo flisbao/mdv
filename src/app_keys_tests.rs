@@ -78,7 +78,7 @@ fn d_e_u_rolam_meia_pagina() {
 #[test]
 fn g_e_maiusculo_vao_ao_inicio_e_ao_fim() {
     let mut a = app(&longo());
-    let fim = a.rendered.lines.len() - a.view.height;
+    let fim = a.doc.rendered.lines.len() - a.view.height;
     press(&mut a, KeyCode::Char('G'));
     assert_eq!(a.view.scroll, fim);
     press(&mut a, KeyCode::Char('g'));
@@ -92,7 +92,7 @@ fn g_e_maiusculo_vao_ao_inicio_e_ao_fim() {
 #[test]
 fn colchetes_pulam_de_titulo_em_titulo() {
     let mut a = app(&tres_secoes());
-    let h = a.rendered.headings.clone();
+    let h = a.doc.rendered.headings.clone();
     assert_eq!(h.len(), 3);
     press(&mut a, KeyCode::Char(']'));
     assert_eq!(a.view.scroll, h[1]);
@@ -169,16 +169,16 @@ fn r_rele_o_arquivo_sob_demanda() {
     };
     let mut a = App::new(Source::File(p.clone()), "# Antes\n".to_string(), 80, &cli);
     fs::write(&p, "# Depois\n").unwrap();
-    assert!(a.md.contains("Antes"));
+    assert!(a.doc.md.contains("Antes"));
     assert!(!press(&mut a, KeyCode::Char('r')));
-    assert!(a.md.contains("Depois"), "r relê o arquivo: {:?}", a.md);
+    assert!(a.doc.md.contains("Depois"), "r relê o arquivo: {:?}", a.doc.md);
 }
 
 #[test]
 fn r_com_stdin_nao_muda_nada() {
     let mut a = app("# Igual\n");
     assert!(!press(&mut a, KeyCode::Char('r')));
-    assert_eq!(a.md, "# Igual\n");
+    assert_eq!(a.doc.md, "# Igual\n");
 }
 
 #[test]
@@ -193,19 +193,19 @@ fn interrogacao_foi_removida_e_nao_faz_nada() {
 #[test]
 fn append_md_acumula_o_texto_na_ordem() {
     let mut a = app("");
-    a.append_md("a\n");
-    a.append_md("b\nc");
-    a.append_md("d\n");
-    assert_eq!(a.md, "a\nb\ncd\n");
+    a.doc.append_md("a\n");
+    a.doc.append_md("b\nc");
+    a.doc.append_md("d\n");
+    assert_eq!(a.doc.md, "a\nb\ncd\n");
 }
 
 #[test]
 fn set_md_troca_o_texto_e_pede_redesenho() {
     let mut a = app("# Antes\n");
-    a.dirty = false;
-    a.set_md("# Depois\n".to_string());
-    assert_eq!(a.md, "# Depois\n");
-    assert!(a.dirty);
+    a.doc.dirty = false;
+    a.doc.set_md("# Depois\n".to_string());
+    assert_eq!(a.doc.md, "# Depois\n");
+    assert!(a.doc.dirty);
 }
 
 #[test]
@@ -229,7 +229,7 @@ fn arquivo_alterado_no_disco_nao_recarrega_sozinho() {
     let mut a = App::new(Source::File(p.clone()), "# Antes\n".to_string(), 80, &cli);
     fs::write(&p, "# Depois\n").unwrap();
     a.poll_background();
-    assert!(a.md.contains("Antes"), "só a tecla r recarrega: {:?}", a.md);
+    assert!(a.doc.md.contains("Antes"), "só a tecla r recarrega: {:?}", a.doc.md);
 }
 
 #[test]
@@ -244,13 +244,13 @@ fn r_com_arquivo_sumido_mantem_o_documento() {
     let mut a = App::new(Source::File(p.clone()), "# Fica\n".to_string(), 80, &cli);
     fs::remove_file(&p).unwrap();
     assert!(!press(&mut a, KeyCode::Char('r')));
-    assert_eq!(a.md, "# Fica\n");
+    assert_eq!(a.doc.md, "# Fica\n");
 }
 
 #[test]
 fn z_e_maiusculo_foram_removidos_e_nao_dobram() {
     let mut a = app(&tres_secoes());
-    let total = a.rendered.lines.len();
+    let total = a.doc.rendered.lines.len();
     assert!(!press(&mut a, KeyCode::Char('Z')));
     assert!(!press(&mut a, KeyCode::Char('z')));
     assert_eq!(a.total_lines(), total, "nenhuma linha some");
@@ -328,7 +328,7 @@ fn confirmacao_de_link_externo_so_aceita_y() {
 #[test]
 fn picker_captura_teclas_e_ctrl_c_sai() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("a.md"), "# a\n").unwrap();
+    std::fs::write(dir.path().join("a.doc.md"), "# a\n").unwrap();
     let mut a = app("");
     a.picker = Some(picker::Picker::scan(dir.path()).unwrap());
     press(&mut a, KeyCode::Char('j'));

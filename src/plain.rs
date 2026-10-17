@@ -5,7 +5,8 @@ use std::io::{self, Write};
 use ratatui::crossterm::terminal;
 
 use crate::load::{image_store, Source};
-use crate::{cli, render, render_doc, DocOpts, Failure};
+use crate::doc::{render_doc, DocOpts};
+use crate::{cli, render, Failure};
 
 /// Largura do `--plain` quando o tamanho do terminal é desconhecido.
 const FALLBACK_TERMINAL_WIDTH: usize = 80;
