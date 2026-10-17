@@ -103,20 +103,10 @@ fn ajuda_documenta_subcomandos_e_opcoes() {
     let out = mdv(&["--help"], "");
     let text = String::from_utf8_lossy(&out.stdout);
     for item in [
-        "mdv json", "mdv csv|tsv", "--remote", "--mermaid", "--follow", "--toc", "--stats", "--check-links", "--as",
-        "--path", "--head", "--cols", "--no-header", "--delimiter", "MDV_MMDC", "--setup-mermaid",
+        "mdv json", "mdv csv|tsv", "--remote", "--follow", "--toc", "--stats", "--check-links", "--as",
+        "--path", "--head", "--cols", "--no-header", "--delimiter",
     ] {
         assert!(text.contains(item), "a ajuda não menciona {item}:\n{text}");
-    }
-}
-
-#[test]
-fn setup_mermaid_imprime_relatorio_e_sai_com_sucesso() {
-    let out = mdv(&["--setup-mermaid"], "");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    let text = String::from_utf8_lossy(&out.stdout);
-    for item in ["Renderizador nativo", "mmdc", "Terminal", "Windows Terminal"] {
-        assert!(text.contains(item), "faltou {item}:\n{text}");
     }
 }
 
@@ -175,61 +165,30 @@ const MERMAID_MD: &str = "```mermaid\ngraph TD; A-->B\n```\n";
 const MERMAID_INVALIDO_MD: &str = "```mermaid\nisto não é mermaid\n```\n";
 
 #[test]
-fn mermaid_sem_flag_usa_o_nativo_e_sugere_a_flag_quando_falha() {
-    let out = mdv(&["-p", "-"], MERMAID_INVALIDO_MD);
-    let text = String::from_utf8_lossy(&out.stdout);
-    assert!(text.contains("mermaid (erro:") && text.contains("isto não é mermaid"), "{text}");
-    assert!(text.contains("--mermaid"), "{text}");
+fn mermaid_e_setup_mermaid_foram_removidos() {
+    for flag in ["--mermaid", "--setup-mermaid"] {
+        let out = mdv(&["-p", flag, "-"], "# a\n");
+        assert_eq!(out.status.code(), Some(2), "{flag}");
+        assert!(stderr(&out).contains(&format!("opção desconhecida: {flag}")), "{}", stderr(&out));
+    }
 }
 
 #[test]
-fn mermaid_sem_flag_desenha_com_o_nativo() {
+fn mermaid_invalido_mostra_codigo_e_motivo_sem_citar_flags_removidas() {
+    let out = mdv(&["-p", "-"], MERMAID_INVALIDO_MD);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("mermaid (erro:") && text.contains("isto não é mermaid"), "{text}");
+    assert!(!text.contains("--mermaid") && !text.contains("setup-mermaid") && !text.contains("mmdc"), "{text}");
+}
+
+#[test]
+fn mermaid_desenha_com_o_nativo() {
     let out = mdv(&["-p", "-"], MERMAID_MD);
     let text = String::from_utf8_lossy(&out.stdout);
     if text.contains("nenhuma fonte instalada") {
         return; // máquina sem fontes: o nativo não consegue desenhar texto
     }
     assert!(text.contains('▀'), "{text}");
-}
-
-#[test]
-fn mermaid_sem_mmdc_mostra_codigo_e_erro() {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mdv"))
-        .args(["-p", "--mermaid", "-"])
-        .env("MDV_MMDC", "/nao/existe/mmdc")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("mdv deve iniciar");
-    child.stdin.take().expect("stdin").write_all(MERMAID_INVALIDO_MD.as_bytes()).expect("escrever stdin");
-    let out = child.wait_with_output().expect("mdv deve terminar");
-    let text = String::from_utf8_lossy(&out.stdout);
-    assert!(text.contains("mermaid (erro:") && text.contains("isto não é mermaid"), "{text}");
-    assert!(text.contains("--setup-mermaid"), "{text}");
-}
-
-#[test]
-fn mermaid_nativo_desenha_sem_mmdc() {
-    let out = mdv_com_env(&["-p", "--mermaid", "-"], MERMAID_MD, "/nao/existe/mmdc");
-    let text = String::from_utf8_lossy(&out.stdout);
-    if text.contains("nenhuma fonte instalada") {
-        return; // máquina sem fontes: o nativo não consegue desenhar texto
-    }
-    assert!(text.contains('▀'), "{text}");
-    assert!(!text.contains("mermaid (erro"), "{text}");
-}
-
-fn mdv_com_env(args: &[&str], stdin: &str, mmdc: &str) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mdv"))
-        .args(args)
-        .env("MDV_MMDC", mmdc)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("mdv deve iniciar");
-    let _ = child.stdin.take().expect("stdin").write_all(stdin.as_bytes());
-    child.wait_with_output().expect("mdv deve terminar")
 }
 
 #[cfg(unix)]

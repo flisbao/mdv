@@ -13,7 +13,6 @@ mod imgzoom;
 mod image;
 mod links;
 mod mem;
-mod mermaid;
 mod mermaid_native;
 mod nav;
 mod net;
@@ -21,7 +20,6 @@ mod picker;
 mod stats;
 mod stream;
 mod render;
-mod setup;
 
 use std::collections::HashSet;
 use std::fmt::Write as _;
@@ -73,8 +71,6 @@ OPÇÕES:
     -p, --plain        imprime no terminal (sem TUI), como `cat` com cores
     -w, --width <N>    largura máxima do texto (padrão: 100)
         --remote       baixa imagens de http(s):// (nunca de rede privada)
-        --mermaid      diagramas Mermaid: se o renderizador embutido falhar, tenta o `mmdc` (ou $MDV_MMDC)
-        --setup-mermaid  verifica o ambiente dos diagramas e mostra como instalar o mmdc
         --graphics <G> imagens em alta resolução: off (padrão), kitty ou auto (Kitty/Ghostty; só no modo interativo)
         --toc          imprime só o índice de títulos
         --check-links  confere offline links relativos, âncoras e cercas sem fechar; sai com 1 se houver problema
@@ -160,7 +156,6 @@ fn main() -> ExitCode {
 fn run_cli() -> Result<(), Failure> {
     let cli = match cli::parse(std::env::args().skip(1)).map_err(Failure::Usage)? {
         cli::Parsed::Help => return write_stdout(HELP),
-        cli::Parsed::SetupMermaid => return write_stdout(&setup::report()),
         cli::Parsed::Version => {
             return write_stdout(&format!("mdv {}\n", env!("CARGO_PKG_VERSION")));
         }
@@ -268,7 +263,7 @@ fn load_source(path: Option<&str>) -> Result<(Source, String), Failure> {
 }
 
 /// Imagens relativas são resolvidas a partir da pasta do arquivo (ou do diretório atual, com stdin).
-/// `--remote` baixa imagens de URLs; os diagramas Mermaid usam o renderizador nativo e `--mermaid` acrescenta o `mmdc`
+/// `--remote` baixa imagens de URLs; os diagramas Mermaid usam o renderizador nativo
 /// (`blocking`: espera, como no `--plain`).
 fn image_store(source: &Source, cli: &cli::Cli, blocking: bool) -> image::ImageStore {
     let base = match source {
@@ -288,13 +283,8 @@ fn image_store(source: &Source, cli: &cli::Cli, blocking: bool) -> image::ImageS
     if cli.remote {
         store = store.with_remote(net::FetchPolicy::default(), blocking);
     }
-    // Diagramas Mermaid saem do renderizador nativo; `--mermaid` acrescenta o `mmdc` como reserva.
-    store = if cli.mermaid {
-        let bin = std::env::var("MDV_MMDC").unwrap_or_else(|_| "mmdc".to_string());
-        store.with_mermaid(bin, blocking)
-    } else {
-        store.with_native_mermaid(blocking)
-    };
+    // Diagramas Mermaid saem do renderizador nativo.
+    store = store.with_native_mermaid(blocking);
     store
 }
 
@@ -1698,7 +1688,7 @@ mod tests {
     fn diagramas_esperam_o_fim_do_stdin_em_streaming() {
         let (tx, rx) = std::sync::mpsc::channel::<String>();
         let mut app = test_app(Source::Stdin, "").with_stream(rx);
-        assert!(app.images.mermaid_held(), "enquanto o texto chega, não dispara o mmdc");
+        assert!(app.images.mermaid_held(), "enquanto o texto chega, não dispara o diagrama");
         tx.send("# x\n".to_string()).unwrap();
         app.drain_stream();
         assert!(app.images.mermaid_held());

@@ -2412,20 +2412,16 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn bloco_mermaid_vira_imagem_quando_habilitado() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        let png = dir.path().join("f.png");
-        let img = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(4, 4, image::Rgba([1, 2, 3, 255])));
-        img.save(&png).unwrap();
-        let bin = dir.path().join("mmdc");
-        std::fs::write(&bin, format!("#!/bin/sh\ncp {} \"$4\"\n", png.display())).unwrap();
-        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-
-        let store = ImageStore::new(None).with_mermaid(bin.to_string_lossy().into_owned(), true);
-        let r = render_with("```mermaid\nisto não é mermaid\n```", &RenderOpts { width: 40, images: Some(&store), ..Default::default() });
+        if !crate::mermaid_native::fonts_available() {
+            return; // máquina sem fontes: o nativo não desenha texto
+        }
+        let store = ImageStore::new(None).with_native_mermaid(true);
+        let r = render_with(
+            "```mermaid\nflowchart LR\n  A[Início] --> B[Fim]\n```",
+            &RenderOpts { width: 40, images: Some(&store), ..Default::default() },
+        );
         assert!(joined_text(&r).contains('▀'));
     }
 
@@ -2437,7 +2433,7 @@ mod tests {
 
     #[test]
     fn mermaid_com_falha_mostra_codigo_e_motivo() {
-        let store = ImageStore::new(None).with_mermaid("/nao/existe/mmdc".into(), true);
+        let store = ImageStore::new(None).with_native_mermaid(true);
         let r = render_with("```mermaid\nisto não é mermaid\n```", &RenderOpts { width: 60, images: Some(&store), ..Default::default() });
         let t = joined_text(&r);
         assert!(t.contains("isto não é mermaid") && t.contains("erro"), "{t}");

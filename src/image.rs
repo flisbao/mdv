@@ -189,7 +189,7 @@ pub struct ImageStore {
     cache: Arc<Mutex<HashMap<String, ImageState>>>,
     version: Arc<AtomicU64>,
     remote: Option<(Arc<FetchPolicy>, bool)>, // (política, bloqueante)
-    mermaid: Option<(Option<String>, bool)>,  // (binário mmdc de reserva, bloqueante)
+    mermaid: Option<bool>, // Some(bloqueante) quando habilitado
     mermaid_hold: AtomicBool,
     /// PNG original de cada diagrama (chave de `mermaid_key`): o cache de imagens guarda só a
     /// versão reduzida, e o zoom (`imgzoom`) decodifica este sob demanda, um por vez.
@@ -217,12 +217,6 @@ impl ImageStore {
             next_gfx: AtomicU32::new(1),
             used: Mutex::new(HashSet::new()),
         }
-    }
-
-    /// Mermaid com o renderizador nativo e, se ele falhar, o `mmdc` em `bin`.
-    pub fn with_mermaid(mut self, bin: String, blocking: bool) -> Self {
-        self.mermaid = Some((Some(bin), blocking));
-        self
     }
 
     pub fn with_graphics(mut self, on: bool) -> Self {
@@ -274,11 +268,11 @@ impl ImageStore {
 
     /// Mermaid só com o renderizador nativo (padrão): em processo, sem subprocesso.
     pub fn with_native_mermaid(mut self, blocking: bool) -> Self {
-        self.mermaid = Some((None, blocking));
+        self.mermaid = Some(blocking);
         self
     }
 
-    /// Enquanto `hold`, `get_mermaid` não dispara o `mmdc` (usado com `--follow`).
+    /// Enquanto `hold`, `get_mermaid` não dispara o job (usado com `--follow`).
     pub fn set_mermaid_hold(&self, hold: bool) {
         self.mermaid_hold.store(hold, Ordering::Relaxed);
     }
@@ -302,7 +296,7 @@ impl ImageStore {
     }
 
     pub fn get_mermaid(&self, source: &str) -> ImageState {
-        let Some((bin, blocking)) = &self.mermaid else {
+        let Some(blocking) = self.mermaid else {
             return ImageState::Failed("mermaid desativado".into());
         };
         let key = Self::mermaid_key(source);
@@ -315,14 +309,10 @@ impl ImageStore {
         if self.over_limit(&key, |k| k.starts_with(MERMAID_PREFIX), MAX_MERMAID_DIAGRAMS) {
             return ImageState::Failed("limite de diagramas por documento atingido".into());
         }
-        let (bin, src) = (bin.clone(), source.to_string());
+        let src = source.to_string();
         let (pngs, png_key) = (Arc::clone(&self.mermaid_png), key.clone());
-        self.get_job(&key, !*blocking, move || {
-            let png = match &bin {
-                Some(bin) => crate::mermaid::render_png_auto(&src, bin, crate::mermaid::MMDC_TIMEOUT)?,
-                None => crate::mermaid_native::render_png(&src)
-                    .map_err(|e| format!("{e} (use --mermaid para tentar o mmdc; veja `mdv --setup-mermaid`)"))?,
-            };
+        self.get_job(&key, !blocking, move || {
+            let png = crate::mermaid_native::render_png(&src)?;
             let img = decode(&png)?;
             pngs.lock().unwrap_or_else(PoisonError::into_inner).insert(png_key, Arc::new(png));
             Ok(img)
@@ -651,9 +641,9 @@ mod tests {
 
     #[test]
     fn limite_de_diagramas_mermaid_distintos() {
-        let store = ImageStore::new(None).with_mermaid("/nao/existe/mmdc".into(), true);
+        let store = ImageStore::new(None).with_native_mermaid(true);
         for i in 0..MAX_MERMAID_DIAGRAMS {
-            store.get_mermaid(&format!("graph TD; A{i}-->B"));
+            store.get_mermaid(&format!("isto não é mermaid {i}"));
         }
         match store.get_mermaid("graph TD; extra-->B") {
             ImageState::Failed(m) => assert!(m.contains("limite"), "{m}"),
@@ -665,7 +655,7 @@ mod tests {
     /// podem contar contra o limite nem ficar no cache para sempre.
     #[test]
     fn versoes_antigas_do_diagrama_nao_esgotam_o_limite() {
-        let store = ImageStore::new(None).with_mermaid("/nao/existe/mmdc".into(), true);
+        let store = ImageStore::new(None).with_native_mermaid(true);
         for i in 0..=MAX_MERMAID_DIAGRAMS * 2 {
             store.begin_pass();
             if let ImageState::Failed(m) = store.get_mermaid(&format!("isto não é mermaid {i}")) {
@@ -710,16 +700,16 @@ mod tests {
     }
 
     #[test]
-    fn mermaid_nativo_sem_mmdc_sugere_a_flag_quando_falha() {
+    fn mermaid_invalido_falha_sem_sugerir_flags_removidas() {
         let store = ImageStore::new(None).with_native_mermaid(true);
         match store.get_mermaid("isto não é mermaid") {
-            ImageState::Failed(m) => assert!(m.contains("--mermaid"), "{m}"),
+            ImageState::Failed(m) => assert!(!m.contains("--mermaid") && !m.contains("setup"), "{m}"),
             _ => panic!("deveria falhar"),
         }
     }
 
     #[test]
-    fn mermaid_nativo_desenha_sem_precisar_de_mmdc() {
+    fn mermaid_nativo_desenha() {
         if !crate::mermaid_native::fonts_available() {
             return;
         }
@@ -728,11 +718,11 @@ mod tests {
     }
 
     #[test]
-    fn mermaid_em_espera_nao_dispara_o_mmdc() {
-        let store = ImageStore::new(None).with_mermaid("/nao/existe/mmdc".into(), true);
+    fn mermaid_em_espera_nao_dispara_o_job() {
+        let store = ImageStore::new(None).with_native_mermaid(true);
         store.set_mermaid_hold(true);
         assert!(matches!(store.get_mermaid("isto não é mermaid"), ImageState::Loading));
-        // nada foi registrado: ao liberar, o job roda (e falha, pois o binário não existe)
+        // nada foi registrado: ao liberar, o job roda (e falha, pois a fonte é inválida)
         store.set_mermaid_hold(false);
         assert!(matches!(store.get_mermaid("isto não é mermaid"), ImageState::Failed(_)));
     }

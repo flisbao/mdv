@@ -4,9 +4,10 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use resvg::{tiny_skia, usvg};
 
-use crate::mermaid::MAX_MERMAID_BYTES;
 
 /// Mais linhas que isso é recusado antes de qualquer trabalho (o layout cresce com o grafo).
+/// Tamanho máximo do fonte de um diagrama.
+pub const MAX_MERMAID_BYTES: usize = 64 * 1024;
 pub const MAX_LINES: usize = 400;
 /// Mais conexões (`>` para setas, `&` para cada ponto extra) que isso é recusado: o custo do
 /// layout cresce mais que linearmente com as arestas (399 arestas levaram 44 s).
@@ -35,11 +36,6 @@ fn system_fonts() -> &'static Fonts {
 #[cfg(test)]
 pub fn fonts_available() -> bool {
     !system_fonts().is_empty()
-}
-
-/// Quantas fontes o sistema tem (para o `--setup-mermaid`).
-pub(crate) fn font_count() -> usize {
-    system_fonts().len()
 }
 
 static PANIC_LOCK: Mutex<()> = Mutex::new(());
@@ -190,7 +186,7 @@ mod tests {
 
     #[test]
     fn fonte_grande_demais_e_recusada() {
-        let src = "A".repeat(crate::mermaid::MAX_MERMAID_BYTES + 1);
+        let src = "A".repeat(MAX_MERMAID_BYTES + 1);
         assert!(render_png(&src).unwrap_err().contains("grande"));
     }
 
