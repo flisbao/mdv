@@ -174,7 +174,7 @@ fn mermaid_em_plain_sem_graficos_sai_como_codigo() {
         let out = mdv(&["-p", "-"], md);
         let text = String::from_utf8_lossy(&out.stdout);
         assert!(out.status.success());
-        assert!(text.contains("mermaid"), "{text}");
+        assert!(text.contains("╭─ mermaid") && !text.contains("mermaid ("), "{text}");
         assert!(!text.contains('▀') && !text.contains("erro:"), "{text}");
         assert!(!text.contains("--mermaid") && !text.contains("setup-mermaid") && !text.contains("mmdc"), "{text}");
     }

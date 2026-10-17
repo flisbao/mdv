@@ -535,6 +535,18 @@ fn bloco_mermaid_vira_imagem_quando_habilitado() {
 }
 
 #[test]
+fn mermaid_invalido_com_graficos_e_nativo_real_mostra_o_erro() {
+    let store = ImageStore::new(None).with_native_mermaid(true).with_graphics(true);
+    let r = render_with(
+        "```mermaid\nisto não é mermaid\n```",
+        &RenderOpts { width: 60, images: Some(&store), ..Default::default() },
+    );
+    let t = joined_text(&r);
+    assert!(t.contains("mermaid (erro:") && t.contains("isto não é mermaid"), "{t}");
+    assert!(r.mermaids.is_empty());
+}
+
+#[test]
 fn mermaid_sem_graficos_mostra_codigo_mesmo_com_o_nativo_ligado() {
     let store = ImageStore::new(None).with_native_mermaid(true);
     let r = render_with(

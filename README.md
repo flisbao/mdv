@@ -205,7 +205,7 @@ Imagens `![alt](caminho)` aparecem desenhadas no próprio terminal, em **meio-bl
 
 - **Locais:** PNG, JPEG, GIF e WebP, até 10 MiB e 8192×8192 px. Se não abrir, aparece `[imagem: alt — motivo]`. Imagens embutidas como `data:image/...;base64,...` (mesmos limites) também funcionam, sem rede; até 32 por documento.
 - **Por URL:** só com `--remote`. Sem a flag, o `mdv` nunca acessa a rede. O download recusa endereços de rede privada, loopback e link-local, limita o tamanho a 10 MiB, segue no máximo 3 redirecionamentos e aceita até 32 imagens por documento. Na TUI o texto aparece na hora e a imagem entra quando o download termina.
-- **Alta resolução (opt-in):** `--graphics kitty` (ou `auto`, que detecta Kitty e Ghostty fora do `tmux`/`screen`) desenha as imagens e os diagramas Mermaid pelo protocolo gráfico do Kitty, com *placeholders Unicode*, então rolam e somem com o texto. Só vale no modo interativo: `--plain` e saída redirecionada seguem em meio-bloco. Sixel não é suportado.
+- **Alta resolução (opt-in):** `--graphics kitty` (ou `auto`, que detecta Kitty e Ghostty fora do `tmux`/`screen`) desenha as imagens e os diagramas Mermaid pelo protocolo gráfico do Kitty, com *placeholders Unicode*, então rolam e somem com o texto. Só vale no modo interativo: `--plain` e saída redirecionada seguem em meio-bloco para imagens, e os diagramas Mermaid ficam como código (o Mermaid só é desenhado com protocolo gráfico). Sixel não é suportado.
 - **Não suportados:** SVG e `data:` sem `;base64`. A resolução é baixa (meio-bloco); imagem dentro de célula de tabela vira `[imagem: alt ↓n]` na célula e é desenhada logo abaixo da tabela, com a legenda `↓n alt`.
 
 ## Mermaid
@@ -217,7 +217,7 @@ mdv --graphics auto doc.md      # diagramas como imagem (renderizador embutido, 
 mdv doc.md                     # sem gráficos: o diagrama aparece como código
 ```
 
-**Zoom (`i`).** No texto o diagrama cabe em até 120×36 células, o que num diagrama grande (uma sequência com muitos participantes, por exemplo) não dá para ler. Na TUI, `i` abre o diagrama que ocupa mais linhas da tela (a barra mostra `N/M` e o título da seção) usando o terminal inteiro; `n`/`p` passam ao próximo ou ao anterior, dando a volta nos extremos: `+`/`-` aproximam e afastam, `h`/`j`/`k`/`l` movem a janela, espaço/`b` rolam uma página, `g`/`G` vão ao topo e ao fim, `0` volta a mostrar tudo e `Esc` fecha. Com `--graphics kitty` o recorte é reenviado em resolução nativa (nítido); sem ele sai em meio-bloco na resolução do terminal.
+**Zoom (`i`).** No texto o diagrama cabe em até 120×36 células, o que num diagrama grande (uma sequência com muitos participantes, por exemplo) não dá para ler. Na TUI, `i` abre o diagrama que ocupa mais linhas da tela (a barra mostra `N/M` e o título da seção) usando o terminal inteiro; `n`/`p` passam ao próximo ou ao anterior, dando a volta nos extremos: `+`/`-` aproximam e afastam, `h`/`j`/`k`/`l` movem a janela, espaço/`b` rolam uma página, `g`/`G` vão ao topo e ao fim, `0` volta a mostrar tudo e `Esc` fecha. Com `--graphics kitty` o recorte é reenviado em resolução nativa (nítido); o zoom só abre diagramas desenhados como figura, isto é, com gráficos ativos (em meio-bloco só no caso raro de o cache gráfico estar cheio).
 
 Se o renderizador embutido não conseguir desenhar um diagrama (muito complexo, ou sintaxe que ele não conhece), o bloco aparece como código, com o motivo no cabeçalho. Limites: 64 KiB, 400 linhas e 100 conexões (setas `>` e `&`) por diagrama, imagem de até 1200×3000 px.
 
