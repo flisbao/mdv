@@ -391,3 +391,101 @@ fn abrir_um_modal_fecha_o_anterior() {
     a.modal = Modal::ConfirmOpen("https://example.com".into());
     assert!(a.zoom().is_none(), "só um modal por vez, por construção");
 }
+
+fn k(c: KeyCode) -> KeyEvent {
+    KeyEvent::new(c, KeyModifiers::NONE)
+}
+
+#[test]
+fn tabela_de_teclas_do_modo_normal() {
+    use input::{action_for, Action::*};
+    let casos: Vec<(KeyCode, bool, Option<input::Action>)> = vec![
+        (KeyCode::Char('q'), false, Some(Quit)),
+        (KeyCode::Esc, false, Some(EscNormal)),
+        (KeyCode::Char('j'), false, Some(ScrollLines(1))),
+        (KeyCode::Down, false, Some(ScrollLines(1))),
+        (KeyCode::Enter, false, Some(ScrollLines(1))),
+        (KeyCode::Enter, true, Some(FollowLink)),
+        (KeyCode::Char('k'), false, Some(ScrollLines(-1))),
+        (KeyCode::Up, false, Some(ScrollLines(-1))),
+        (KeyCode::Char(' '), false, Some(ScrollPage(1))),
+        (KeyCode::Char('f'), false, Some(ScrollPage(1))),
+        (KeyCode::PageDown, false, Some(ScrollPage(1))),
+        (KeyCode::Char('b'), false, Some(ScrollPage(-1))),
+        (KeyCode::PageUp, false, Some(ScrollPage(-1))),
+        (KeyCode::Char('d'), false, Some(ScrollHalf(1))),
+        (KeyCode::Char('u'), false, Some(ScrollHalf(-1))),
+        (KeyCode::Char('g'), false, Some(Top)),
+        (KeyCode::Home, false, Some(Top)),
+        (KeyCode::Char('G'), false, Some(Bottom)),
+        (KeyCode::End, false, Some(Bottom)),
+        (KeyCode::Char(']'), false, Some(NextHeading)),
+        (KeyCode::Char('['), false, Some(PrevHeading)),
+        (KeyCode::Char('/'), false, Some(SearchOpen)),
+        (KeyCode::Char('n'), false, Some(SearchNext)),
+        (KeyCode::Char('N'), false, Some(SearchPrev)),
+        (KeyCode::Char('r'), false, Some(Reload)),
+        (KeyCode::Tab, false, Some(NextLink)),
+        (KeyCode::BackTab, false, Some(PrevLink)),
+        (KeyCode::Backspace, false, Some(Back)),
+        (KeyCode::Char('H'), false, Some(Back)),
+        (KeyCode::Char('m'), false, Some(ToggleRaw)),
+        (KeyCode::Char('w'), false, Some(ToggleCodeWrap)),
+        (
+            KeyCode::Char('l'),
+            false,
+            Some(ScrollCode {
+                step: 8,
+                forward: true,
+            }),
+        ),
+        (
+            KeyCode::Right,
+            false,
+            Some(ScrollCode {
+                step: 8,
+                forward: true,
+            }),
+        ),
+        (
+            KeyCode::Char('h'),
+            false,
+            Some(ScrollCode {
+                step: 8,
+                forward: false,
+            }),
+        ),
+        (
+            KeyCode::Left,
+            false,
+            Some(ScrollCode {
+                step: 8,
+                forward: false,
+            }),
+        ),
+        (KeyCode::Char('0'), false, Some(CodeScrollTo(0))),
+        (KeyCode::Char('$'), false, Some(CodeScrollTo(usize::MAX))),
+        (KeyCode::Char('v'), false, Some(CycleJsonView)),
+        (KeyCode::Char('t'), false, Some(OpenTableZoom)),
+        (KeyCode::Char('i'), false, Some(OpenImageZoom)),
+        (KeyCode::Char('y'), false, Some(CopyCode)),
+        (KeyCode::Char('Y'), false, Some(CopySection)),
+        (KeyCode::Char('?'), false, None),
+        (KeyCode::Char('z'), false, None),
+        (KeyCode::F(1), false, None),
+    ];
+    for (code, link, esperado) in casos {
+        assert_eq!(action_for(k(code), link), esperado, "{code:?} link={link}");
+    }
+}
+
+#[test]
+fn v_so_age_em_json() {
+    let mut a = app("[1,2]");
+    let antes = a.doc.opts.json_view;
+    press(&mut a, KeyCode::Char('v'));
+    assert_eq!(
+        a.doc.opts.json_view, antes,
+        "no modo Markdown `v` não muda a vista"
+    );
+}

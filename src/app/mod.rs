@@ -1,5 +1,6 @@
 //! Estado de tela da TUI: `App` guarda o que aparece e o que o leitor está fazendo; o conteúdo vive em `Document`.
 
+mod input;
 #[cfg(test)]
 mod keys_tests;
 mod modal;
@@ -29,6 +30,7 @@ use crate::doc::{DocOpts, Document};
 use crate::load::{image_store, read_markdown_file, Source};
 use crate::{browse, cli, clip, data, graphics, image, imgview, mem, picker, render, Failure};
 
+pub(crate) use input::action_for;
 pub(crate) use modal::Modal;
 pub(crate) use search::{highlight_line, SearchState};
 pub(crate) use terminal::run_tui;
@@ -334,88 +336,7 @@ impl App {
             return false;
         }
 
-        let height = self.view.height;
-        let page = isize::try_from(height.saturating_sub(1).max(1)).unwrap_or(isize::MAX);
-        let half = isize::try_from((height / 2).max(1)).unwrap_or(isize::MAX);
-        match k.code {
-            KeyCode::Char('q') => return true,
-            KeyCode::Esc => {
-                if self.link_at.is_some() {
-                    self.link_at = None;
-                } else if self.search.query.is_empty() {
-                    return true;
-                } else {
-                    self.search.clear();
-                }
-            }
-            KeyCode::Tab => self.step_link(true),
-            KeyCode::BackTab => self.step_link(false),
-            KeyCode::Enter if self.link_at.is_some() => self.follow_link(),
-            KeyCode::Backspace | KeyCode::Char('H') => self.go_back(),
-            KeyCode::Char('j') | KeyCode::Down | KeyCode::Enter => self.scroll_by(1),
-            KeyCode::Char('k') | KeyCode::Up => self.scroll_by(-1),
-            KeyCode::Char(' ' | 'f') | KeyCode::PageDown => self.scroll_by(page),
-            KeyCode::Char('b') | KeyCode::PageUp => self.scroll_by(-page),
-            KeyCode::Char('d') => self.scroll_by(half),
-            KeyCode::Char('u') => self.scroll_by(-half),
-            KeyCode::Char('g') | KeyCode::Home => self.scroll_to(0),
-            KeyCode::Char('G') | KeyCode::End => self.scroll_to(usize::MAX),
-            KeyCode::Char(']') => {
-                let top = self.view.scroll;
-                let alvo = self
-                    .doc
-                    .rendered
-                    .headings
-                    .iter()
-                    .copied()
-                    .find(|&h| h > top);
-                if let Some(h) = alvo {
-                    self.scroll_to(h);
-                }
-            }
-            KeyCode::Char('[') => {
-                let top = self.view.scroll;
-                let alvo = self
-                    .doc
-                    .rendered
-                    .headings
-                    .iter()
-                    .rev()
-                    .copied()
-                    .find(|&h| h < top);
-                if let Some(h) = alvo {
-                    self.scroll_to(h);
-                }
-            }
-            KeyCode::Char('/') => self.modal = Modal::Search(String::new()),
-            KeyCode::Char('n') => self.step_match(true),
-            KeyCode::Char('N') => self.step_match(false),
-            KeyCode::Char('r') => self.reload(),
-            KeyCode::Char('v') if self.doc.opts.mode == cli::Mode::Json => {
-                let current = if self.doc.opts.json_view == cli::JsonView::Auto {
-                    data::auto_view_of_text(&self.doc.md, self.doc.opts.json_path.as_deref())
-                } else {
-                    self.doc.opts.json_view
-                };
-                self.doc.opts.json_view = data::next_view(current);
-                self.doc.dirty = true;
-            }
-            KeyCode::Char('t') => self.open_visible_table(),
-            KeyCode::Char('i') => self.open_visible_mermaid(),
-            KeyCode::Char('y') => self.copy_code(),
-            KeyCode::Char('Y') => self.copy_section(),
-            KeyCode::Char('w') => self.toggle_code_wrap(),
-            KeyCode::Char('l') | KeyCode::Right => self.scroll_code(8, true),
-            KeyCode::Char('h') | KeyCode::Left => self.scroll_code(8, false),
-            KeyCode::Char('0') => self.set_code_scroll(0),
-            KeyCode::Char('$') => self.set_code_scroll(usize::MAX),
-            KeyCode::Char('m') => {
-                self.raw = !self.raw;
-                self.doc.dirty = true;
-            }
-            _ => {}
-        }
-        false
+        action_for(k, self.link_at.is_some()).is_some_and(|action| self.apply(action))
     }
 
     /// Renderiza antes de desenhar, para que as imagens gráficas cheguem ao terminal
