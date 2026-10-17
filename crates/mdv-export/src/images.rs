@@ -6,7 +6,7 @@ use std::path::{Component, Path};
 use std::sync::Arc;
 
 use image::{DynamicImage, ImageFormat};
-use mdv_text::is_confined;
+use mdv_text::{is_confined, percent_decode};
 
 use super::model::{Block, Document, Inline, Run};
 use super::PictureProvider;
@@ -97,8 +97,15 @@ fn is_url(src: &str) -> bool {
 /// O arquivo exportado costuma ser compartilhado: uma imagem com caminho absoluto, com `..` ou com
 /// unidade/UNC poderia levar para dentro dele um arquivo qualquer do computador de quem exporta.
 /// URLs (`http`, `data:`) seguem as regras do provedor (rede só com `--remote`, no `mdv`).
+/// O provedor percent-decodifica o caminho antes de abri-lo (`%2e%2e/` vira `../`), então a forma
+/// crua e a decodificada precisam passar.
 fn local_path_is_safe(src: &str) -> bool {
-    is_url(src) || (is_confined(src) && !Path::new(src).components().any(|c| matches!(c, Component::ParentDir)))
+    is_url(src) || (path_is_confined(src) && path_is_confined(&percent_decode(src)))
+}
+
+/// Relativo, sem unidade/UNC e sem `..`.
+fn path_is_confined(path: &str) -> bool {
+    is_confined(path) && !Path::new(path).components().any(|c| matches!(c, Component::ParentDir))
 }
 
 /// Reduz imagens com lado acima de `MAX_SIDE` (memória e tamanho do arquivo sob controle).
@@ -147,7 +154,9 @@ mod tests {
 
     #[test]
     fn caminho_inseguro_nunca_chega_ao_provedor() {
-        for src in ["/etc/passwd", "../segredo.png", "a/../../b.png", "C:\\x.png", "\\\\srv\\x.png", "c:/x.png"] {
+        for src in ["/etc/passwd", "../segredo.png", "a/../../b.png", "C:\\x.png", "\\\\srv\\x.png", "c:/x.png",
+            "%2e%2e/segredo.png", "%2E%2E%2Fsegredo.png", "a/%2e%2e/%2e%2e/b.png", "%2Fetc%2Fpasswd",
+            "%5C%5Cservidor%5Cx.png", "C%3A%5Cx.png"] {
             let p = FakePictures::new();
             let mut d = doc_with(src);
             let w = resolve(&mut d, &p);
@@ -155,6 +164,17 @@ mod tests {
             assert!(w.iter().any(|x| x.contains("fora da pasta")), "{src}: {w:?}");
             assert!(p.loads().is_empty(), "{src} não pode ser consultado");
             let Block::Paragraph(_) = &d.blocks[0] else { panic!("{src}") };
+        }
+    }
+
+    #[test]
+    fn nome_com_espaco_codificado_ainda_chega_ao_provedor() {
+        for src in ["minha%20foto.png", "img/a%20b.png"] {
+            let p = FakePictures::new();
+            let mut d = doc_with(src);
+            let w = resolve(&mut d, &p);
+            assert!(is_picture(&d) && w.is_empty(), "{src}: {w:?}");
+            assert_eq!(p.loads(), [src]);
         }
     }
 
