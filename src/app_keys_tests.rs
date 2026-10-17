@@ -215,3 +215,33 @@ fn chaves_e_c_foram_removidas_e_nao_fazem_nada() {
         assert!(a.notice.is_none(), "{c}: {:?}", a.notice);
     }
 }
+
+#[test]
+fn arquivo_alterado_no_disco_nao_recarrega_sozinho() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("doc.md");
+    fs::write(&p, "# Antes\n").unwrap();
+    let cli = match cli::parse([p.display().to_string()]) {
+        Ok(cli::Parsed::Run(c)) => c,
+        _ => panic!("cli de teste"),
+    };
+    let mut a = App::new(Source::File(p.clone()), "# Antes\n".to_string(), 80, &cli);
+    fs::write(&p, "# Depois\n").unwrap();
+    a.poll_background();
+    assert!(a.md.contains("Antes"), "só a tecla r recarrega: {:?}", a.md);
+}
+
+#[test]
+fn r_com_arquivo_sumido_mantem_o_documento() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("doc.md");
+    fs::write(&p, "# Fica\n").unwrap();
+    let cli = match cli::parse([p.display().to_string()]) {
+        Ok(cli::Parsed::Run(c)) => c,
+        _ => panic!("cli de teste"),
+    };
+    let mut a = App::new(Source::File(p.clone()), "# Fica\n".to_string(), 80, &cli);
+    fs::remove_file(&p).unwrap();
+    assert!(!press(&mut a, KeyCode::Char('r')));
+    assert_eq!(a.md, "# Fica\n");
+}

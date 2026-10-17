@@ -31,7 +31,7 @@ use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::mpsc::{Receiver, TryRecvError};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::crossterm::terminal;
@@ -54,7 +54,7 @@ const FALLBACK_TERMINAL_WIDTH: usize = 80;
 const TUI_MARGIN: usize = 4;
 /// Menor largura de texto na TUI, mesmo em terminais minúsculos.
 const MIN_TUI_WIDTH: usize = 10;
-/// Intervalo entre verificações de alteração do arquivo (live reload).
+/// Intervalo entre verificações em segundo plano (download de imagem terminado).
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 /// Intervalo entre verificações com texto chegando por stdin (`--follow`).
 const STREAM_POLL_INTERVAL: Duration = Duration::from_millis(80);
@@ -433,10 +433,6 @@ fn read_limited(reader: impl Read, max: u64) -> io::Result<String> {
     String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
-fn file_mtime(p: &Path) -> Option<SystemTime> {
-    fs::metadata(p).and_then(|m| m.modified()).ok()
-}
-
 /// Escreve uma sequência de controle direto no terminal (OSC 52 para cópia, APC para Kitty).
 fn emit_terminal_control(seq: &str) {
     let mut out = io::stdout();
@@ -473,7 +469,7 @@ fn event_loop(term: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
             }
         } else {
             app.drain_stream();
-            app.check_reload();
+            app.poll_background();
             if let Some(seq) = app.pending_osc.take() {
                 emit_terminal_control(&seq);
             }
@@ -633,7 +629,6 @@ struct App {
     stick_bottom: bool,
     name: String,
     md: String,
-    mtime: Option<SystemTime>,
     max_width: usize,
     rendered: render::Rendered,
     render_width: usize,
@@ -668,16 +663,12 @@ struct App {
 
 impl App {
     fn new(source: Source, md: String, max_width: usize, cli: &cli::Cli) -> Self {
-        let (name, mtime) = match &source {
-            Source::File(p) => (
-                render::sanitize(
-                    &p.file_name()
-                        .map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into_owned()),
-                )
-                .into_owned(),
-                file_mtime(p),
-            ),
-            Source::Stdin => ("stdin".to_string(), None),
+        let name = match &source {
+            Source::File(p) => render::sanitize(
+                &p.file_name().map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into_owned()),
+            )
+            .into_owned(),
+            Source::Stdin => "stdin".to_string(),
         };
         App {
             images: image_store(&source, cli, false),
@@ -689,7 +680,6 @@ impl App {
             source,
             name,
             md,
-            mtime,
             max_width: render::clamp_width(max_width),
             rendered: render::Rendered::default(),
             render_width: 0,
@@ -983,29 +973,20 @@ impl App {
         self.queue_graphics();
     }
 
-    /// Recarrega só se o arquivo mudou desde a última leitura.
-    fn check_reload(&mut self) {
-        // Download de imagem terminou em segundo plano: redesenha com ela.
+    /// Trabalho de fundo a cada tique: um download de imagem terminou, então redesenha com ela.
+    fn poll_background(&mut self) {
         let version = self.images.version();
         if version != self.seen_images_version {
             self.seen_images_version = version;
             self.dirty = true;
-        }
-        let Source::File(p) = &self.source else { return };
-        let mtime = file_mtime(p);
-        if mtime.is_some() && mtime != self.mtime {
-            self.reload();
         }
     }
 
     /// Relê o arquivo; se a leitura falhar, mantém o documento atual.
     fn reload(&mut self) {
         let Source::File(p) = &self.source else { return };
-        // Mtime lido antes do conteúdo: uma escrita no meio da leitura é detectada na próxima volta.
-        let mtime = file_mtime(p);
         if let Ok(md) = read_markdown_file(p) {
             self.set_md(md);
-            self.mtime = mtime;
         }
     }
 

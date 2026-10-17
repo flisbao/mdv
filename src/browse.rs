@@ -3,7 +3,7 @@
 use crate::nav::{self, Target};
 use crate::picker::{self, Picker};
 use crate::render::{self, link_id};
-use crate::{file_mtime, image_store, read_markdown_file, App, Source};
+use crate::{image_store, read_markdown_file, App, Source};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Style};
@@ -156,7 +156,6 @@ impl App {
                 .map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned()),
         )
         .into_owned();
-        self.mtime = file_mtime(&path);
         self.source = Source::File(path);
         self.images = image_store(&self.source, &self.cli, false);
         self.seen_images_version = 0;
