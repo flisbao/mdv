@@ -5,6 +5,17 @@
 #[cfg(test)]
 mod testutil;
 
+pub mod docx;
+pub mod images;
+pub mod model;
+pub mod odt;
+pub mod parse;
+pub mod pdf;
+pub mod pdf_font;
+pub mod pdf_layout;
+pub mod xml;
+pub mod zipw;
+
 use std::sync::Arc;
 
 use image::DynamicImage;
@@ -41,6 +52,11 @@ pub trait PictureProvider {
 pub struct Output {
     pub bytes: Vec<u8>,
     pub warnings: Vec<String>,
+}
+
+/// Um formato de documento de texto. Para acrescentar um: implemente isto e use-o em `convert`.
+pub trait Exporter {
+    fn write(&self, doc: &model::Document, budget: &dyn Budget) -> Result<Output, String>;
 }
 
 /// Formatos de saída.
