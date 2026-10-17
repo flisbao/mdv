@@ -6,10 +6,6 @@ tags: [teste, agente]
 
 # Resposta de agente
 
-<think>
-Raciocínio interno do modelo: preciso verificar a tabela antes de responder.
-</think>
-
 Resposta final ao usuário, com um fato verificado[^1].
 
 > [!NOTE]

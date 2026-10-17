@@ -5,12 +5,6 @@ tags: [infra, db]
 
 # Resposta do agente
 
-<think>
-
-Preciso comparar as duas opções antes de responder.
-
-</think>
-
 > [!WARNING]
 > Faça backup antes de aplicar a migração.
 

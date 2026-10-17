@@ -393,27 +393,6 @@ pub fn clamp_width(width: usize) -> usize {
     width.clamp(MIN_WIDTH, MAX_WIDTH)
 }
 
-struct ThinkLine {
-    opens: bool,
-    closes: bool,
-    rest: String,
-}
-
-fn think_tags(line: &str) -> Option<ThinkLine> {
-    const OPEN: [&str; 2] = ["<think>", "<thinking>"];
-    const CLOSE: [&str; 2] = ["</think>", "</thinking>"];
-    let opens = OPEN.iter().any(|t| line.contains(t));
-    let closes = CLOSE.iter().any(|t| line.contains(t));
-    if !opens && !closes {
-        return None;
-    }
-    let mut rest = line.to_string();
-    for t in OPEN.iter().chain(CLOSE.iter()) {
-        rest = rest.replace(t, "");
-    }
-    Some(ThinkLine { opens, closes, rest: rest.trim().to_string() })
-}
-
 fn summary_text(line: &str) -> Option<&str> {
     line.trim().strip_prefix("<summary>")?.strip_suffix("</summary>").map(str::trim)
 }
@@ -795,7 +774,6 @@ struct Renderer<'a> {
     highlight_left: usize,
     images: Option<&'a ImageStore>,
     image: Option<ImageCtx>,
-    think: usize,
     src_line: usize,
     code_scroll: Option<usize>,
     /// Imagens vistas dentro de células (alt, imagem): desenhadas depois da tabela.
@@ -807,7 +785,6 @@ impl<'a> Renderer<'a> {
         Renderer {
             images,
             image: None,
-            think: 0,
             src_line: 0,
             table_figures: Vec::new(),
             width: clamp_width(width),
@@ -855,10 +832,7 @@ impl<'a> Renderer<'a> {
                 self.lists.set_task_marker(done);
             }
             Event::Html(h) => self.html_block(&h),
-            Event::InlineHtml(h) => match think_tags(&h) {
-                Some(tl) => self.think_tag(tl.opens, tl.closes),
-                None => self.inline.push_dim(h.to_string()),
-            },
+            Event::InlineHtml(h) => self.inline.push_dim(h.to_string()),
             Event::FootnoteReference(label) => self.inline.push_dim(format!("[^{label}]")),
             _ => {}
         }
@@ -875,7 +849,6 @@ impl<'a> Renderer<'a> {
     fn html_block(&mut self, html: &str) {
         self.flush_inline();
         let dim = Style::default().fg(DIM);
-        let think_style = Style::default().fg(QUOTE).add_modifier(Modifier::ITALIC);
         let avail = self.content_width();
         let mut bodies: Vec<Vec<Span<'static>>> = Vec::new();
         let text = |s: String, st: Style, bodies: &mut Vec<Vec<Span<'static>>>| {
@@ -890,31 +863,11 @@ impl<'a> Renderer<'a> {
             }
             if let Some(s) = summary_text(t) {
                 text(format!("▸ {s}"), Style::default().fg(H2).add_modifier(Modifier::BOLD), &mut bodies);
-            } else if let Some(tl) = think_tags(t) {
-                if tl.opens {
-                    text("💭 raciocínio".to_string(), dim.add_modifier(Modifier::ITALIC), &mut bodies);
-                }
-                if !tl.rest.is_empty() {
-                    text(tl.rest, think_style, &mut bodies);
-                }
-                self.think_tag(tl.opens, tl.closes);
             } else {
                 text(l.to_string(), dim, &mut bodies);
             }
         }
         self.push_prefixed(bodies);
-    }
-
-    /// Abre/fecha o estilo de "raciocínio" (itálico apagado) conforme as tags `<think>`.
-    fn think_tag(&mut self, opens: bool, closes: bool) {
-        if opens && !closes {
-            self.think += 1;
-            self.inline
-                .push_style(Style::default().fg(QUOTE).add_modifier(Modifier::ITALIC));
-        } else if closes && !opens && self.think > 0 {
-            self.think -= 1;
-            self.inline.pop_style();
-        }
     }
 
     fn start(&mut self, tag: Tag<'_>) {
@@ -2575,23 +2528,10 @@ mod tests {
     }
 
     #[test]
-    fn think_vira_bloco_rotulado() {
+    fn think_e_html_comum_sem_rotulo_nem_estilo_proprio() {
         let t = t60("<think>\n\nplano interno\n\n</think>\n\nresposta final");
-        assert!(t.contains("raciocínio") && t.contains("plano interno") && t.contains("resposta final"), "{t}");
-        assert!(!t.contains("<think>"), "{t}");
-    }
-
-    #[test]
-    fn think_na_mesma_linha() {
-        let t = t60("<think>só isto</think>\n\nok");
-        assert!(t.contains("só isto") && !t.contains("</think>"), "{t}");
-    }
-
-    #[test]
-    fn think_tags_parse() {
-        let l = think_tags("<thinking>abc").unwrap();
-        assert!(l.opens && !l.closes && l.rest == "abc");
-        assert!(think_tags("<div>x</div>").is_none());
+        assert!(t.contains("<think>") && t.contains("plano interno") && t.contains("</think>"), "{t}");
+        assert!(!t.contains("raciocínio"), "{t}");
     }
 
     #[test]
