@@ -35,11 +35,11 @@ OPÇÕES:
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
-OPÇÕES DE JSON:
+OPÇÕES DE JSON (só valem para este formato):
         --path <p>     mostra só um trecho, ex.: .itens[0].nome
         --as <vista>   auto (padrão), text, table ou schema
 
-OPÇÕES DE CSV/TSV:
+OPÇÕES DE CSV/TSV (só valem para este formato):
         --head <N>     mostra só as N primeiras linhas (padrão: 1000)
         --cols <a,b>   mostra só estas colunas, pelo nome do cabeçalho
         --no-header    a primeira linha é dado, não cabeçalho
