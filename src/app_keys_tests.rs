@@ -245,3 +245,13 @@ fn r_com_arquivo_sumido_mantem_o_documento() {
     assert!(!press(&mut a, KeyCode::Char('r')));
     assert_eq!(a.md, "# Fica\n");
 }
+
+#[test]
+fn z_e_maiusculo_foram_removidos_e_nao_dobram() {
+    let mut a = app(&tres_secoes());
+    let total = a.rendered.lines.len();
+    assert!(!press(&mut a, KeyCode::Char('Z')));
+    assert!(!press(&mut a, KeyCode::Char('z')));
+    assert_eq!(a.total_lines(), total, "nenhuma linha some");
+    assert!(a.notice.is_none(), "{:?}", a.notice);
+}

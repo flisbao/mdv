@@ -35,7 +35,7 @@ impl App {
     /// Cada link visível, na ordem do texto: (linha renderizada, índice do link).
     fn link_occurrences(&self) -> Vec<(usize, usize)> {
         let mut out = Vec::new();
-        for &i in &self.display {
+        for i in 0..self.rendered.lines.len() {
             let mut last = None;
             for sp in &self.rendered.lines[i].spans {
                 if let Some(id) = link_id(&sp.style) {
@@ -60,9 +60,9 @@ impl App {
         }
         let from = self.link_at.unwrap_or_else(|| {
             if forward {
-                (self.ref_line(), 0)
+                (self.view.scroll, 0)
             } else {
-                (self.line_at(self.view.scroll + self.view.height), 0)
+                ((self.view.scroll + self.view.height).min(self.total_lines()), 0)
             }
         });
         let started = self.link_at.is_some();
@@ -73,9 +73,8 @@ impl App {
         };
         let Some(&(line, id)) = pick else { return };
         self.link_at = Some((line, id));
-        let pos = self.pos_of(line);
-        if pos < self.view.scroll || pos >= self.view.scroll + self.view.height.max(1) {
-            self.scroll_to(pos.saturating_sub(self.view.height / 3));
+        if line < self.view.scroll || line >= self.view.scroll + self.view.height.max(1) {
+            self.scroll_to(line.saturating_sub(self.view.height / 3));
         }
         let url = self.rendered.links.get(id).map_or("", String::as_str);
         self.notice = Some(format!("link: {}  (Enter abre, Esc cancela)", render::sanitize(url)));
@@ -122,10 +121,7 @@ impl App {
         match nav::heading_for_anchor(&titles, anchor) {
             Some(i) => {
                 let line = self.rendered.outline[i].line;
-                // Seção dobrada: abre as dobras que escondem o título antes de rolar.
-                self.folded.clear();
-                self.recompute_display();
-                self.scroll_to_line(line);
+                self.scroll_to(line);
             }
             None => self.notice = Some(format!("âncora não encontrada: #{}", render::sanitize(anchor))),
         }
@@ -147,7 +143,7 @@ impl App {
                 if self.back.len() >= MAX_BACK {
                     self.back.remove(0);
                 }
-                self.back.push(Back::File { path: cur.clone(), line: self.ref_line(), mode: self.doc.mode });
+                self.back.push(Back::File { path: cur.clone(), line: self.view.scroll, mode: self.doc.mode });
             }
         }
         self.name = render::sanitize(
@@ -162,7 +158,6 @@ impl App {
         self.md = md;
         self.raw = false;
         self.doc.mode = mode;
-        self.folded.clear();
         self.link_at = None;
         self.search.clear();
         self.zoom = None;
@@ -187,7 +182,7 @@ impl App {
     pub fn apply_pending_jump(&mut self) {
         match self.pending_jump.take() {
             Some(Jump::Anchor(a)) => self.jump_anchor(&a),
-            Some(Jump::Line(l)) => self.scroll_to_line(l),
+            Some(Jump::Line(l)) => self.scroll_to(l),
             None => {}
         }
     }

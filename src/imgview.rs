@@ -125,7 +125,7 @@ impl ImgZoom {
 impl App {
     /// `i`: abre o zoom do diagrama Mermaid com mais linhas na tela.
     pub(crate) fn open_visible_mermaid(&mut self) {
-        let achado = crate::most_visible(self.rendered.mermaids.iter().map(|m| (m.start, m.end)), self.window_display());
+        let achado = crate::most_visible(self.rendered.mermaids.iter().map(|m| (m.start, m.end)), self.window());
         match achado {
             Some(index) => self.open_mermaid(index),
             None => self.notice = Some("nenhum diagrama na tela".to_string()),
