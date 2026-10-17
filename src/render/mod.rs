@@ -22,27 +22,6 @@ use crate::graphics;
 use crate::mem;
 use crate::image::{halfblock, ImageState, ImageStore, MAX_IMAGE_COLS, MAX_IMAGE_ROWS};
 
-const H1: Color = Color::Rgb(210, 168, 255);
-const H2: Color = Color::Rgb(121, 192, 255);
-const H3: Color = Color::Rgb(126, 231, 135);
-const H4: Color = Color::Rgb(230, 237, 243);
-pub(crate) const DIM: Color = Color::Rgb(110, 118, 129);
-const LINK: Color = Color::Rgb(88, 166, 255);
-const INLINE_CODE_FG: Color = Color::Rgb(255, 166, 87);
-const INLINE_CODE_BG: Color = Color::Rgb(47, 52, 60);
-const CODE_BG: Color = Color::Rgb(40, 44, 52);
-const DIFF_ADD_FG: Color = Color::Rgb(126, 231, 135);
-const DIFF_ADD_BG: Color = Color::Rgb(35, 64, 45);
-const DIFF_DEL_FG: Color = Color::Rgb(255, 123, 114);
-const DIFF_DEL_BG: Color = Color::Rgb(74, 38, 42);
-const DIFF_HUNK_FG: Color = Color::Rgb(121, 192, 255);
-const QUOTE: Color = Color::Rgb(139, 148, 158);
-const BULLET: Color = Color::Rgb(126, 231, 135);
-const QUOTE_BAR_COLOR: Color = Color::Rgb(63, 185, 80);
-
-/// Barra que prefixa cada linha de uma citação.
-const QUOTE_BAR: &str = "▎ ";
-
 /// Limites de largura de renderização (evitam alocações gigantes em `repeat`).
 pub const MIN_WIDTH: usize = 20;
 pub const MAX_WIDTH: usize = 1000;
@@ -53,6 +32,15 @@ const MIN_BODY_WIDTH: usize = 10;
 /// Orçamento de realce por documento: o realce custa ~3 s/MiB e roda a cada re-render,
 /// então blocos que estourem o que resta do orçamento (ou o teto de um único bloco) saem sem cor.
 const MAX_HIGHLIGHT_BYTES: usize = 256 * 1024;
+
+mod theme;
+mod model;
+mod outline;
+
+pub(crate) use self::theme::DIM;
+use self::theme::*;
+pub use self::model::*;
+pub use self::outline::*;
 
 const REPLACEMENT: char = '\u{FFFD}';
 
@@ -80,121 +68,6 @@ impl Piece {
     fn width(&self) -> usize {
         self.as_text().0.width()
     }
-}
-
-/// Resultado da renderização.
-#[derive(Default)]
-pub struct Rendered {
-    pub lines: Vec<Line<'static>>,
-    /// Destino de cada link do documento, na ordem em que aparecem; o texto do link carrega o
-    /// índice na cor do sublinhado (`link_id`). A TUI tira a marca antes de desenhar.
-    pub links: Vec<String>,
-    /// Índices (em `lines`) onde cada título começa.
-    pub headings: Vec<usize>,
-    /// Títulos com nível e texto, para o `--toc`.
-    pub outline: Vec<OutlineEntry>,
-        /// Tabelas desenhadas, em ordem, com o intervalo de linhas de cada uma (zoom `t`).
-        pub tables: Vec<TableSpan>,
-    /// Linha (0-based) do fonte onde cada linha renderizada começa. Vazio fora do Markdown.
-    pub line_src: Vec<usize>,
-    /// Blocos de código desenhados, em ordem.
-    pub code_blocks: Vec<CodeSpan>,
-    /// Itens de lista de tarefas, em ordem.
-    pub tasks: Vec<TaskItem>,
-    /// Maior quanto uma linha de código passa das colunas disponíveis (0 se nenhuma passa).
-    /// Limite do deslocamento horizontal.
-    pub code_overflow: usize,
-    /// Imagens gráficas usadas, sem repetir `id`. Vazio sem `--graphics`.
-    pub graphics: Vec<GraphicRef>,
-    /// Diagramas Mermaid desenhados como imagem, em ordem (alvo do zoom de imagem).
-    pub mermaids: Vec<MermaidSpan>,
-}
-
-/// Diagrama Mermaid desenhado como imagem: linhas renderizadas `[start, end)` e a chave do PNG
-/// original em `ImageStore::mermaid_png`.
-#[derive(Clone)]
-pub struct MermaidSpan {
-    pub start: usize,
-    pub end: usize,
-    pub key: String,
-}
-
-/// Bloco de código desenhado: linhas renderizadas `[start, end)` e o texto cru (já saneado).
-#[derive(Clone)]
-pub struct CodeSpan {
-    pub start: usize,
-    pub end: usize,
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub lang: String,
-    pub text: String,
-}
-
-/// Imagem que o terminal precisa receber (protocolo gráfico) para os placeholders aparecerem.
-#[derive(Clone)]
-pub struct GraphicRef {
-    pub id: u32,
-    pub cols: usize,
-    pub rows: usize,
-    pub png: Arc<Vec<u8>>,
-}
-
-/// Item de lista de tarefas e a linha renderizada onde ele começa.
-#[derive(Clone, Copy)]
-pub struct TaskItem {
-    pub line: usize,
-    pub done: bool,
-}
-
-/// Linhas renderizadas `[início, fim)` da seção `idx`: do título até o próximo de nível
-/// igual ou menor, ou até `total`.
-pub fn section_range(outline: &[OutlineEntry], idx: usize, total: usize) -> (usize, usize) {
-    let e = &outline[idx];
-    let end = outline[idx + 1..].iter().find(|n| n.level <= e.level).map_or(total, |n| n.line);
-    (e.line, end)
-}
-
-/// Tarefas feitas e total num trecho do documento.
-#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
-pub struct TaskCount {
-    pub done: usize,
-    pub total: usize,
-}
-
-/// Conta as tarefas cujas linhas estão em `[from, to)`.
-pub fn count_tasks(tasks: &[TaskItem], from: usize, to: usize) -> TaskCount {
-    let mut c = TaskCount::default();
-    for t in tasks.iter().filter(|t| t.line >= from && t.line < to) {
-        c.total += 1;
-        if t.done {
-            c.done += 1;
-        }
-    }
-    c
-}
-
-/// Tarefas da seção `idx`, contando as subseções.
-pub fn section_tasks(r: &Rendered, idx: usize) -> TaskCount {
-    let (start, end) = section_range(&r.outline, idx, r.lines.len());
-    count_tasks(&r.tasks, start, end)
-}
-
-/// Título mais profundo que começa em `line` ou antes (a seção que contém a linha).
-pub fn section_at(outline: &[OutlineEntry], line: usize) -> Option<usize> {
-    outline.iter().rposition(|e| e.line <= line)
-}
-
-/// Markdown cru da seção `idx` (com o título), fatiado do fonte pelo mapa `line_src`.
-pub fn section_source(md: &str, r: &Rendered, idx: usize) -> Option<String> {
-    if idx >= r.outline.len() || r.line_src.len() != r.lines.len() {
-        return None;
-    }
-    let (start, end) = section_range(&r.outline, idx, r.lines.len());
-    let first = *r.line_src.get(start)?;
-    let last = r.line_src.get(end).copied().unwrap_or_else(|| md.lines().count());
-    let body: Vec<&str> = md.lines().skip(first).take(last.saturating_sub(first)).collect();
-    let mut text = body.join("\n").trim_end().to_string();
-    text.push('\n');
-    Some(text)
 }
 
 /// Converte offsets de byte (crescentes) em número de linha, contando `\n` de forma incremental.
@@ -230,66 +103,6 @@ fn starts_source_block(tag: &Tag<'_>) -> bool {
             | Tag::HtmlBlock
             | Tag::FootnoteDefinition(_)
     )
-}
-
-#[allow(dead_code)] // `line` será usado pela navegação do sumário
-pub struct OutlineEntry {
-    pub line: usize,
-    pub level: u8,
-    pub title: String,
-}
-
-/// Tabela guardada para ser desenhada de novo em outra largura (zoom).
-#[derive(Clone)]
-pub struct TableData {
-    rows: Vec<Vec<Vec<Piece>>>,
-    aligns: Vec<Alignment>,
-    has_header: bool,
-}
-
-/// Onde uma tabela está em `Rendered.lines` (`start..end`) e como redesenhá-la.
-pub struct TableSpan {
-    pub start: usize,
-    pub end: usize,
-    pub data: TableData,
-}
-
-/// Tabela desenhada numa largura: as linhas, quantas ficam fixas no topo e quais colunas aparecem.
-pub struct TableView {
-    pub lines: Vec<Line<'static>>,
-    /// Linhas fixas no topo (borda, cabeçalho e separador; só a borda sem cabeçalho).
-    pub pinned: usize,
-    /// Índice (0-based) da primeira coluna rolável mostrada, já limitado ao intervalo válido.
-    pub first_col: usize,
-    /// Colunas desenhadas, contando a primeira (fixa).
-    pub shown_cols: usize,
-    pub total_cols: usize,
-}
-
-impl TableData {
-    pub fn total_cols(&self) -> usize {
-        self.rows.iter().map(Vec::len).max().unwrap_or(0)
-    }
-
-    /// Desenha a tabela em `width` colunas, sem recuo. A coluna 0 fica sempre;
-    /// as demais começam em `first_col`.
-    pub fn draw(&self, width: usize, first_col: usize) -> TableView {
-        layout_table(self, &[], &[], width, first_col)
-    }
-}
-
-/// Índice dos títulos, um por linha, indentado conforme o nível.
-pub fn toc(r: &Rendered) -> String {
-    let mut out = String::new();
-    for (i, e) in r.outline.iter().enumerate() {
-        let _ = write!(out, "{}{}", "  ".repeat(usize::from(e.level.saturating_sub(1))), e.title);
-        let c = section_tasks(r, i);
-        if c.total > 0 {
-            let _ = write!(out, " [{}/{}]", c.done, c.total);
-        }
-        out.push('\n');
-    }
-    out
 }
 
 /// Teto de links marcados por documento (o índice cabe em 16 bits).
