@@ -169,21 +169,17 @@ fn mermaid_e_setup_mermaid_foram_removidos() {
 }
 
 #[test]
-fn mermaid_invalido_mostra_codigo_e_motivo_sem_citar_flags_removidas() {
-    let out = mdv(&["-p", "-"], MERMAID_INVALIDO_MD);
-    let text = String::from_utf8_lossy(&out.stdout);
-    assert!(text.contains("mermaid (erro:") && text.contains("isto não é mermaid"), "{text}");
-    assert!(!text.contains("--mermaid") && !text.contains("setup-mermaid") && !text.contains("mmdc"), "{text}");
-}
-
-#[test]
-fn mermaid_desenha_com_o_nativo() {
-    let out = mdv(&["-p", "-"], MERMAID_MD);
-    let text = String::from_utf8_lossy(&out.stdout);
-    if text.contains("nenhuma fonte instalada") {
-        return; // máquina sem fontes: o nativo não consegue desenhar texto
+fn mermaid_em_plain_sem_graficos_sai_como_codigo() {
+    for md in [MERMAID_MD, MERMAID_INVALIDO_MD] {
+        let out = mdv(&["-p", "-"], md);
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success());
+        assert!(text.contains("╭─ mermaid") && !text.contains("mermaid ("), "{text}");
+        assert!(!text.contains('▀') && !text.contains("erro:"), "{text}");
+        assert!(!text.contains("--mermaid") && !text.contains("setup-mermaid") && !text.contains("mmdc"), "{text}");
     }
-    assert!(text.contains('▀'), "{text}");
+    let text = String::from_utf8_lossy(&mdv(&["-p", "-"], MERMAID_MD).stdout).into_owned();
+    assert!(text.contains("graph TD"), "{text}");
 }
 
 #[cfg(unix)]

@@ -1503,7 +1503,7 @@ mod tests {
         }
         let md = "# D\n\n```mermaid\nflowchart LR\n  A[Início] --> B[Fim]\n```\n";
         let mut app = test_app(Source::Stdin, md);
-        app.images = image::ImageStore::new(None).with_native_mermaid(true);
+        app.images = image::ImageStore::new(None).with_native_mermaid(true).with_graphics(true);
         let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
         term.draw(|f| app.draw(f)).unwrap();
         assert_eq!(app.rendered.mermaids.len(), 1, "o diagrama virou imagem");
@@ -1512,7 +1512,7 @@ mod tests {
         app.prepare_img_zoom(100, 30, 8.0);
         term.draw(|f| app.draw(f)).unwrap();
         let text = screen_text(term.backend().buffer()).join("\n");
-        assert!(text.contains("diagrama 1/1") && text.contains('▀'), "{text}");
+        assert!(text.contains("diagrama 1/1"), "{text}");
         app.on_key(ev(KeyCode::Char('+')));
         app.on_key(ev(KeyCode::Esc));
         assert!(app.img_zoom.is_none());

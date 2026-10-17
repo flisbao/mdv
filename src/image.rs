@@ -262,8 +262,9 @@ impl ImageStore {
         Some(g)
     }
 
+    /// Diagrama só vira figura com o protocolo gráfico ativo; sem ele o bloco fica como código.
     pub fn mermaid_enabled(&self) -> bool {
-        self.mermaid.is_some()
+        self.mermaid.is_some() && self.graphics
     }
 
     /// Mermaid só com o renderizador nativo (padrão): em processo, sem subprocesso.
@@ -814,5 +815,14 @@ mod tests {
             ImageState::Failed(m) => assert!(m.contains("--remote")),
             _ => panic!("deveria falhar"),
         }
+    }
+
+    #[test]
+    fn mermaid_so_fica_habilitado_com_graficos() {
+        let sem = ImageStore::new(None).with_native_mermaid(true);
+        assert!(!sem.mermaid_enabled(), "sem gráficos o diagrama fica como código");
+        let com = ImageStore::new(None).with_native_mermaid(true).with_graphics(true);
+        assert!(com.mermaid_enabled());
+        assert!(!ImageStore::new(None).with_graphics(true).mermaid_enabled(), "gráficos sem mermaid ligado");
     }
 }
