@@ -289,6 +289,32 @@ fn seletor_abre_arquivo_e_backspace_volta_a_ele() {
 }
 
 #[test]
+fn seletor_continua_na_tela_se_o_segundo_arquivo_falha() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("um.md"), "# Um\n").unwrap();
+    fs::write(dir.path().join("ruim.md"), "# Ruim\n").unwrap();
+    let mut app = test_app(Source::Stdin, "");
+    app.modal = Modal::Picker(picker::Picker::scan(dir.path()).unwrap());
+    for c in "um".chars() {
+        key(&mut app, KeyCode::Char(c));
+    }
+    key(&mut app, KeyCode::Enter);
+    key(&mut app, KeyCode::Backspace);
+    let depth = app.back.len();
+    for _ in 0..2 {
+        key(&mut app, KeyCode::Backspace);
+    }
+    for c in "ruim".chars() {
+        key(&mut app, KeyCode::Char(c));
+    }
+    fs::remove_file(dir.path().join("ruim.md")).unwrap();
+    key(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_some(), "o seletor deve continuar aberto");
+    assert_eq!(app.name, "um.md");
+    assert_eq!(app.back.len(), depth, "nada novo empilhado");
+}
+
+#[test]
 fn stream_acumula_pedacos_e_marca_para_redesenhar() {
     let (tx, rx) = std::sync::mpsc::channel();
     let mut app = test_app(Source::Stdin, "").with_stream(rx);
@@ -398,6 +424,28 @@ fn prepare_enfileira_a_imagem_uma_vez_so() {
     app.doc.dirty = true;
     app.prepare(100);
     assert!(app.pending_gfx.is_empty(), "já foi enviada");
+}
+
+#[test]
+fn abrir_outro_arquivo_reenvia_as_imagens_com_ids_reiniciados() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = app_kitty(dir.path());
+    app.prepare(100);
+    app.pending_gfx.clear();
+    let img = ::image::DynamicImage::ImageRgba8(::image::RgbaImage::from_pixel(
+        8,
+        8,
+        ::image::Rgba([200, 0, 0, 255]),
+    ));
+    let mut png = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut png, ::image::ImageFormat::Png).unwrap();
+    std::fs::write(dir.path().join("b.png"), png.into_inner()).unwrap();
+    let b = dir.path().join("b.doc.md");
+    std::fs::write(&b, "![y](b.png)\n").unwrap();
+    app.open_file(b, None, true, cli::Doc::Markdown);
+    app.prepare(100);
+    assert!(app.pending_gfx.starts_with(crate::graphics::DELETE_ALL), "{:?}", app.pending_gfx);
+    assert!(app.pending_gfx.contains("\x1b_Ga=T"), "a imagem nova precisa ser enviada");
 }
 
 #[test]
