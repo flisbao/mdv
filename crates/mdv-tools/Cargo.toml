@@ -8,3 +8,6 @@ description = "Ferramentas de linha de comando sobre Markdown: extrair código e
 [dependencies]
 mdv-text.workspace = true
 pulldown-cmark.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
