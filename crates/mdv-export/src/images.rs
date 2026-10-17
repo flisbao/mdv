@@ -103,9 +103,10 @@ fn local_path_is_safe(src: &str) -> bool {
     is_url(src) || (path_is_confined(src) && path_is_confined(&percent_decode(src)))
 }
 
-/// Relativo, sem unidade/UNC e sem `..`.
+/// Relativo, sem unidade/UNC, sem `..` e sem NUL (`%00` decodificado).
 fn path_is_confined(path: &str) -> bool {
-    is_confined(path) && !Path::new(path).components().any(|c| matches!(c, Component::ParentDir))
+    !path.contains('\0')
+        && is_confined(path) && !Path::new(path).components().any(|c| matches!(c, Component::ParentDir))
 }
 
 /// Reduz imagens com lado acima de `MAX_SIDE` (memória e tamanho do arquivo sob controle).
@@ -156,7 +157,7 @@ mod tests {
     fn caminho_inseguro_nunca_chega_ao_provedor() {
         for src in ["/etc/passwd", "../segredo.png", "a/../../b.png", "C:\\x.png", "\\\\srv\\x.png", "c:/x.png",
             "%2e%2e/segredo.png", "%2E%2E%2Fsegredo.png", "a/%2e%2e/%2e%2e/b.png", "%2Fetc%2Fpasswd",
-            "%5C%5Cservidor%5Cx.png", "C%3A%5Cx.png"] {
+            "%5C%5Cservidor%5Cx.png", "C%3A%5Cx.png", "a%00.png", "%00"] {
             let p = FakePictures::new();
             let mut d = doc_with(src);
             let w = resolve(&mut d, &p);
@@ -170,6 +171,20 @@ mod tests {
     #[test]
     fn nome_com_espaco_codificado_ainda_chega_ao_provedor() {
         for src in ["minha%20foto.png", "img/a%20b.png"] {
+            let p = FakePictures::new();
+            let mut d = doc_with(src);
+            let w = resolve(&mut d, &p);
+            assert!(is_picture(&d) && w.is_empty(), "{src}: {w:?}");
+            assert_eq!(p.loads(), [src]);
+        }
+    }
+
+    /// Dupla codificação decodifica **uma** vez: `%252e%252e/` vira o nome literal `%2e%2e/`,
+    /// inofensivo. Isso depende de o `ImageStore` também decodificar uma única vez. Hex inválido
+    /// (`%zz`) fica literal e não derruba nada.
+    #[test]
+    fn dupla_codificacao_e_hex_invalido_chegam_ao_provedor_como_literal() {
+        for src in ["%252e%252e/x.png", "%zz.png", "a%z.png", "fim%"] {
             let p = FakePictures::new();
             let mut d = doc_with(src);
             let w = resolve(&mut d, &p);
