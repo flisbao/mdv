@@ -2,19 +2,12 @@
 
 use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag, TagEnd};
 
-use crate::render::{parse_options, sanitize};
+use mdv_text::{headings, parse_options, sanitize, section_text, Heading};
 
 /// Bloco de código do fonte: linguagem (primeira palavra do aviso) e texto cru.
 pub struct Block {
     pub lang: String,
     pub text: String,
-}
-
-/// Título do fonte: nível, texto sem formatação e byte onde a linha do título começa.
-pub struct Heading {
-    pub level: u8,
-    pub title: String,
-    pub start: usize,
 }
 
 pub struct ExtractOpts {
@@ -49,32 +42,6 @@ pub fn code_blocks(md: &str) -> Vec<Block> {
     out
 }
 
-pub fn headings(md: &str) -> Vec<Heading> {
-    let mut out = Vec::new();
-    let mut cur: Option<Heading> = None;
-    for (ev, range) in Parser::new_ext(md, parse_options()).into_offset_iter() {
-        match ev {
-            Event::Start(Tag::Heading { level, .. }) => {
-                let start = md[..range.start].rfind('\n').map_or(0, |i| i + 1);
-                cur = Some(Heading { level: level as u8, title: String::new(), start });
-            }
-            Event::Text(t) | Event::Code(t) => {
-                if let Some(h) = &mut cur {
-                    h.title.push_str(&t);
-                }
-            }
-            Event::End(TagEnd::Heading(_)) => {
-                if let Some(mut h) = cur.take() {
-                    h.title = h.title.trim().to_string();
-                    out.push(h);
-                }
-            }
-            _ => {}
-        }
-    }
-    out
-}
-
 /// Índice do título pedido: igualdade sem caixa, senão substring única, senão erro.
 pub fn find_section(heads: &[Heading], query: &str) -> Result<usize, String> {
     let q = query.trim().to_lowercase();
@@ -95,16 +62,6 @@ pub fn find_section(heads: &[Heading], query: &str) -> Result<usize, String> {
     }
 }
 
-/// Markdown cru da seção `idx`: do título até o próximo de nível igual ou menor.
-pub fn section_text(md: &str, heads: &[Heading], idx: usize) -> String {
-    let h = &heads[idx];
-    let end = heads[idx + 1..].iter().find(|n| n.level <= h.level).map_or(md.len(), |n| n.start);
-    let mut text = md[h.start..end].trim_end().to_string();
-    text.push('\n');
-    text
-}
-
-/// Texto pedido pelas flags, já saneado.
 pub fn extract(md: &str, o: &ExtractOpts) -> Result<String, String> {
     let scope: String;
     let text: &str = match &o.section {
@@ -198,16 +155,6 @@ sem linguagem
     }
 
     #[test]
-    fn headings_ignora_cerca_de_codigo_e_front_matter() {
-        let md = "---\ntitulo: x\n---\n\n# Real\n\n```\n# falso\n```\n\n## Outro\n";
-        let h = headings(md);
-        let titulos: Vec<&str> = h.iter().map(|x| x.title.as_str()).collect();
-        assert_eq!(titulos, vec!["Real", "Outro"]);
-        assert_eq!((h[0].level, h[1].level), (1, 2));
-        assert!(md[h[0].start..].starts_with("# Real"));
-    }
-
-    #[test]
     fn find_section_prefere_igualdade_sem_caixa() {
         let h = headings("# Instalar\n\n# Instalar tudo\n");
         assert_eq!(find_section(&h, "instalar").unwrap(), 0);
@@ -232,24 +179,6 @@ sem linguagem
         assert!(find_section(&h, "zzz").unwrap_err().contains("zzz"));
         assert!(find_section(&h, "   ").is_err());
         assert!(find_section(&[], "a").is_err());
-    }
-
-    #[test]
-    fn section_text_inclui_subsecoes_e_para_no_proximo_igual_ou_menor() {
-        let h = headings(DOC);
-        let a = section_text(DOC, &h, find_section(&h, "A").unwrap());
-        assert!(a.starts_with("# A\n"));
-        assert!(a.contains("## B") && a.contains("fn b() {}"));
-        assert!(!a.contains("# C") && !a.contains("sem linguagem"));
-        let b = section_text(DOC, &h, find_section(&h, "B").unwrap());
-        assert!(b.starts_with("## B\n") && !b.contains("fn a()"));
-    }
-
-    #[test]
-    fn section_text_da_ultima_secao_vai_ate_o_fim() {
-        let h = headings(DOC);
-        let c = section_text(DOC, &h, find_section(&h, "C").unwrap());
-        assert!(c.ends_with("sem linguagem\n```\n"), "{c:?}");
     }
 
     #[test]

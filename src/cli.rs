@@ -39,17 +39,12 @@ pub struct Cli {
     pub follow: bool,
     pub toc: bool,
     pub stats: bool,
-    pub check_links: bool,
     pub mode: Mode,
     pub path: Option<String>,
     pub json_path: Option<String>,
     pub json_view: JsonView,
     pub table: Option<usize>,
     pub memory_buffer: Option<usize>,
-    pub extract_code: bool,
-    pub lang: Option<String>,
-    pub nth: Option<usize>,
-    pub section: Option<String>,
     pub head: usize,
     pub cols: Vec<String>,
     pub no_header: bool,
@@ -96,17 +91,12 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         follow: false,
         toc: false,
         stats: false,
-        check_links: false,
         mode: Mode::Markdown,
         path: None,
         json_path: None,
         json_view: JsonView::Auto,
         table: None,
         memory_buffer: None,
-        extract_code: false,
-        lang: None,
-        nth: None,
-        section: None,
         head: DEFAULT_HEAD,
         cols: Vec::new(),
         no_header: false,
@@ -140,17 +130,6 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
             "--follow" => cli.follow = true,
             "--toc" => cli.toc = true,
             "--stats" => cli.stats = true,
-            "--check-links" => cli.check_links = true,
-            "--extract-code" => cli.extract_code = true,
-            "--lang" => cli.lang = Some(value(&mut args, &a)?),
-            "-n" => {
-                let v = value(&mut args, &a)?;
-                cli.nth = Some(match v.parse::<usize>() {
-                    Ok(n) if n >= 1 => n,
-                    _ => return Err(format!("-n inválido: {v} (esperado um número a partir de 1)")),
-                });
-            }
-            "--section" => cli.section = Some(value(&mut args, &a)?),
             "--no-header" => cli.no_header = true,
             "-w" | "--width" => {
                 let v = args
@@ -223,56 +202,19 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
     if cli.json_view != JsonView::Auto && cli.mode != Mode::Json {
         return Err("a opção --as só vale para JSON".to_string());
     }
-    if (cli.lang.is_some() || cli.nth.is_some()) && !cli.extract_code {
-        return Err("as opções --lang e -n só valem com --extract-code".to_string());
-    }
-    if cli.wants_extract() {
-        if cli.mode != Mode::Markdown {
-            return Err("--extract-code e --section só valem para Markdown".to_string());
-        }
-        for (on, flag) in [(cli.toc, "--toc"), (cli.follow, "--follow")] {
-            if on {
-                return Err(format!("--extract-code e --section não combinam com {flag}"));
-            }
-        }
-    }
     if cli.stats {
         if cli.mode != Mode::Markdown {
             return Err("--stats só vale para Markdown".to_string());
         }
         let others = [
             (cli.toc, "--toc"),
-            (cli.extract_code, "--extract-code"),
-            (cli.section.is_some(), "--section"),
             (cli.follow, "--follow"),
         ];
         if let Some((_, flag)) = others.iter().find(|(on, _)| *on) {
             return Err(format!("--stats não combina com {flag}"));
         }
     }
-    if cli.check_links {
-        if cli.mode != Mode::Markdown {
-            return Err("--check-links só vale para Markdown".to_string());
-        }
-        let others = [
-            (cli.toc, "--toc"),
-            (cli.stats, "--stats"),
-            (cli.extract_code, "--extract-code"),
-            (cli.section.is_some(), "--section"),
-            (cli.follow, "--follow"),
-        ];
-        if let Some((_, flag)) = others.iter().find(|(on, _)| *on) {
-            return Err(format!("--check-links não combina com {flag}"));
-        }
-    }
     Ok(Parsed::Run(cli))
-}
-
-impl Cli {
-    /// `--extract-code` ou `--section`: imprime um trecho e sai, sem renderizar.
-    pub fn wants_extract(&self) -> bool {
-        self.extract_code || self.section.is_some()
-    }
 }
 
 #[cfg(test)]
@@ -443,78 +385,17 @@ mod tests {
         }
 
     #[test]
-    fn extract_code_e_suas_opcoes() {
-        let c = run(&["--extract-code", "--lang", "rust", "-n", "2", "a.md"]).unwrap();
-        assert!(c.extract_code && c.wants_extract());
-        assert_eq!(c.lang.as_deref(), Some("rust"));
-        assert_eq!(c.nth, Some(2));
-        assert_eq!(c.section, None);
-    }
-
-    #[test]
-    fn section_sozinha_e_valida() {
-        let c = run(&["--section", "Instalação", "a.md"]).unwrap();
-        assert!(c.wants_extract() && !c.extract_code);
-        assert_eq!(c.section.as_deref(), Some("Instalação"));
-    }
-
-    #[test]
-    fn sem_flags_de_extracao_nada_muda() {
-        let c = run(&["a.md"]).unwrap();
-        assert!(!c.wants_extract());
-    }
-
-    #[test]
-    fn n_invalido_e_erro_de_uso() {
-        for v in ["0", "-1", "x", ""] {
-            let e = run(&["--extract-code", "-n", v, "a.md"]).unwrap_err();
-            assert!(e.contains("-n"), "{v:?}: {e}");
-        }
-        assert!(run(&["--extract-code", "-n"]).is_err());
-    }
-
-    #[test]
-    fn lang_e_n_exigem_extract_code() {
-        assert!(run(&["--lang", "rust", "a.md"]).unwrap_err().contains("--extract-code"));
-        assert!(run(&["-n", "1", "--section", "A", "a.md"]).unwrap_err().contains("--extract-code"));
-    }
-
-    #[test]
-    fn extracao_so_vale_para_markdown() {
-        assert!(run(&["json", "--section", "A", "d.json"]).unwrap_err().contains("Markdown"));
-        assert!(run(&["csv", "--extract-code", "d.csv"]).unwrap_err().contains("Markdown"));
-        assert!(run(&["--extract-code", "d.json"]).unwrap_err().contains("Markdown"), "modo deduzido da extensão");
-    }
-
-    #[test]
     fn idle_foi_removido() {
         let e = run(&["--follow", "--idle", "5"]).unwrap_err();
         assert!(e.contains("opção desconhecida: --idle"), "{e}");
     }
 
     #[test]
-    fn stats_nao_combina_com_toc_extracao_follow() {
-        for f in ["--toc", "--extract-code", "--section", "--follow"] {
-            let args: Vec<&str> = if f == "--section" { vec!["--stats", f, "x", "a.md"] } else { vec!["--stats", f, "a.md"] };
-            let e = run(&args).unwrap_err();
+    fn stats_nao_combina_com_toc_follow() {
+        for f in ["--toc", "--follow"] {
+            let e = run(&["--stats", f, "a.md"]).unwrap_err();
             assert!(e.contains("--stats") && e.contains(f), "{f}: {e}");
         }
-    }
-
-    #[test]
-    fn check_links_nao_combina_com_outros_modos() {
-        for f in ["--toc", "--stats", "--extract-code", "--section", "--follow"] {
-            let args: Vec<&str> = if f == "--section" { vec!["--check-links", f, "x", "a.md"] } else { vec!["--check-links", f, "a.md"] };
-            let e = run(&args).unwrap_err();
-            assert!(e.contains("--check-links") && e.contains(f), "{f}: {e}");
-        }
-    }
-
-    #[test]
-    fn check_links_so_vale_para_markdown() {
-        let e = run(&["csv", "--check-links", "a.csv"]).unwrap_err();
-        assert!(e.contains("--check-links"), "{e}");
-        assert!(run(&["--check-links", "a.md"]).is_ok());
     }
 
     #[test]
@@ -522,13 +403,5 @@ mod tests {
         let e = run(&["csv", "--stats", "a.csv"]).unwrap_err();
         assert!(e.contains("--stats"), "{e}");
         assert!(run(&["--stats", "a.md"]).is_ok());
-    }
-
-    #[test]
-    fn extracao_nao_combina_com_toc_follow() {
-        for f in ["--toc", "--follow"] {
-            let e = run(&["--extract-code", f, "a.md"]).unwrap_err();
-            assert!(e.contains(f), "{f}: {e}");
-        }
     }
 }

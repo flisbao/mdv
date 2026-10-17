@@ -161,15 +161,10 @@ OPÇÕES:
         --remote       baixa imagens de http(s):// (nunca de rede privada)
         --graphics <G> imagens em alta resolução: off (padrão), kitty ou auto (Kitty/Ghostty; só no modo interativo)
         --toc          imprime só o índice de títulos
-        --check-links  confere offline links relativos, âncoras e cercas sem fechar; sai com 1 se houver problema
         --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
         --follow       com stdin: acompanha o texto conforme chega
         --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
         --memory-buffer <T>  limite de memória (padrão: 512M; ex.: 256M, 2G; ou $MDV_MEMORY_BUFFER)
-        --extract-code imprime só o texto dos blocos de código (sem cor)
-        --lang <L>     com --extract-code: só os blocos da linguagem L
-    -n <N>             com --extract-code: só o N-ésimo bloco (a partir de 1)
-        --section <T>  imprime só o Markdown da seção de título T
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
@@ -248,22 +243,22 @@ Na TUI, a tecla `m` alterna entre o texto renderizado e a **fonte crua**.
 
 ## Extrair trechos
 
-Para scripts e prompts, o `mdv` imprime só o que você pede, em texto puro (sem cor):
+Para scripts e prompts, o `mdv-tools` imprime só o que você pede, em texto puro (sem cor):
 
 ```bash
-mdv --extract-code plano.md                      # todos os blocos de código
-mdv --extract-code --lang bash -n 2 plano.md     # o 2º bloco bash
-mdv --section "Instalação" plano.md              # o Markdown da seção
-mdv --section "Instalação" --extract-code plano.md | sh
+mdv-tools extract-code plano.md                      # todos os blocos de código
+mdv-tools extract-code --lang bash -n 2 plano.md     # o 2º bloco bash
+mdv-tools section "Instalação" plano.md              # o Markdown da seção
+mdv-tools extract-code --section "Instalação" plano.md | sh
 ```
 
-`--lang` não distingue maiúsculas; `-n` conta a partir de 1, depois do filtro. O título casa por igualdade (sem distinguir caixa) ou por trecho único; se for ambíguo, o `mdv` lista os candidatos e sai com código 1, o mesmo código de quando nada é encontrado.
+`--lang` não distingue maiúsculas; `-n` conta a partir de 1, depois do filtro. O título casa por igualdade (sem distinguir caixa) ou por trecho único; se for ambíguo, o `mdv-tools` lista os candidatos e sai com código 1, o mesmo código de quando nada é encontrado.
 
-Para dimensionar um documento antes de colá-lo num prompt, `mdv --stats plano.md` imprime palavras, blocos de código e tokens estimados, no total e por seção (a seção pai soma as subseções; `[feitas/total]` aparece quando há tarefas). Os tokens são uma estimativa: caracteres do texto, prosa e código, divididos por 4. Só vale para Markdown e não combina com `--toc`, `--extract-code`, `--section` nem `--follow`.
+Para dimensionar um documento antes de colá-lo num prompt, `mdv --stats plano.md` imprime palavras, blocos de código e tokens estimados, no total e por seção (a seção pai soma as subseções; `[feitas/total]` aparece quando há tarefas). Os tokens são uma estimativa: caracteres do texto, prosa e código, divididos por 4. Só vale para Markdown e não combina com `--toc` nem `--follow`.
 
 ## Conferir links
 
-`mdv --check-links doc.md` confere, **sem rede**, os links do Markdown e imprime um problema por linha, em texto puro. Sai com código `0` se estiver limpo e `1` se achar algo, então serve em CI e em scripts:
+`mdv-tools check-links doc.md` confere, **sem rede**, os links do Markdown e imprime um problema por linha, em texto puro. Sai com código `0` se estiver limpo e `1` se achar algo, então serve em CI e em scripts:
 
 ```text
 plano.md:12: âncora "#instalacao" não existe
@@ -272,7 +267,7 @@ plano.md:55: cerca de código aberta aqui e sem fechamento
 3 problemas
 ```
 
-O que confere: âncoras `#título` (mesma regra de slug do GitHub, com `-1`, `-2` para títulos repetidos), arquivos e imagens relativos (resolvidos a partir da pasta do documento; com stdin, do diretório atual), âncoras em outro `.md` (`outro.md#título`), links de referência sem definição (`[texto][ref]`) e cercas de código sem fechamento. Ignora `http(s)://`, `mailto:`, `data:`, caminhos absolutos, UNC (`\\servidor\pasta`) e com unidade (`C:`), que nunca são consultados no disco (nem depois de decodificar `%XX`), e tudo que está dentro de blocos de código. Limites: 200 problemas listados, 20 000 links e 50 outros `.md` lidos (até 5 MiB cada). Só vale para Markdown e não combina com `--toc`, `--stats`, `--extract-code`, `--section` nem `--follow`.
+O que confere: âncoras `#título` (mesma regra de slug do GitHub, com `-1`, `-2` para títulos repetidos), arquivos e imagens relativos (resolvidos a partir da pasta do documento; com stdin, do diretório atual), âncoras em outro `.md` (`outro.md#título`), links de referência sem definição (`[texto][ref]`) e cercas de código sem fechamento. Ignora `http(s)://`, `mailto:`, `data:`, caminhos absolutos, UNC (`\\servidor\pasta`) e com unidade (`C:`), que nunca são consultados no disco (nem depois de decodificar `%XX`), e tudo que está dentro de blocos de código. Limites: 200 problemas listados, 20 000 links e 50 outros `.md` lidos (até 5 MiB cada). Só vale para Markdown.
 
 ## JSON, CSV e TSV
 
@@ -419,7 +414,8 @@ _2026-10-13_
 ```bash
 cargo run --release -- sample.md        # TUI
 cargo run --release -- -p -w 60 sample.md   # saída plain
-cargo test
+cargo test --workspace
+cargo run --release -p mdv-tools -- --help   # o binário mdv-tools
 ```
 
 O pipeline é um só: entrada (Markdown, JSON, CSV/TSV) → linhas do `ratatui` → TUI ou ANSI. `src/render.rs` renderiza; `src/main.rs` cuida da TUI, busca e a recarga (`r`); `src/cli.rs` interpreta os argumentos; `src/image.rs`, `src/net.rs` e `src/mermaid_native.rs` fazem o I/O de imagens e diagramas (nunca dentro de `render.rs`); `src/stream.rs` trata `--follow`; `src/data.rs` trata JSON e CSV/TSV.
@@ -443,7 +439,7 @@ Estas funcionalidades saíram para manter o `mdv` focado em **ler documentos**. 
 | Marcas de mudança e teclas `{` / `}` / `c` | `src/diff.rs` |
 | `mdv diff` e `--split` (blocos ` ```diff ` continuam coloridos; `.diff` abre como Markdown) | `src/render.rs` |
 
-`--extract-code`, `--section` e `--check-links` continuam nesta versão e passam para o binário `mdv-tools` na próxima fase.
+Movidos para o binário `mdv-tools`: `--extract-code`, `--section` e `--check-links` (`mdv-tools extract-code | section | check-links`).
 
 ## Licença
 

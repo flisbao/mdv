@@ -1,0 +1,13 @@
+[package]
+name = "mdv-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Ferramentas de linha de comando sobre Markdown: extrair código e seções, conferir links"
+
+[dependencies]
+mdv-text.workspace = true
+pulldown-cmark.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -5,8 +5,7 @@ use std::fmt::Write;
 
 use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 
-use crate::extract::{headings, section_text};
-use crate::render::{parse_options, sanitize};
+use mdv_text::{headings, parse_options, sanitize, section_text};
 
 /// Teto de seções listadas; o que passar disso só entra no total.
 const MAX_SECTIONS: usize = 10_000;

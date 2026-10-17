@@ -2,7 +2,6 @@ mod browse;
 mod cli;
 mod clip;
 mod data;
-mod extract;
 mod graphics;
 #[cfg(test)]
 mod golden_ansi;
@@ -11,7 +10,6 @@ mod app_keys_tests;
 mod imgview;
 mod imgzoom;
 mod image;
-mod links;
 mod mem;
 mod mermaid_native;
 mod nav;
@@ -73,15 +71,10 @@ OPÇÕES:
         --remote       baixa imagens de http(s):// (nunca de rede privada)
         --graphics <G> imagens em alta resolução: off (padrão), kitty ou auto (Kitty/Ghostty; só no modo interativo)
         --toc          imprime só o índice de títulos
-        --check-links  confere offline links relativos, âncoras e cercas sem fechar; sai com 1 se houver problema
         --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
         --follow       com stdin: acompanha o texto conforme chega
         --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
         --memory-buffer <T>  limite de memória (padrão: 512M; ex.: 256M, 2G; ou $MDV_MEMORY_BUFFER)
-        --extract-code imprime só o texto dos blocos de código (sem cor)
-        --lang <L>     com --extract-code: só os blocos da linguagem L
-    -n <N>             com --extract-code: só o N-ésimo bloco (a partir de 1)
-        --section <T>  imprime só o Markdown da seção de título T
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
@@ -126,15 +119,13 @@ enum Failure {
     Usage(String),
     /// Erro ao ler a entrada ou usar o terminal (código 1).
     Runtime(String),
-    /// `--check-links` achou problemas: o relatório já foi impresso, só falta o código 1.
-    Findings,
 }
 
 impl Failure {
     fn exit_code(&self) -> ExitCode {
         match self {
             Failure::Usage(_) => ExitCode::from(2),
-            Failure::Runtime(_) | Failure::Findings => ExitCode::from(1),
+            Failure::Runtime(_) => ExitCode::from(1),
         }
     }
 }
@@ -146,7 +137,6 @@ fn main() -> ExitCode {
             match &failure {
                 Failure::Usage(msg) => eprintln!("mdv: {msg}\nUse `mdv --help` para ver as opções."),
                 Failure::Runtime(msg) => eprintln!("mdv: {msg}"),
-                Failure::Findings => {}
             }
             failure.exit_code()
         }
@@ -195,32 +185,6 @@ fn run_cli() -> Result<(), Failure> {
         }
     }
     let (source, md) = load_source(cli.path.as_deref())?;
-    if cli.wants_extract() {
-        mem::check_parse(md.len()).map_err(|e| Failure::Runtime(e.to_string()))?;
-        let opts = extract::ExtractOpts {
-            code: cli.extract_code,
-            lang: cli.lang.clone(),
-            nth: cli.nth,
-            section: cli.section.clone(),
-        };
-        let text = extract::extract(&md, &opts).map_err(Failure::Runtime)?;
-        return write_stdout(&text);
-    }
-    if cli.check_links {
-        mem::check_parse(md.len()).map_err(|e| Failure::Runtime(e.to_string()))?;
-        let (label, base) = match &source {
-            Source::File(p) => (
-                p.display().to_string(),
-                p.parent()
-                    .filter(|d| !d.as_os_str().is_empty())
-                    .map_or_else(|| PathBuf::from("."), Path::to_path_buf),
-            ),
-            Source::Stdin => ("<stdin>".to_string(), PathBuf::from(".")),
-        };
-        let problems = links::check(&md, &base);
-        write_stdout(&links::format(&label, &problems))?;
-        return if problems.is_empty() { Ok(()) } else { Err(Failure::Findings) };
-    }
     if cli.stats {
         return write_stdout(&stats::format(&stats::stats(&md)));
     }

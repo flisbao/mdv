@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::sync::{Arc, OnceLock};
 
-use pulldown_cmark::{Alignment, BlockQuoteKind, CodeBlockKind, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, BlockQuoteKind, CodeBlockKind, CowStr, Event, HeadingLevel, Parser, Tag, TagEnd};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use syntect::easy::HighlightLines;
@@ -15,6 +15,8 @@ use syntect::highlighting::{Theme, ThemeSet};
 use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+pub(crate) use mdv_text::{parse_options, sanitize};
 
 use crate::graphics;
 use crate::mem;
@@ -411,17 +413,6 @@ pub fn render(md: &str, width: usize) -> Rendered {
     render_with(md, &RenderOpts { width, images: None, ..Default::default() })
 }
 
-/// Opções do `pulldown-cmark` usadas em todo o programa (renderização e extração veem a mesma estrutura).
-pub(crate) fn parse_options() -> Options {
-    // `ENABLE_MATH` fica de fora de propósito: textos de LLM com `$5 e $10` seriam lidos como fórmula.
-    Options::ENABLE_TABLES
-        | Options::ENABLE_STRIKETHROUGH
-        | Options::ENABLE_TASKLISTS
-        | Options::ENABLE_FOOTNOTES
-        | Options::ENABLE_GFM
-        | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS
-}
-
 pub fn render_with(md: &str, opts: &RenderOpts) -> Rendered {
     let parse_opts = parse_options();
     if let Err(e) = mem::check_parse(md.len()) {
@@ -448,23 +439,6 @@ pub fn render_with(md: &str, opts: &RenderOpts) -> Rendered {
         }
     }
     r.finish()
-}
-
-/// Ponto único de entrada do texto do documento: troca caracteres de controle
-/// (ESC, BEL, C1, `\r` solto...) por U+FFFD, para que nada do Markdown vire
-/// comando de terminal. Preserva `\n` e `\t`; `\r\n` vira `\n`.
-pub(crate) fn sanitize(s: &str) -> Cow<'_, str> {
-    let is_unsafe = |c: char| c.is_control() && c != '\n' && c != '\t';
-    if !s.contains(is_unsafe) {
-        return Cow::Borrowed(s);
-    }
-    let unified = s.replace("\r\n", "\n");
-    Cow::Owned(
-        unified
-            .chars()
-            .map(|c| if is_unsafe(c) { REPLACEMENT } else { c })
-            .collect(),
-    )
 }
 
 fn sanitize_cow(s: CowStr<'_>) -> CowStr<'_> {

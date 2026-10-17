@@ -64,23 +64,27 @@ jobs:
       - name: Build (musl, estático)
         if: matrix.musl
         run: |
-          cargo build --release --target x86_64-unknown-linux-musl
+          cargo build --release --workspace --target x86_64-unknown-linux-musl
           echo "BIN=target/x86_64-unknown-linux-musl/release/mdv" >> "$GITHUB_ENV"
+          echo "TOOLS=target/x86_64-unknown-linux-musl/release/mdv-tools" >> "$GITHUB_ENV"
 
       - name: Build (cruzado)
         if: ${{ matrix.target }}
         run: |
-          cargo build --release --target "${{ matrix.target }}"
+          cargo build --release --workspace --target "${{ matrix.target }}"
           echo "BIN=target/${{ matrix.target }}/release/mdv" >> "$GITHUB_ENV"
+          echo "TOOLS=target/${{ matrix.target }}/release/mdv-tools" >> "$GITHUB_ENV"
 
       - name: Build
         if: ${{ !matrix.musl && !matrix.target }}
         run: |
-          cargo build --release
+          cargo build --release --workspace
           if [ "${{ matrix.windows }}" = "true" ]; then
             echo "BIN=target/release/mdv.exe" >> "$GITHUB_ENV"
+            echo "TOOLS=target/release/mdv-tools.exe" >> "$GITHUB_ENV"
           else
             echo "BIN=target/release/mdv" >> "$GITHUB_ENV"
+            echo "TOOLS=target/release/mdv-tools" >> "$GITHUB_ENV"
           fi
 
       - name: Instalar cargo-deb e cargo-generate-rpm
@@ -101,7 +105,7 @@ jobs:
           mkdir -p dist
           stage="mdv-${GITHUB_REF_NAME//\//-}-${{ matrix.name }}"
           mkdir "$stage"
-          cp "$BIN" README.md "$stage/"
+          cp "$BIN" "$TOOLS" README.md "$stage/"
           tar -czf "dist/$stage.tar.gz" "$stage"
           if [ "${{ matrix.pkg }}" = "true" ]; then
             cp target/debian/*.deb target/generate-rpm/*.rpm dist/
@@ -114,7 +118,7 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           $stage = "mdv-$($env:GITHUB_REF_NAME -replace '/', '-')-${{ matrix.name }}"
           New-Item -ItemType Directory $stage | Out-Null
-          Copy-Item $env:BIN, README.md $stage
+          Copy-Item $env:BIN, $env:TOOLS, README.md $stage
           Compress-Archive -Path $stage -DestinationPath "dist/$stage.zip"
 
       # Prova que o arquivo publicado extrai e executa, não só que o build terminou.
@@ -124,11 +128,14 @@ jobs:
           if [ "${{ matrix.windows }}" = "true" ]; then
             7z x dist/*.zip -osmoke > /dev/null
             exe=$(ls smoke/mdv-*/mdv.exe)
+            tools=$(ls smoke/mdv-*/mdv-tools.exe)
           else
             tar -xzf dist/*.tar.gz -C smoke
             exe=$(ls smoke/mdv-*/mdv)
+            tools=$(ls smoke/mdv-*/mdv-tools)
           fi
           printf '# Olá\n\n- item\n' | "$exe" -p - | grep -q "Olá"
+          printf '# Olá\n' | "$tools" section "Olá" - | grep -q "Olá"
 
       - uses: actions/upload-artifact@v4
         with:
