@@ -38,8 +38,6 @@ pub struct Cli {
     pub remote: bool,
     pub mermaid: bool,
     pub follow: bool,
-    /// Segundos sem atividade para avisar (`--idle`, com `--follow` ou `--latest`).
-    pub idle: Option<u64>,
     pub toc: bool,
     pub stats: bool,
     pub check_links: bool,
@@ -100,7 +98,6 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         remote: false,
         mermaid: false,
         follow: false,
-        idle: None,
         toc: false,
         stats: false,
         check_links: false,
@@ -148,13 +145,6 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
             "--remote" => cli.remote = true,
             "--mermaid" => cli.mermaid = true,
             "--follow" => cli.follow = true,
-            "--idle" => {
-                let v = value(&mut args, &a)?;
-                cli.idle = Some(match v.parse::<u64>() {
-                    Ok(n) if (1..=86_400).contains(&n) => n,
-                    _ => return Err(format!("--idle inválido: {v} (esperado de 1 a 86400 segundos)")),
-                });
-            }
             "--toc" => cli.toc = true,
             "--stats" => cli.stats = true,
             "--check-links" => cli.check_links = true,
@@ -253,9 +243,6 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
                 return Err(format!("--extract-code e --section não combinam com {flag}"));
             }
         }
-    }
-    if cli.idle.is_some() && !cli.follow && !cli.latest {
-        return Err("--idle só vale com --follow ou --latest".to_string());
     }
     if cli.stats {
         if cli.mode != Mode::Markdown {
@@ -516,12 +503,9 @@ mod tests {
     }
 
     #[test]
-    fn idle_exige_follow_ou_latest_e_valida_segundos() {
-        assert!(run(&["--idle", "5", "a.md"]).is_err());
-        assert!(run(&["--follow", "--idle", "0"]).is_err());
-        assert!(run(&["--follow", "--idle", "x"]).is_err());
-        assert!(run(&["--follow", "--idle", "5"]).is_ok());
-        assert!(run(&["--latest", "--idle", "5", "pasta"]).is_ok());
+    fn idle_foi_removido() {
+        let e = run(&["--follow", "--idle", "5"]).unwrap_err();
+        assert!(e.contains("opção desconhecida: --idle"), "{e}");
     }
 
     #[test]
