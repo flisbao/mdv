@@ -76,6 +76,11 @@ mod real {
         res.map_err(|_| "o renderizador nativo falhou neste diagrama".to_string())
     }
 
+    /// O renderizador está compilado neste binário.
+    pub fn available() -> bool {
+        true
+    }
+
     /// Desenha o diagrama Mermaid e devolve um PNG.
     pub fn render_png(source: &str) -> Result<Vec<u8>, String> {
         render_png_with(source, system_fonts())
@@ -318,6 +323,11 @@ mod real {
 }
 
 /// Sem a feature `mermaid` não há renderizador: o diagrama fica como código.
+#[cfg(not(feature = "mermaid"))]
+pub fn available() -> bool {
+    false
+}
+
 #[cfg(not(feature = "mermaid"))]
 pub fn render_png(_source: &str) -> Result<Vec<u8>, String> {
     Err("mermaid não foi compilado neste binário; recompile com --features mermaid".into())

@@ -48,7 +48,8 @@ fn fence_closed(block: &str) -> bool {
     let Some(ch) = first.chars().next().filter(|c| matches!(c, '`' | '~')) else { return true };
     let open = first.chars().take_while(|&c| c == ch).count();
     let Some(last) = lines.last() else { return false };
-    let last = last.trim();
+    // Dentro de citações a última linha ainda traz os marcadores `>`.
+    let last = last.trim_start_matches(|c: char| c == '>' || c.is_whitespace()).trim_end();
     last.chars().count() >= open && last.chars().all(|c| c == ch)
 }
 
@@ -243,6 +244,13 @@ mod tests {
     fn link_dentro_de_codigo_e_ignorado() {
         let md = "```\n[a](falta.md)\n```\n\nTexto `[b](falta2.md)`.\n";
         assert!(msgs(md).is_empty());
+    }
+
+    #[test]
+    fn cerca_fechada_dentro_de_citacao_nao_e_aberta() {
+        assert!(msgs("> ```rust\n> fn a() {}\n> ```\n").is_empty());
+        assert!(msgs("> > ~~~\n> > x\n> > ~~~\n").is_empty());
+        assert_eq!(msgs("> ```rust\n> fn a() {}\n").len(), 1);
     }
 
     #[test]
