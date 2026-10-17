@@ -2,6 +2,7 @@
 //! Markdown) e os dois escritores.
 pub mod model;
 pub mod ods;
+pub mod source;
 pub mod xlsx;
 
 use super::{Budget, Output};
