@@ -182,6 +182,17 @@ fn mermaid_em_plain_sem_graficos_sai_como_codigo() {
     assert!(text.contains("graph TD"), "{text}");
 }
 
+/// Sem a feature `mermaid` o diagrama é só um bloco de código, sem erro de renderização.
+#[cfg(not(feature = "mermaid"))]
+#[test]
+fn sem_a_feature_mermaid_o_diagrama_sai_como_codigo() {
+    let out = mdv(&["-p", "-"], MERMAID_MD);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success());
+    assert!(text.contains("graph TD") && text.contains("mermaid"), "{text}");
+    assert!(!text.contains("erro:") && !text.contains("renderizando") && !text.contains('▀'), "{text}");
+}
+
 #[cfg(unix)]
 #[test]
 fn arquivo_nao_regular_e_rejeitado() {

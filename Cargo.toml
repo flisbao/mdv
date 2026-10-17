@@ -30,8 +30,14 @@ ureq = { version = "2", default-features = false, features = ["tls"] }
 url = "2"
 serde_json = { version = "1", features = ["preserve_order"] }
 csv = "1"
-mermaid-rs-renderer = { version = "0.3.1", default-features = false }
-resvg = { version = "0.48", default-features = false, features = ["text", "system-fonts"] }
+mermaid-rs-renderer = { version = "0.3.1", default-features = false, optional = true }
+resvg = { version = "0.48", default-features = false, features = ["text", "system-fonts"], optional = true }
+
+[features]
+default = ["images", "mermaid", "remote"]
+images = []
+mermaid = ["images", "dep:mermaid-rs-renderer", "dep:resvg"]
+remote = ["images"]
 
 [dev-dependencies]
 tempfile.workspace = true

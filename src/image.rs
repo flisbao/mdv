@@ -264,7 +264,7 @@ impl ImageStore {
 
     /// Diagrama só vira figura com o protocolo gráfico ativo; sem ele o bloco fica como código.
     pub fn mermaid_enabled(&self) -> bool {
-        self.mermaid.is_some() && self.graphics
+        cfg!(feature = "mermaid") && self.mermaid.is_some() && self.graphics
     }
 
     /// Mermaid só com o renderizador nativo (padrão): em processo, sem subprocesso.
@@ -822,7 +822,16 @@ mod tests {
         let sem = ImageStore::new(None).with_native_mermaid(true);
         assert!(!sem.mermaid_enabled(), "sem gráficos o diagrama fica como código");
         let com = ImageStore::new(None).with_native_mermaid(true).with_graphics(true);
-        assert!(com.mermaid_enabled());
+        assert_eq!(com.mermaid_enabled(), cfg!(feature = "mermaid"));
         assert!(!ImageStore::new(None).with_graphics(true).mermaid_enabled(), "gráficos sem mermaid ligado");
+    }
+
+    #[cfg(not(feature = "mermaid"))]
+    #[test]
+    fn sem_a_feature_mermaid_o_diagrama_nunca_e_habilitado() {
+        let store = ImageStore::new(None).with_native_mermaid(true).with_graphics(true);
+        assert!(!store.mermaid_enabled());
+        let err = crate::mermaid_native::render_png("graph TD; A-->B").unwrap_err();
+        assert!(err.contains("recompile com --features mermaid"), "{err}");
     }
 }

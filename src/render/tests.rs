@@ -534,6 +534,7 @@ fn bloco_mermaid_vira_imagem_quando_habilitado() {
     assert!(!r.graphics.is_empty(), "figura gráfica registrada");
 }
 
+#[cfg(feature = "mermaid")]
 #[test]
 fn mermaid_invalido_com_graficos_e_nativo_real_mostra_o_erro() {
     let store = ImageStore::new(None).with_native_mermaid(true).with_graphics(true);
@@ -563,6 +564,7 @@ fn mermaid_sem_flag_mostra_codigo() {
     assert!(t.contains("mermaid") && t.contains("A-->B"), "{t}");
 }
 
+#[cfg(feature = "mermaid")]
 #[test]
 fn mermaid_com_falha_mostra_codigo_e_motivo() {
     let store = ImageStore::new(None).with_native_mermaid(true).with_graphics(true);
