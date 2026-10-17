@@ -52,13 +52,13 @@ pub(crate) fn image_store(source: &Source, cli: &cli::Cli, blocking: bool) -> im
     };
     // Gráficos só no modo interativo (`blocking == false`); `--plain` fica sempre em meio-bloco.
     let graphics = !blocking
-        && match cli.graphics {
+        && match cli.common.graphics {
             cli::Graphics::Off => false,
             cli::Graphics::Kitty => true,
             cli::Graphics::Auto => graphics::supports_kitty(|k| std::env::var(k).ok()),
         };
     let mut store = image::ImageStore::new(base).with_graphics(graphics);
-    if cli.remote {
+    if cli.common.remote {
         store = store.with_remote(net::FetchPolicy::default(), blocking);
     }
     // Diagramas Mermaid saem do renderizador nativo.

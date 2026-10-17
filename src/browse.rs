@@ -23,7 +23,7 @@ pub enum Back {
     /// O seletor de arquivos, com a consulta e a seleção de antes.
     Picker(Box<Picker>),
     /// Um documento, na linha renderizada que estava no topo, e o modo em que estava aberto.
-    File { path: PathBuf, line: usize, mode: crate::cli::Mode },
+    File { path: PathBuf, line: usize, doc: crate::cli::Doc },
 }
 
 /// Posição a aplicar depois do próximo desenho (só então o documento novo tem linhas).
@@ -98,7 +98,7 @@ impl App {
                 self.modal = Modal::ConfirmOpen(u);
             }
             Target::Local { path, anchor } => {
-                self.open_file(path, anchor.map(Jump::Anchor), true, crate::cli::Mode::Markdown)
+                self.open_file(path, anchor.map(Jump::Anchor), true, crate::cli::Doc::Markdown)
             }
             Target::Unsupported(why) => self.notice = Some(format!("não abri o link: {why}")),
         }
@@ -129,7 +129,7 @@ impl App {
     }
 
     /// Troca o documento por `path`. Com `push`, guarda o atual em "voltar".
-    pub fn open_file(&mut self, path: PathBuf, jump: Option<Jump>, push: bool, mode: crate::cli::Mode) {
+    pub fn open_file(&mut self, path: PathBuf, jump: Option<Jump>, push: bool, doc: crate::cli::Doc) {
         let md = match read_markdown_file(&path) {
             Ok(md) => md,
             Err(e) => {
@@ -144,7 +144,7 @@ impl App {
                 if self.back.len() >= MAX_BACK {
                     self.back.remove(0);
                 }
-                self.back.push(Back::File { path: cur.clone(), line: self.view.scroll, mode: self.doc.opts.mode });
+                self.back.push(Back::File { path: cur.clone(), line: self.view.scroll, doc: self.doc.opts.doc.clone() });
             }
         }
         self.name = render::sanitize(
@@ -158,7 +158,7 @@ impl App {
         self.seen_images_version = 0;
         self.doc.md = md;
         self.raw = false;
-        self.doc.opts.mode = mode;
+        self.doc.opts.doc = doc;
         self.link_at = None;
         self.search.clear();
         self.modal = Modal::None;
@@ -170,7 +170,7 @@ impl App {
     /// `Backspace`/`H`: volta ao documento anterior.
     pub fn go_back(&mut self) {
         match self.back.pop() {
-            Some(Back::File { path, line, mode }) => self.open_file(path, Some(Jump::Line(line)), false, mode),
+            Some(Back::File { path, line, doc }) => self.open_file(path, Some(Jump::Line(line)), false, doc),
             Some(Back::Picker(p)) => {
                 self.modal = Modal::Picker(*p);
                 self.link_at = None;
@@ -218,7 +218,7 @@ impl App {
                 if let Some(path) = p.current().map(|e| e.path.clone()) {
                     let keep = Box::new(p.clone());
                     self.modal = Modal::None;
-                    self.open_file(path, None, false, crate::cli::Mode::Markdown);
+                    self.open_file(path, None, false, crate::cli::Doc::Markdown);
                     // Só empilha se o arquivo abriu (senão o seletor continua na tela).
                     if matches!(self.source, Source::File(_)) {
                         self.back.push(Back::Picker(keep));

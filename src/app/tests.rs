@@ -91,10 +91,7 @@ fn busca_acha_linha_com_texto_dividido_entre_trechos() {
 }
 
 fn test_app(source: Source, md: &str) -> App {
-    let cli = match cli::parse(["x.md".to_string()]) {
-        Ok(cli::Parsed::Run(c)) => c,
-        _ => panic!("cli de teste"),
-    };
+    let cli = cli::parse(["x.md".to_string()]).expect("cli de teste");
     App::new(source, md.to_string(), 80, &cli)
 }
 
@@ -221,10 +218,10 @@ fn backspace_restaura_o_modo_do_documento_anterior() {
     app.back.push(browse::Back::File {
         path: json.clone(),
         line: 0,
-        mode: cli::Mode::Json,
+        doc: cli::Doc::Json { json_path: None, view: cli::JsonView::Auto },
     });
     key(&mut app, KeyCode::Backspace);
-    assert_eq!(app.doc.opts.mode, cli::Mode::Json);
+    assert!(matches!(app.doc.opts.doc, cli::Doc::Json { .. }));
     assert!(matches!(&app.source, Source::File(p) if *p == json));
 }
 
@@ -382,10 +379,7 @@ fn app_kitty(dir: &std::path::Path) -> App {
     std::fs::write(dir.join("a.png"), png.into_inner()).unwrap();
     let md = dir.join("a.doc.md");
     std::fs::write(&md, "![x](a.png)\n").unwrap();
-    let cli = match cli::parse(["--graphics", "kitty", "a.doc.md"].map(String::from)) {
-        Ok(cli::Parsed::Run(c)) => c,
-        _ => panic!("cli de teste"),
-    };
+    let cli = cli::parse(["--graphics", "kitty", "a.doc.md"].map(String::from)).expect("cli de teste");
     App::new(Source::File(md), "![x](a.png)\n".to_string(), 80, &cli)
 }
 
@@ -420,22 +414,22 @@ fn tecla(app: &mut App, c: char) {
 #[test]
 fn v_alterna_as_vistas_do_json() {
     let mut app = test_app(Source::Stdin, r#"[{"a":1}]"#);
-    app.doc.opts.mode = cli::Mode::Json;
+    app.doc.opts.doc = cli::Doc::Json { json_path: None, view: cli::JsonView::Auto };
     tecla(&mut app, 'v'); // Auto já era tabela: o próximo é o esquema
-    assert_eq!(app.doc.opts.json_view, cli::JsonView::Schema);
+    assert_eq!(json_view(&app), cli::JsonView::Schema);
     assert!(app.doc.dirty);
     tecla(&mut app, 'v');
-    assert_eq!(app.doc.opts.json_view, cli::JsonView::Text);
+    assert_eq!(json_view(&app), cli::JsonView::Text);
     tecla(&mut app, 'v');
-    assert_eq!(app.doc.opts.json_view, cli::JsonView::Table);
+    assert_eq!(json_view(&app), cli::JsonView::Table);
 }
 
 #[test]
 fn v_em_json_que_nao_e_lista_comeca_pela_tabela() {
     let mut app = test_app(Source::Stdin, r#"{"a":1}"#);
-    app.doc.opts.mode = cli::Mode::Json;
+    app.doc.opts.doc = cli::Doc::Json { json_path: None, view: cli::JsonView::Auto };
     tecla(&mut app, 'v');
-    assert_eq!(app.doc.opts.json_view, cli::JsonView::Table);
+    assert_eq!(json_view(&app), cli::JsonView::Table);
 }
 
 #[test]
@@ -443,14 +437,14 @@ fn v_fora_do_modo_json_nao_faz_nada() {
     let mut app = test_app(Source::Stdin, "# a");
     app.doc.dirty = false;
     tecla(&mut app, 'v');
-    assert_eq!(app.doc.opts.json_view, cli::JsonView::Auto);
+    assert_eq!(json_view(&app), cli::JsonView::Auto);
     assert!(!app.doc.dirty);
 }
 
 #[test]
 fn barra_mostra_a_vista_do_json_quando_escolhida() {
     let mut app = test_app(Source::Stdin, r#"[{"a":1}]"#);
-    app.doc.opts.mode = cli::Mode::Json;
+    app.doc.opts.doc = cli::Doc::Json { json_path: None, view: cli::JsonView::Auto };
     tecla(&mut app, 'v');
     assert!(
         app.status_left().contains("[esquema]"),
@@ -609,7 +603,7 @@ fn y_sem_bloco_de_codigo_avisa_e_nao_copia() {
 #[test]
 fn y_em_json_nao_entra_em_panico_e_avisa() {
     let mut app = test_app(Source::Stdin, r#"[{"a":1}]"#);
-    app.doc.opts.mode = cli::Mode::Json;
+    app.doc.opts.doc = cli::Doc::Json { json_path: None, view: cli::JsonView::Auto };
     app.rerender(60);
     app.view.height = 10;
     app.on_key(ev(KeyCode::Char('y')));
@@ -842,10 +836,7 @@ fn rotulo_de_colunas() {
 }
 
 fn app_com_cli(args: &[&str], md: &str) -> App {
-    let cli = match cli::parse(args.iter().map(|s| s.to_string())) {
-        Ok(cli::Parsed::Run(c)) => c,
-        _ => panic!("cli de teste"),
-    };
+    let cli = cli::parse(args.iter().map(|s| s.to_string())).expect("cli de teste");
     App::new(Source::Stdin, md.to_string(), 80, &cli)
 }
 
@@ -891,5 +882,12 @@ fn arquivos_de_producao_dentro_do_teto() {
     for (nome, src, teto) in arquivos {
         let producao = src.split("#[cfg(test)]\nmod tests {").next().unwrap().lines().count();
         assert!(producao <= *teto, "{nome} tem {producao} linhas de produção (teto {teto})");
+    }
+}
+
+fn json_view(app: &App) -> cli::JsonView {
+    match &app.doc.opts.doc {
+        cli::Doc::Json { view, .. } => *view,
+        _ => cli::JsonView::Auto,
     }
 }
