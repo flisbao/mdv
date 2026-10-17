@@ -1,6 +1,4 @@
 //! Apoio só dos testes da crate.
-// Os testes das próximas tarefas usam estas funções; por ora algumas ficam sem uso.
-#![allow(dead_code)]
 
 use std::sync::{Arc, Mutex};
 
