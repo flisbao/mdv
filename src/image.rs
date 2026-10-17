@@ -390,8 +390,29 @@ impl ImageStore {
         ImageState::Loading
     }
 
+    /// O destino de uma imagem em Markdown vem codificado (`a%20b.png`): usa o nome literal se
+    /// existir, senão o decodificado.
+    fn local_name(&self, src: &str) -> String {
+        let exists = |n: &str| match &self.base_dir {
+            Some(b) => b.join(n).exists(),
+            None => Path::new(n).exists(),
+        };
+        if src.contains('%') && !exists(src) {
+            let decoded = mdv_text::percent_decode(src);
+            if exists(&decoded) {
+                return decoded;
+            }
+        }
+        src.to_string()
+    }
+
     pub fn get(&self, src: &str) -> ImageState {
         if is_data(src) {
+            // Recusa o gigante antes de gastar hash, cache ou cópia (o cabeçalho cabe em 1 KiB).
+            let comma = src.as_bytes().iter().take(1024).position(|&b| b == b',');
+            if comma.map_or(src.len() > 1024, |c| src.len() - c - 1 > MAX_DATA_PAYLOAD) {
+                return ImageState::Failed("imagem grande demais".into());
+            }
             use std::hash::{Hash, Hasher};
             let mut h = std::collections::hash_map::DefaultHasher::new();
             src.hash(&mut h);
@@ -399,10 +420,16 @@ impl ImageStore {
             if self.over_limit(&key, |k| k.starts_with(DATA_PREFIX), MAX_DATA_IMAGES) {
                 return ImageState::Failed("limite de imagens data: atingido".into());
             }
+            // Acerto de cache não copia o URI.
+            if let Some(st) = self.lock().get(&key).cloned() {
+                self.used().insert(key);
+                return st;
+            }
             let s = src.to_string();
             return self.get_job(&key, false, move || decode_data_uri(&s));
         }
         if !is_remote(src) {
+            let src = &self.local_name(src);
             // A chave é o caminho canônico: `a.png`, `./a.png` e `x/../a.png` são um só arquivo.
             let path = match &self.base_dir {
                 Some(b) => b.join(src),
@@ -444,6 +471,16 @@ mod tests {
 
     fn grava_png(dir: &std::path::Path, nome: &str, w: u32, h: u32) {
         std::fs::write(dir.join(nome), png_bytes(w, h)).unwrap();
+    }
+
+    #[test]
+    fn caminho_local_com_percent_encoding_acha_o_arquivo() {
+        let dir = tempfile::tempdir().unwrap();
+        grava_png(dir.path(), "meu diagrama.png", 8, 8);
+        grava_png(dir.path(), "lit%20eral.png", 8, 8);
+        let store = ImageStore::new(Some(dir.path().to_path_buf()));
+        assert!(matches!(store.get("meu%20diagrama.png"), ImageState::Ready(_)));
+        assert!(matches!(store.get("lit%20eral.png"), ImageState::Ready(_)), "nome literal tem prioridade");
     }
 
     #[test]
@@ -545,6 +582,17 @@ mod tests {
     fn data_uri_acima_do_teto_e_recusada_antes_de_decodificar() {
         let uri = format!("data:image/png;base64,{}", "A".repeat(MAX_DATA_PAYLOAD + 1));
         assert!(falha(&uri).contains("grande"));
+    }
+
+    #[test]
+    fn data_uri_gigante_nao_ocupa_vaga_nem_e_processada() {
+        let store = ImageStore::new(None);
+        for i in 0..=MAX_DATA_IMAGES {
+            let uri = format!("data:image/png;base64,{}{i}", "A".repeat(MAX_DATA_PAYLOAD + 1));
+            assert!(matches!(store.get(&uri), ImageState::Failed(m) if m.contains("grande")));
+        }
+        let ok = format!("data:image/png;base64,{}", crate::clip::base64(&png_bytes(4, 4)));
+        assert!(matches!(store.get(&ok), ImageState::Ready(_)));
     }
 
     #[test]
