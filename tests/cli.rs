@@ -65,7 +65,6 @@ fn flags_que_foram_para_o_mdv_tools_sao_rejeitadas() {
     for args in [
         vec!["--check-links", "-"],
         vec!["--extract-code", "-"],
-        vec!["--section", "A", "-"],
         vec!["--lang", "rust", "-"],
         vec!["-n", "1", "-"],
     ] {

@@ -68,7 +68,7 @@ fn run_cli() -> Result<(), Failure> {
     match cli.command {
         cli::Command::Help => return write_stdout(HELP),
         cli::Command::Version => return write_stdout(&format!("mdv {}\n", env!("CARGO_PKG_VERSION"))),
-        _ => {}
+        cli::Command::Export(_) => return Err(Failure::Usage("exportação ainda não ligada".into())), _ => {}
     }
     let limit = mem::resolve(cli.common.memory_buffer, std::env::var("MDV_MEMORY_BUFFER").ok().as_deref())
         .map_err(Failure::Usage)?;

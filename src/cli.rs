@@ -58,6 +58,18 @@ pub enum Command {
     Stats,
     Help,
     Version,
+    /// Converte para PDF, DOCX, ODT, XLSX ou ODS.
+    Export(Export),
+}
+
+/// `-o arquivo`: converte a entrada e sai, sem abrir a TUI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Export {
+    pub doc: Doc,
+    pub output: String,
+    pub force: bool,
+    /// Só Markdown → planilha: tabelas da seção de título `section`.
+    pub section: Option<String>,
 }
 
 /// Opções da linha de comando.
@@ -81,9 +93,10 @@ impl Flag {
 
 const VALUE_FLAGS: &[&str] = &[
     "-w", "--width", "--path", "--table", "--memory-buffer", "--graphics", "--as", "--head", "--cols",
-    "--delimiter",
+    "--delimiter", "-o", "--output", "--section",
 ];
-const BOOL_FLAGS: &[&str] = &["-p", "--plain", "--remote", "--follow", "--toc", "--stats", "--no-header"];
+const BOOL_FLAGS: &[&str] =
+    &["-p", "--plain", "--remote", "--follow", "--toc", "--stats", "--no-header", "--force"];
 
 /// Formato decidido antes de interpretar as opções específicas.
 enum Format {
@@ -155,6 +168,22 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
         }
     }
 
+    let output = take_value(&mut flags, &["-o", "--output"]);
+    let section = take_value(&mut flags, &["--section"]);
+    let force = take_bool(&mut flags, "--force");
+    if output.is_none() {
+        if force {
+            return Err("--force só vale com -o".to_string());
+        }
+        if section.is_some() {
+            return Err("--section só vale com -o".to_string());
+        }
+    }
+    if output.as_deref() == Some("") {
+        return Err("a opção -o precisa de um nome de arquivo".to_string());
+    }
+    let had: Vec<String> = flags.iter().map(|f| f.name.clone()).collect();
+
     // `--delimiter` força o modo tabela mesmo com outra extensão ou subcomando.
     let format = if flags.iter().any(|f| f.name == "--delimiter") {
         Format::Table(b',')
@@ -163,11 +192,58 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
     } else {
         common.path.as_deref().map_or(Format::Markdown, format_from_extension)
     };
-    match format {
+    let cli = match format {
         Format::Markdown => parse_markdown(common, &flags),
         Format::Json => parse_json(common, &flags),
         Format::Table(delimiter) => parse_table(common, &flags, delimiter),
+    }?;
+    match output {
+        Some(output) => into_export(cli, output, force, section, &had),
+        None => Ok(cli),
     }
+}
+
+fn take_value(flags: &mut Vec<Flag>, names: &[&str]) -> Option<String> {
+    let found = flags.iter().rev().find(|f| names.contains(&f.name.as_str())).map(|f| f.value().to_string());
+    flags.retain(|f| !names.contains(&f.name.as_str()));
+    found
+}
+
+fn take_bool(flags: &mut Vec<Flag>, name: &str) -> bool {
+    let found = flags.iter().any(|f| f.name == name);
+    flags.retain(|f| f.name != name);
+    found
+}
+
+/// `-o`: troca a visualização por uma exportação, recusando o que não faz sentido com ela.
+fn into_export(cli: Cli, output: String, force: bool, section: Option<String>, had: &[String]) -> Result<Cli, String> {
+    let Cli { common, command } = cli;
+    let doc = match command {
+        Command::View(doc) => doc,
+        Command::Toc => return Err("-o não combina com --toc".to_string()),
+        Command::Stats => return Err("-o não combina com --stats".to_string()),
+        outro => return Ok(Cli { common, command: outro }),
+    };
+    if common.follow {
+        return Err("-o não combina com --follow".to_string());
+    }
+    match &doc {
+        Doc::Json { .. } => return Err("JSON ainda não exporta (use .md, .csv ou .tsv)".to_string()),
+        Doc::Table { .. } => {
+            if let Some(f) = ["--head", "--cols"].into_iter().find(|f| had.iter().any(|h| h == f)) {
+                return Err(format!("a opção {f} não vale com -o (a exportação leva todas as linhas e colunas)"));
+            }
+            if section.is_some() {
+                return Err("a opção --section só vale para Markdown".to_string());
+            }
+        }
+        Doc::Markdown => {
+            if section.is_some() && common.table.is_some() {
+                return Err("--section não combina com --table".to_string());
+            }
+        }
+    }
+    Ok(Cli { common, command: Command::Export(Export { doc, output, force, section }) })
 }
 
 /// Opções comuns: devolve `Ok(true)` se consumiu a flag.
@@ -571,6 +647,73 @@ mod tests {
         assert!(matches!(run(&["--stats", "a.md"]).unwrap().command, Command::Stats));
         assert!(matches!(run(&["-h"]).unwrap().command, Command::Help));
         assert!(matches!(run(&["a.md", "-V"]).unwrap().command, Command::Version));
+    }
+
+    fn export(args: &[&str]) -> Export {
+        match run(args).unwrap().command {
+            Command::Export(e) => e,
+            outro => panic!("{outro:?}"),
+        }
+    }
+
+    #[test]
+    fn o_vira_export_com_o_formato_da_entrada() {
+        let e = export(&["a.md", "-o", "a.pdf"]);
+        assert_eq!((e.doc, e.output.as_str(), e.force, e.section), (Doc::Markdown, "a.pdf", false, None));
+        let e = export(&["--output", "t.xlsx", "d.csv", "--force", "--no-header"]);
+        assert_eq!(e.output, "t.xlsx");
+        assert!(e.force);
+        assert!(matches!(e.doc, Doc::Table { delimiter: b',', no_header: true, .. }));
+        let e = export(&["tsv", "-", "-o", "t.ods"]);
+        assert!(matches!(e.doc, Doc::Table { delimiter: b'\t', .. }));
+    }
+
+    #[test]
+    fn export_guarda_secao_e_table_fica_em_common() {
+        let e = export(&["a.md", "-o", "t.xlsx", "--section", "Vendas"]);
+        assert_eq!(e.section.as_deref(), Some("Vendas"));
+        let c = run(&["a.md", "-o", "t.xlsx", "--table", "2"]).unwrap();
+        assert_eq!(c.common.table, Some(2));
+    }
+
+    #[test]
+    fn force_e_section_exigem_o() {
+        assert!(run(&["a.md", "--force"]).unwrap_err().contains("--force só vale com -o"));
+        assert!(run(&["a.md", "--section", "A"]).unwrap_err().contains("--section só vale com -o"));
+    }
+
+    #[test]
+    fn o_nao_combina_com_toc_stats_follow() {
+        for f in ["--toc", "--stats", "--follow"] {
+            let e = run(&["a.md", "-o", "a.pdf", f]).unwrap_err();
+            assert!(e.contains("-o") && e.contains(f), "{f}: {e}");
+        }
+    }
+
+    #[test]
+    fn section_so_para_markdown_e_nao_junto_de_table() {
+        assert!(run(&["d.csv", "-o", "t.xlsx", "--section", "A"]).unwrap_err().contains("--section só vale para Markdown"));
+        assert!(run(&["a.md", "-o", "t.xlsx", "--section", "A", "--table", "1"]).unwrap_err().contains("--section não combina com --table"));
+    }
+
+    #[test]
+    fn head_e_cols_sao_recusados_com_o() {
+        for f in [["--head", "5"], ["--cols", "a"]] {
+            let e = run(&["d.csv", "-o", "t.xlsx", f[0], f[1]]).unwrap_err();
+            assert!(e.contains(f[0]) && e.contains("-o"), "{e}");
+        }
+        assert!(run(&["d.csv", "--head", "5"]).is_ok(), "sem -o continua valendo");
+    }
+
+    #[test]
+    fn json_nao_exporta() {
+        assert!(run(&["d.json", "-o", "t.xlsx"]).unwrap_err().contains("JSON"));
+    }
+
+    #[test]
+    fn o_sem_valor_ou_vazio_e_erro() {
+        assert!(run(&["a.md", "-o"]).is_err());
+        assert!(run(&["a.md", "-o", ""]).unwrap_err().contains("-o"));
     }
 
     #[test]
