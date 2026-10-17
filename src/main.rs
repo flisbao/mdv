@@ -72,7 +72,6 @@ USO:
     mdv csv|tsv [opções] <arquivo|->
     mdv <pasta>            (seletor: .md da pasta por data, filtro ao digitar)
     mdv chat <transcricao.jsonl|->   (conversa de agente: papéis, ferramentas e raciocínio recolhidos)
-    git diff | mdv diff    (ou mdv diff <arquivo.diff|.patch>)
     (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
 
 OPÇÕES:
@@ -86,7 +85,6 @@ OPÇÕES:
         --check-links  confere offline links relativos, âncoras e cercas sem fechar; sai com 1 se houver problema
         --stats        imprime palavras, blocos de código e tokens estimados, no total e por seção
         --follow       com stdin: acompanha o texto conforme chega
-        --split        com diff: duas colunas (removidas à esquerda, adicionadas à direita)
         --idle <S>     com --follow ou --latest: toca o sino quando nada muda por S segundos
         --latest       o argumento é uma pasta: abre e segue o .md mais novo
         --table <N>    abre direto no zoom da N-ésima tabela (só no modo interativo)
@@ -345,7 +343,6 @@ struct DocOpts {
     head: usize,
     cols: Vec<String>,
     no_header: bool,
-    split: bool,
     code_scroll: Option<usize>,
 }
 
@@ -358,7 +355,6 @@ impl DocOpts {
             head: cli.head,
             cols: cli.cols.clone(),
             no_header: cli.no_header,
-            split: cli.split,
             code_scroll: None,
         }
     }
@@ -377,8 +373,6 @@ fn render_doc(doc: &DocOpts, text: &str, width: usize, images: &image::ImageStor
             &chat::to_markdown(text),
             &render::RenderOpts { width, images: Some(images), code_scroll: doc.code_scroll },
         ),
-        cli::Mode::Diff if doc.split => render::render_diff_split(text, width),
-        cli::Mode::Diff => render::render_code_only_at(text, "diff", width, doc.code_scroll),
         cli::Mode::Json => {
             let opts = data::JsonOpts {
                 path: doc.json_path.clone(),
@@ -405,7 +399,6 @@ fn raw_lang(mode: cli::Mode) -> &'static str {
     match mode {
         cli::Mode::Markdown => "md",
         cli::Mode::Json => "json",
-        cli::Mode::Diff => "diff",
         cli::Mode::Chat => "json",
         cli::Mode::Table { .. } => "text",
     }

@@ -350,111 +350,6 @@ pub fn render_code_only_at(code: &str, lang: &str, width: usize, scroll: Option<
     memory_error().unwrap_or(r.out)
 }
 
-/// Corta `s` para `w` colunas (com "…" ao cortar) e completa com espaços até `w`.
-fn cell_exact(s: &str, w: usize) -> String {
-    let mut out = String::new();
-    let mut used = 0;
-    if s.width() <= w {
-        out.push_str(s);
-        used = s.width();
-    } else {
-        for c in s.chars() {
-            let cw = c.width().unwrap_or(0);
-            if used + cw + 1 > w {
-                break;
-            }
-            out.push(c);
-            used += cw;
-        }
-        out.push('…');
-        used += 1;
-    }
-    out.push_str(&" ".repeat(w.saturating_sub(used)));
-    out
-}
-
-/// Lê `a,b` ou `a` de um trecho `-a,b` / `+c,d` do cabeçalho `@@`; devolve o total de linhas.
-fn hunk_count(part: &str) -> usize {
-    let n = part.trim_start_matches(['-', '+']);
-    match n.split_once(',') {
-        Some((_, c)) => c.parse().unwrap_or(1),
-        None => 1,
-    }
-}
-
-/// Diff unificado em duas colunas: removidas à esquerda, adicionadas à direita.
-pub fn render_diff_split(text: &str, width: usize) -> Rendered {
-    let half = width.saturating_sub(3).max(2) / 2;
-    let mut out = Rendered::default();
-    let dim = Style::default().fg(DIM);
-    let blank = Style::default();
-    let (mut old_left, mut new_left) = (0usize, 0usize);
-    let mut dels: Vec<String> = Vec::new();
-    let mut adds: Vec<String> = Vec::new();
-
-    fn flush(out: &mut Rendered, dels: &mut Vec<String>, adds: &mut Vec<String>, half: usize) {
-        let dim = Style::default().fg(DIM);
-        for i in 0..dels.len().max(adds.len()) {
-            let l = dels.get(i).map(|t| cell_exact(t, half));
-            let r = adds.get(i).map(|t| cell_exact(t, half));
-            let left = match l {
-                Some(t) => Span::styled(t, diff_style("-")),
-                None => Span::raw(" ".repeat(half)),
-            };
-            let right = match r {
-                Some(t) => Span::styled(t, diff_style("+")),
-                None => Span::raw(" ".repeat(half)),
-            };
-            out.lines.push(Line::from(vec![left, Span::styled(" │ ", dim), right]));
-        }
-        dels.clear();
-        adds.clear();
-    }
-
-    for raw in sanitize(text).lines() {
-        if mem::exceeded() {
-            break;
-        }
-        let line = clean_code(raw);
-        // Dentro de um hunk toda linha começa com ' ', '-', '+' ou '\\': `@@ ` e `diff ` só podem
-        // ser cabeçalho novo, mesmo que a contagem do hunk anterior tenha sido enorme ou errada.
-        if line.starts_with("@@ ") || line.starts_with("diff ") {
-            old_left = 0;
-            new_left = 0;
-        }
-        let in_hunk = old_left > 0 || new_left > 0;
-        if in_hunk && line.starts_with('-') {
-            old_left = old_left.saturating_sub(1);
-            dels.push(line[1..].to_string());
-        } else if in_hunk && line.starts_with('+') {
-            new_left = new_left.saturating_sub(1);
-            adds.push(line[1..].to_string());
-        } else if in_hunk && !line.starts_with('\\') {
-            flush(&mut out, &mut dels, &mut adds, half);
-            old_left = old_left.saturating_sub(1);
-            new_left = new_left.saturating_sub(1);
-            let t = line.strip_prefix(' ').unwrap_or(&line);
-            out.lines.push(Line::from(vec![
-                Span::styled(cell_exact(t, half), blank),
-                Span::styled(" │ ", dim),
-                Span::styled(cell_exact(t, half), blank),
-            ]));
-        } else {
-            flush(&mut out, &mut dels, &mut adds, half);
-            if let Some(rest) = line.strip_prefix("@@ ") {
-                let mut parts = rest.split_whitespace();
-                old_left = parts.next().map_or(0, hunk_count);
-                new_left = parts.next().map_or(0, hunk_count);
-            }
-            let style = diff_style(&line);
-            let w = half * 2 + 3;
-            out.lines.push(Line::from(Span::styled(cell_exact(&line, w), style)));
-        }
-    }
-    flush(&mut out, &mut dels, &mut adds, half);
-    memory_error().unwrap_or(out)
-}
-
 /// Desenha só uma tabela já em células de texto (CSV/TSV); `header` estiliza a primeira linha.
 pub fn render_table_only(
     rows: Vec<Vec<String>>,
@@ -2853,25 +2748,6 @@ mod tests {
         }
 
         #[test]
-        fn diff_split_pareia_removidas_e_adicionadas() {
-            let d = "--- a/x\n+++ b/x\n@@ -1,3 +1,3 @@\n ctx\n-velho\n+novo\n fim\n";
-            let r = render_diff_split(d, 41);
-            let txt: Vec<String> = r.lines.iter().map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()).collect();
-            assert_eq!(txt.len(), 6, "{txt:?}");
-            assert!(txt[4].starts_with("velho") && txt[4].contains("│ novo"), "{txt:?}");
-            assert!(txt.iter().all(|l| l.width() == 41), "{txt:?}");
-        }
-
-        #[test]
-        fn diff_split_trunca_linhas_largas_e_trata_menos_menos_dentro_do_trecho() {
-            let d = "@@ -1,2 +1,1 @@\n--- um\n-x\n+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n";
-            let r = render_diff_split(d, 21);
-            let txt: Vec<String> = r.lines.iter().map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()).collect();
-            assert!(txt[1].starts_with("-- um"), "{txt:?}");
-            assert!(txt.iter().any(|l| l.contains('…')), "{txt:?}");
-        }
-
-        #[test]
         fn bloco_diff_pinta_adicoes_e_remocoes() {
             let r = render_with("```diff\n-a\n+b\n c\n```\n", &RenderOpts { width: 40, images: None, ..Default::default() });
             let bg = |i: usize| r.lines[i].spans.iter().find_map(|s| s.style.bg);
@@ -3044,15 +2920,5 @@ mod tests {
     fn section_source_sem_mapa_de_linhas_devolve_none() {
         let r = error_rendered("x");
         assert_eq!(section_source("# A\n", &r, 0), None);
-    }
-
-    #[test]
-    fn split_hunk_com_contagem_absurda_nao_engole_os_cabecalhos() {
-        let diff = "@@ -1,999999 +1,999999 @@\n-a\n+b\ndiff --git a/x b/x\n--- a/x\n+++ b/x\n";
-        let r = render_diff_split(diff, 40);
-        let texts: Vec<String> =
-            r.lines.iter().map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect()).collect();
-        let header = texts.iter().find(|t| t.contains("--- a/x")).expect("cabeçalho renderizado");
-        assert!(!header.contains(" │ "), "cabeçalho não pode virar duas colunas: {header:?}");
     }
 }
