@@ -814,6 +814,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mdv-export"
+version = "0.4.4"
+dependencies = [
+ "csv",
+ "flate2",
+ "image",
+ "mdv-text",
+ "pulldown-cmark",
+]
+
+[[package]]
 name = "mdv-text"
 version = "0.4.4"
 dependencies = [

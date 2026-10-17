@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/mdv-text", "crates/mdv-tools"]
+members = [".", "crates/mdv-text", "crates/mdv-tools", "crates/mdv-export"]
 resolver = "2"
 
 [workspace.package]
@@ -11,6 +11,7 @@ license = "MIT"
 pulldown-cmark = { version = "0.13", default-features = false }
 tempfile = "3"
 mdv-text = { path = "crates/mdv-text" }
+mdv-export = { path = "crates/mdv-export" }
 
 [package]
 name = "mdv"
