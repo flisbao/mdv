@@ -206,6 +206,8 @@ fn versao_imprime_nome_e_numero() {
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), concat!("mdv-tools ", env!("CARGO_PKG_VERSION")));
 }
 
+// Windows não aceita ESC em nome de arquivo.
+#[cfg(unix)]
 #[test]
 fn nome_de_arquivo_com_escape_nao_chega_ao_stdout_nem_ao_stderr() {
     let dir = tempfile::tempdir().unwrap();
