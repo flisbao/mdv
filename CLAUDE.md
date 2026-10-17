@@ -17,12 +17,13 @@ cargo run --release -- -p samples/img.md       # imagem local em meio-bloco
 cargo run --release -- -p csv samples/dados.csv   # também: json, tsv
 cargo run --release -- -p json samples/itens.json   # tabela; --as schema para o esquema
 cargo run --release -- -p sample.md              # diagramas Mermaid só viram imagem com --graphics (terminal Kitty); sem isso saem como código
+cargo run --release -- samples/tabelas-export.md -o /tmp/t.xlsx   # exporta (.pdf .docx .odt .xlsx .ods)
 cargo run --release -p mdv-tools -- check-links sample.md   # binário mdv-tools
 cargo clippy --workspace --all-targets
 cargo test --workspace --no-default-features   # sem Mermaid nem rede (features `mermaid`, `remote`)
 ```
 
-`cargo test --workspace` roda os testes unitários (`render/`, `main.rs`, `cli.rs`, `image.rs`, `net.rs`, `mermaid_native.rs`, `stream.rs`, `data.rs`, `golden_ansi.rs`, `app/keys_tests.rs`, mais os de `crates/mdv-text` e `crates/mdv-tools`), `tests/cli.rs` (executa o binário) e `tests/golden.rs` (saída ANSI contra `tests/golden/`, sem `UPDATE_GOLDEN=1`). Para validar mudanças de renderização, também use `-p` com `sample.md` ou com `samples/` — funciona sem terminal interativo.
+`cargo test --workspace` roda os testes unitários (`render/`, `main.rs`, `cli.rs`, `image.rs`, `net.rs`, `mermaid_native.rs`, `stream.rs`, `data.rs`, `golden_ansi.rs`, `app/keys_tests.rs`, mais os de `crates/mdv-text`, `crates/mdv-tools` e `crates/mdv-export`), `tests/cli.rs` (executa o binário) e `tests/golden.rs` (saída ANSI contra `tests/golden/`, sem `UPDATE_GOLDEN=1`). Para validar mudanças de renderização, também use `-p` com `sample.md` ou com `samples/` — funciona sem terminal interativo.
 
 O projeto, README e mensagens de erro/ajuda são em português.
 
@@ -52,6 +53,7 @@ Um único pipeline: entrada (Markdown, JSON, CSV/TSV) → `Vec<Line>` do ratatui
 - `src/stream.rs`: leitor de stdin em thread (`Utf8Accum`, `spawn_stdin_reader`).
 - `crates/mdv-text` (lib): `sanitize`, `parse_options`, `slugify`, `percent_decode`, `is_external`, `is_confined`, `Heading`, `headings`, `section_text`; sem I/O, só `pulldown-cmark`. `render.rs` reexporta `sanitize` e `parse_options` (`pub(crate) use`).
 - `crates/mdv-tools` (lib + bin `mdv-tools`): `extract-code`, `section`, `check-links` (antigos `--extract-code`, `--section`, `--check-links`); `extract.rs` e `links.rs` com os tetos antigos (200 problemas, 20 000 links, 50 `.md` de 5 MiB), `input.rs` com o teto de 16 MiB; depende só de `mdv-text`, nunca do `mdv`. O pacote `mdv` fica na raiz; as duas crates ficam em `crates/`.
+- `crates/mdv-export` (lib): `convert(&Input, &Select, Format, &Context) -> Result<Output, String>` (Markdown → PDF/DOCX/ODT; Markdown/CSV/TSV → XLSX/ODS); depende só de `mdv-text`; o limite de memória (`Budget`) e as imagens (`PictureProvider`) entram por parâmetro e o `src/export.rs` do `mdv` os adapta a `mem` e `ImageStore`; escritores à mão (ZIP, XML, PDF), sem I/O de arquivo; `src/export.rs` = gravação atômica + `run_export` (`-o`).
 - `src/mem.rs`: limite de memória do processo (`--memory-buffer`, `MDV_MEMORY_BUFFER`, padrão 512 MiB). `CountingAlloc` é o `#[global_allocator]` (conta bytes vivos, teto duro `limite×1,5+16 MiB`); `check()`/`exceeded()` são os pontos de checagem usados por `render_with`, `layout_table`, `render_code`, `data.rs` e `main.rs`; ao estourar devolvem `error_rendered(MemoryLimit)`. `check_parse` barra antes de analisar o texto cuja árvore do `pulldown-cmark` passaria do limite. Testes unitários **não** alteram o limite global (rodam em paralelo); o estouro real é testado pelo binário em `tests/cli.rs`.
 - `src/clip.rs`: base64 e OSC 52 (`y`/`Y`); a TUI guarda a sequência em `App.pending_osc` e o `event_loop` a escreve.
 - `src/nav.rs` e `src/browse.rs`: navegação na TUI. `nav::resolve` classifica o destino de um link (âncora, `.md` relativo confinado, `http(s)`/`mailto` sem `?attach=`); `open_external` roda `xdg-open`/`open` só depois do `y`. O texto de cada link carrega o índice em `Rendered.links` na cor do sublinhado (`render::link_id`; `strip_link_marks` tira a marca antes de desenhar). `browse.rs` tem `Tab`/`Enter`/`Backspace`, a pilha `App.back` e `open_file`. `open_file` recebe o `Doc` do documento aberto (links seguem como Markdown) e `Back::File` guarda o `Doc` para o `Backspace` restaurar. Textos vindos de URL, âncora e nome de arquivo passam por `render::sanitize` antes de ir para a barra ou o seletor.

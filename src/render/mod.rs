@@ -18,6 +18,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub(crate) use mdv_text::{parse_options, sanitize};
 
+use mdv_text::summary_text;
+
 use crate::graphics;
 use crate::mem;
 use crate::image::{halfblock, Graphic, ImageState, ImageStore, MAX_IMAGE_COLS, MAX_IMAGE_ROWS};
@@ -153,10 +155,6 @@ pub fn error_rendered(msg: &str) -> Rendered {
 
 pub fn clamp_width(width: usize) -> usize {
     width.clamp(MIN_WIDTH, MAX_WIDTH)
-}
-
-fn summary_text(line: &str) -> Option<&str> {
-    line.trim().strip_prefix("<summary>")?.strip_suffix("</summary>").map(str::trim)
 }
 
 /// Opções de renderização: largura, se houver onde buscar imagens e a rolagem do código.

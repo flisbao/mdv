@@ -37,9 +37,7 @@ pub fn headings(md: &str) -> Vec<Heading> {
 
 /// Markdown cru da seção `idx`: do título até o próximo de nível igual ou menor.
 pub fn section_text(md: &str, heads: &[Heading], idx: usize) -> String {
-    let h = &heads[idx];
-    let end = heads[idx + 1..].iter().find(|n| n.level <= h.level).map_or(md.len(), |n| n.start);
-    let mut text = md[h.start..end].trim_end().to_string();
+    let mut text = md[crate::section_range(md, heads, idx)].trim_end().to_string();
     text.push('\n');
     text
 }

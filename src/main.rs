@@ -5,6 +5,7 @@ mod clip;
 mod config;
 mod data;
 mod doc;
+mod export;
 mod graphics;
 #[cfg(test)]
 mod golden_ansi;
@@ -21,7 +22,6 @@ mod plain;
 mod stats;
 mod stream;
 mod render;
-
 use std::io::{self, IsTerminal};
 use std::path::Path;
 use std::process::ExitCode;
@@ -78,12 +78,12 @@ fn run_cli() -> Result<(), Failure> {
     let stdout_tty = io::stdout().is_terminal();
     let interactive = !cli.common.plain && stdout_tty;
     let width = cli.common.width.unwrap_or(render::MAX_WIDTH);
+    if let cli::Command::Export(e) = &cli.command { return export::run_export(&cli, e, mem_warning.as_deref()); }
     if !interactive {
         if let Some(w) = &mem_warning {
             eprintln!("mdv: {w}");
         }
     }
-
     // `--follow` com stdin: a TUI abre na hora e o texto vai chegando aos poucos.
     if cli.common.follow && interactive && cli.command != cli::Command::Toc && reads_stdin(cli.common.path.as_deref()) {
         let rx = stream::spawn_stdin_reader(usize::try_from(MAX_INPUT_BYTES).unwrap_or(usize::MAX));

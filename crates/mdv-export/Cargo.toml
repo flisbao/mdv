@@ -1,0 +1,13 @@
+[package]
+name = "mdv-export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Conversão de Markdown em PDF, DOCX e ODT e de tabelas (CSV, TSV, Markdown) em XLSX e ODS"
+
+[dependencies]
+mdv-text.workspace = true
+pulldown-cmark.workspace = true
+csv = "1"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+image = { version = "0.25", default-features = false, features = ["png"] }

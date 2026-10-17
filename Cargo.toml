@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/mdv-text", "crates/mdv-tools"]
+members = [".", "crates/mdv-text", "crates/mdv-tools", "crates/mdv-export"]
 resolver = "2"
 
 [workspace.package]
@@ -11,6 +11,7 @@ license = "MIT"
 pulldown-cmark = { version = "0.13", default-features = false }
 tempfile = "3"
 mdv-text = { path = "crates/mdv-text" }
+mdv-export = { path = "crates/mdv-export" }
 
 [package]
 name = "mdv"
@@ -22,6 +23,8 @@ description = "Visualizador de Markdown no terminal (renderizador + TUI)"
 [dependencies]
 pulldown-cmark.workspace = true
 mdv-text.workspace = true
+mdv-export.workspace = true
+tempfile.workspace = true
 ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 syntect = { version = "5", default-features = false, features = ["parsing", "default-syntaxes", "default-themes", "regex-fancy"] }
 unicode-width = "0.2"
