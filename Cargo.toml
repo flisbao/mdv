@@ -44,9 +44,15 @@ remote = ["images", "dep:ureq", "dep:url"]
 tempfile.workspace = true
 
 [profile.release]
-lto = true
+lto = "thin"
 strip = true
 overflow-checks = true
+
+# Distribuição: LTO completo e uma única unidade de codegen (mais lento de compilar, binário menor).
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
 
 [package.metadata.generate-rpm]
 assets = [
