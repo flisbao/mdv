@@ -7,6 +7,7 @@ use mdv_tools::args::{parse, Command, Parsed};
 use mdv_tools::extract::{extract, ExtractOpts};
 use mdv_tools::input::{read_limited, MAX_INPUT_BYTES};
 use mdv_tools::links;
+use mdv_text::sanitize;
 
 const HELP: &str = "mdv-tools - ferramentas de linha de comando sobre Markdown
 
@@ -73,7 +74,7 @@ fn run() -> Result<(), Failure> {
             let (source, md) = load_source(path.as_deref())?;
             let (label, base) = match &source {
                 Source::File(p) => (
-                    p.display().to_string(),
+                    sanitize(&p.display().to_string()).into_owned(),
                     p.parent()
                         .filter(|d| !d.as_os_str().is_empty())
                         .map_or_else(|| PathBuf::from("."), Path::to_path_buf),
@@ -90,7 +91,7 @@ fn run() -> Result<(), Failure> {
 fn load_source(path: Option<&str>) -> Result<(Source, String), Failure> {
     let fail = |what: &str| {
         let what = what.to_string();
-        move |e: io::Error| Failure::Runtime(format!("não consegui ler {what}: {e}"))
+        move |e: io::Error| Failure::Runtime(sanitize(&format!("não consegui ler {what}: {e}")).into_owned())
     };
     match path {
         Some("-") => Ok((Source::Stdin, read_limited(io::stdin().lock(), MAX_INPUT_BYTES).map_err(fail("stdin"))?)),

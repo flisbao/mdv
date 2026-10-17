@@ -205,3 +205,17 @@ fn versao_imprime_nome_e_numero() {
     let out = tools(&["-V"], "");
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), concat!("mdv-tools ", env!("CARGO_PKG_VERSION")));
 }
+
+#[test]
+fn nome_de_arquivo_com_escape_nao_chega_ao_stdout_nem_ao_stderr() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = dir.path().join("z\x1b[31m.md");
+    std::fs::write(&doc, "[x](#nada)\n").unwrap();
+    let out = tools(&["check-links", doc.to_str().unwrap()], "");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(!out.stdout.contains(&0x1b), "{:?}", String::from_utf8_lossy(&out.stdout));
+    let ruim = dir.path().join("nao\x1b[31mexiste.md");
+    let out = tools(&["section", "A", ruim.to_str().unwrap()], "");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(!out.stderr.contains(&0x1b), "{:?}", String::from_utf8_lossy(&out.stderr));
+}
