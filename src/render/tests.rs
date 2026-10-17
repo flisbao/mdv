@@ -1043,3 +1043,26 @@ fn fake_imagem_em_celula_vira_referencia_numerada() {
     let t = joined_text(&com_fake("| a |\n|---|\n| ![x](a.png) |\n", &f));
     assert!(t.contains("↓1"));
 }
+
+/// Spec 4: nenhum arquivo com mais de ~500 linhas de produção (antes de `#[cfg(test)]`).
+#[test]
+fn arquivos_de_producao_tem_ate_500_linhas() {
+    let arquivos: &[(&str, &str)] = &[
+        ("mod.rs", include_str!("mod.rs")),
+        ("model.rs", include_str!("model.rs")),
+        ("outline.rs", include_str!("outline.rs")),
+        ("theme.rs", include_str!("theme.rs")),
+        ("ansi.rs", include_str!("ansi.rs")),
+        ("wrap.rs", include_str!("wrap.rs")),
+        ("inline.rs", include_str!("inline.rs")),
+        ("list.rs", include_str!("list.rs")),
+        ("table.rs", include_str!("table.rs")),
+        ("images.rs", include_str!("images.rs")),
+        ("highlight.rs", include_str!("highlight.rs")),
+        ("renderer.rs", include_str!("renderer.rs")),
+    ];
+    for (nome, src) in arquivos {
+        let producao = src.lines().take_while(|l| !l.starts_with("#[cfg(test)]")).count();
+        assert!(producao <= 500, "{nome} tem {producao} linhas de produção");
+    }
+}
