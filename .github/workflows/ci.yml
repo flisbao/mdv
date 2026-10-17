@@ -25,8 +25,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Testes
-        run: cargo test --release
+        run: cargo test --release --workspace
 
       - name: Saída plain do sample
         shell: bash
         run: cargo run --release -- -p -w 60 sample.md
+
+      - name: mdv-tools sobre o sample
+        shell: bash
+        run: cargo run --release -p mdv-tools -- check-links sample.md
