@@ -1,6 +1,7 @@
 //! Exportação de tabelas para planilha (XLSX e ODS): o modelo, as fontes (CSV/TSV e tabelas do
 //! Markdown) e os dois escritores.
 pub mod model;
+pub mod ods;
 pub mod xlsx;
 
 use super::{Budget, Output};
