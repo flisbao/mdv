@@ -9,8 +9,6 @@ pub const MAX_HEAD: usize = 100_000;
 pub enum Mode {
     Markdown,
     Json,
-    /// Transcrição de agente em JSONL (`mdv chat`).
-    Chat,
     Table { delimiter: u8 },
 }
 
@@ -127,7 +125,6 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         Some("json") => cli.mode = Mode::Json,
         Some("csv") => cli.mode = Mode::Table { delimiter: b',' },
         Some("tsv") => cli.mode = Mode::Table { delimiter: b'\t' },
-        Some("chat") => cli.mode = Mode::Chat,
         _ => explicit_mode = false,
     }
     if explicit_mode {

@@ -624,12 +624,11 @@ fn graphics_invalido_e_erro_de_uso() {
 }
 
 #[test]
-fn chat_renderiza_papeis_e_ferramentas() {
-    let t = "{\"role\":\"user\",\"content\":\"oi\"}\n{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"ls\"}}]}\n";
-    let out = mdv(&["chat", "-p", "-"], t);
-    assert!(out.status.success());
-    let txt = String::from_utf8_lossy(&out.stdout);
-    assert!(txt.contains("Usuário") && txt.contains("Assistente") && txt.contains("Bash"), "{txt}");
+fn chat_foi_removido() {
+    // `chat` deixou de ser subcomando: vira o primeiro caminho e o `-` é o segundo.
+    let out = mdv(&["chat", "-p", "-"], "{\"role\":\"user\",\"content\":\"oi\"}\n");
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr(&out).contains("informe um único arquivo"), "{}", stderr(&out));
 }
 
 #[test]

@@ -1,6 +1,5 @@
 mod ai;
 mod browse;
-mod chat;
 mod cli;
 mod clip;
 mod data;
@@ -71,7 +70,6 @@ USO:
     mdv json [opções] <arquivo|->
     mdv csv|tsv [opções] <arquivo|->
     mdv <pasta>            (seletor: .md da pasta por data, filtro ao digitar)
-    mdv chat <transcricao.jsonl|->   (conversa de agente: papéis, ferramentas e raciocínio recolhidos)
     (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
 
 OPÇÕES:
@@ -369,10 +367,6 @@ fn render_doc(doc: &DocOpts, text: &str, width: usize, images: &image::ImageStor
                 &render::RenderOpts { width, images: Some(images), code_scroll: doc.code_scroll },
             )
         }
-        cli::Mode::Chat => render::render_with(
-            &chat::to_markdown(text),
-            &render::RenderOpts { width, images: Some(images), code_scroll: doc.code_scroll },
-        ),
         cli::Mode::Json => {
             let opts = data::JsonOpts {
                 path: doc.json_path.clone(),
@@ -399,7 +393,6 @@ fn raw_lang(mode: cli::Mode) -> &'static str {
     match mode {
         cli::Mode::Markdown => "md",
         cli::Mode::Json => "json",
-        cli::Mode::Chat => "json",
         cli::Mode::Table { .. } => "text",
     }
 }
@@ -1994,23 +1987,15 @@ mod tests {
     }
 
     #[test]
-    fn link_md_dentro_do_chat_abre_como_markdown_e_backspace_volta_ao_chat() {
+    fn backspace_restaura_o_modo_do_documento_anterior() {
         let dir = tempfile::tempdir().unwrap();
-        let chat = dir.path().join("conversa.jsonl");
-        let jsonl = "{\"role\":\"assistant\",\"content\":\"veja [leia](leia.md)\"}\n";
-        fs::write(&chat, jsonl).unwrap();
-        fs::write(dir.path().join("leia.md"), "# Leia\n\ntexto\n").unwrap();
-        let mut app = test_app(Source::File(chat.clone()), jsonl);
-        app.doc.mode = cli::Mode::Chat;
-        app.view.height = 5;
-        app.rerender(60);
-        key(&mut app, KeyCode::Tab);
-        assert!(app.link_at.is_some(), "o link do chat precisa ser selecionável");
-        key(&mut app, KeyCode::Enter);
-        assert_eq!(app.doc.mode, cli::Mode::Markdown);
-        app.rerender(60);
+        let json = dir.path().join("d.json");
+        fs::write(&json, "{\"a\":1}\n").unwrap();
+        let mut app = test_app(Source::Stdin, "# A\n");
+        app.back.push(browse::Back::File { path: json.clone(), line: 0, mode: cli::Mode::Json });
         key(&mut app, KeyCode::Backspace);
-        assert_eq!(app.doc.mode, cli::Mode::Chat, "voltar restaura o modo do chat");
+        assert_eq!(app.doc.mode, cli::Mode::Json);
+        assert!(matches!(&app.source, Source::File(p) if *p == json));
     }
 
     #[test]
