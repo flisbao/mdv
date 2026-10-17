@@ -961,3 +961,85 @@ fn section_source_sem_mapa_de_linhas_devolve_none() {
     let r = error_rendered("x");
     assert_eq!(section_source("# A\n", &r, 0), None);
 }
+
+struct FakeImages {
+    state: fn() -> ImageState,
+    graphics: bool,
+    mermaid: bool,
+}
+
+fn quadrada() -> ImageState {
+    ImageState::Ready(Arc::new(image::DynamicImage::new_rgb8(4, 4)))
+}
+
+impl ImageProvider for FakeImages {
+    fn graphics_enabled(&self) -> bool {
+        self.graphics
+    }
+    fn graphic(&self, _: &Arc<image::DynamicImage>, _: usize, _: usize) -> Option<crate::image::Graphic> {
+        None
+    }
+    fn mermaid_enabled(&self) -> bool {
+        self.mermaid
+    }
+    fn image(&self, _: &str) -> ImageState {
+        (self.state)()
+    }
+    fn mermaid(&self, _: &str) -> ImageState {
+        (self.state)()
+    }
+    fn mermaid_key(&self, source: &str) -> String {
+        format!("fake:{}", source.len())
+    }
+}
+
+fn com_fake(md: &str, f: &FakeImages) -> Rendered {
+    render_with(md, &RenderOpts { width: 40, images: Some(f), ..Default::default() })
+}
+
+#[test]
+fn fake_imagem_pronta_vira_meio_bloco_sem_disco() {
+    let f = FakeImages { state: quadrada, graphics: false, mermaid: false };
+    let r = com_fake("![x](qualquer.png)", &f);
+    assert!(r.lines.iter().any(|l| l.spans.iter().any(|s| s.content.contains('▀'))));
+}
+
+#[test]
+fn fake_imagem_carregando_e_falha_mostram_aviso() {
+    let f = FakeImages { state: || ImageState::Loading, graphics: false, mermaid: false };
+    assert!(joined_text(&com_fake("![x](a.png)", &f)).contains("… carregando]"));
+    let f = FakeImages { state: || ImageState::Failed("quebrou".into()), graphics: false, mermaid: false };
+    assert!(joined_text(&com_fake("![x](a.png)", &f)).contains("— quebrou]"));
+}
+
+#[test]
+fn fake_mermaid_desligado_mostra_codigo() {
+    let f = FakeImages { state: quadrada, graphics: false, mermaid: false };
+    let r = com_fake("```mermaid\ngraph TD; A-->B\n```", &f);
+    assert!(joined_text(&r).contains("graph TD"));
+    assert!(r.mermaids.is_empty());
+}
+
+#[test]
+fn fake_mermaid_ligado_vira_figura_e_registra_o_span() {
+    let f = FakeImages { state: quadrada, graphics: false, mermaid: true };
+    let r = com_fake("```mermaid\ngraph TD; A-->B\n```", &f);
+    assert_eq!(r.mermaids.len(), 1);
+    assert_eq!(r.mermaids[0].key, format!("fake:{}", "graph TD; A-->B\n".len()));
+    assert!(!joined_text(&r).contains("graph TD"));
+}
+
+#[test]
+fn fake_mermaid_renderizando_e_com_erro_mostram_codigo_com_rotulo() {
+    let f = FakeImages { state: || ImageState::Loading, graphics: false, mermaid: true };
+    assert!(joined_text(&com_fake("```mermaid\ngraph TD; A-->B\n```", &f)).contains("mermaid (renderizando…)"));
+    let f = FakeImages { state: || ImageState::Failed("x".into()), graphics: false, mermaid: true };
+    assert!(joined_text(&com_fake("```mermaid\ngraph TD; A-->B\n```", &f)).contains("mermaid (erro: x)"));
+}
+
+#[test]
+fn fake_imagem_em_celula_vira_referencia_numerada() {
+    let f = FakeImages { state: quadrada, graphics: false, mermaid: false };
+    let t = joined_text(&com_fake("| a |\n|---|\n| ![x](a.png) |\n", &f));
+    assert!(t.contains("↓1"));
+}

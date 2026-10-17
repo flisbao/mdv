@@ -20,7 +20,7 @@ pub(crate) use mdv_text::{parse_options, sanitize};
 
 use crate::graphics;
 use crate::mem;
-use crate::image::{halfblock, ImageState, ImageStore, MAX_IMAGE_COLS, MAX_IMAGE_ROWS};
+use crate::image::{halfblock, Graphic, ImageState, ImageStore, MAX_IMAGE_COLS, MAX_IMAGE_ROWS};
 
 /// Limites de largura de renderização (evitam alocações gigantes em `repeat`).
 pub const MIN_WIDTH: usize = 20;
@@ -34,6 +34,7 @@ const MIN_BODY_WIDTH: usize = 10;
 const MAX_HIGHLIGHT_BYTES: usize = 256 * 1024;
 
 mod ansi;
+mod images;
 mod inline;
 mod list;
 mod table;
@@ -50,6 +51,7 @@ pub use self::ansi::*;
 use self::wrap::*;
 pub use self::inline::{link_id, strip_link_marks};
 use self::inline::*;
+use self::images::*;
 use self::list::*;
 use self::table::*;
 
@@ -182,7 +184,7 @@ fn summary_text(line: &str) -> Option<&str> {
 #[derive(Default)]
 pub struct RenderOpts<'a> {
     pub width: usize,
-    pub images: Option<&'a ImageStore>,
+    pub images: Option<&'a dyn ImageProvider>,
     /// `None`: código quebrado na largura. `Some(n)`: sem quebra, a partir da coluna `n`.
     pub code_scroll: Option<usize>,
 }
@@ -291,11 +293,6 @@ impl CodeBlock {
 }
 
 /// Imagem Markdown em andamento: destino e posição em `inline` do "[imagem: " de fallback.
-struct ImageCtx {
-    url: String,
-    mark: usize,
-}
-
 struct Renderer<'a> {
     width: usize,
     out: Rendered,
@@ -305,7 +302,7 @@ struct Renderer<'a> {
     code: Option<CodeBlock>,
     table: Option<TableBuilder>,
     highlight_left: usize,
-    images: Option<&'a ImageStore>,
+    images: Option<&'a dyn ImageProvider>,
     image: Option<ImageCtx>,
     src_line: usize,
     code_scroll: Option<usize>,
@@ -314,7 +311,7 @@ struct Renderer<'a> {
 }
 
 impl<'a> Renderer<'a> {
-    fn new(width: usize, images: Option<&'a ImageStore>) -> Self {
+    fn new(width: usize, images: Option<&'a dyn ImageProvider>) -> Self {
         Renderer {
             images,
             image: None,
@@ -585,80 +582,6 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    fn end_image(&mut self) {
-        self.inline.pop_style();
-        let in_table = self.table.is_some();
-        let state = self
-            .image
-            .take()
-            .zip(self.images)
-            .map(|(ctx, store)| (ctx.mark, store.get(&ctx.url)));
-        match state {
-            // Em célula não há como intercalar linhas de imagem: a célula ganha `↓n` e a
-            // figura é desenhada depois da tabela (`flush_table_figures`).
-            Some((mark, ImageState::Ready(img))) if in_table => {
-                let from = (mark + 1).min(self.inline.pieces.len());
-                let alt: String = self.inline.pieces[from..].iter().map(|p| p.as_text().0).collect();
-                self.table_figures.push((alt, img));
-                let n = self.table_figures.len();
-                self.inline.push_dim(format!(" ↓{n}]"));
-            }
-            Some((mark, ImageState::Ready(img))) => {
-                self.inline.pieces.truncate(mark);
-                self.flush_inline();
-                self.push_image(&img);
-            }
-            Some((_, ImageState::Loading)) => self.inline.push_dim(" … carregando]"),
-            Some((_, ImageState::Failed(e))) => self.inline.push_dim(format!(" — {}]", sanitize(&e))),
-            None => self.inline.push_dim("]"),
-        }
-    }
-
-    /// Imagens que estavam em células: a tabela só tem o `↓n`; aqui vêm elas, numeradas, cada uma
-    /// com uma legenda de uma linha (cortada na largura) e o desenho.
-    fn flush_table_figures(&mut self) {
-        let figures = std::mem::take(&mut self.table_figures);
-        let dim = Style::default().fg(DIM);
-        for (i, (alt, img)) in figures.into_iter().enumerate() {
-            let (_, cont) = self.prefixes();
-            let alt = alt.trim();
-            let caption = if alt.is_empty() { format!("↓{}", i + 1) } else { format!("↓{} {alt}", i + 1) };
-            let first_row = split_by_width(&[(caption, dim)], self.content_width())
-                .into_iter()
-                .next()
-                .unwrap_or_default();
-            let mut v = cont;
-            v.extend(first_row.into_iter().map(|(t, st)| Span::styled(t, st)));
-            self.out.lines.push(Line::from(v));
-            self.push_image(&img);
-        }
-    }
-
-    fn push_image(&mut self, img: &Arc<image::DynamicImage>) {
-        let (first, cont) = self.prefixes();
-        self.take_marker();
-        let max_cols = self.width.saturating_sub(spans_width(&first)).clamp(1, MAX_IMAGE_COLS);
-        if self.images.is_some_and(ImageStore::graphics_enabled) {
-            let (cols, rows) = graphics::cell_size(img.width(), img.height(), max_cols, MAX_IMAGE_ROWS);
-            if let Some(g) = self.images.and_then(|s| s.graphic(img, cols, rows)) {
-                for (i, span) in graphics::placeholder_rows(g.id, cols, rows).into_iter().enumerate() {
-                    let mut v = if i == 0 { first.clone() } else { cont.clone() };
-                    v.push(span);
-                    self.out.lines.push(Line::from(v));
-                }
-                if !self.out.graphics.iter().any(|x| x.id == g.id) {
-                    self.out.graphics.push(GraphicRef { id: g.id, cols, rows, png: g.png });
-                }
-                return;
-            }
-        }
-        for (i, line) in halfblock(img, max_cols, MAX_IMAGE_ROWS).into_iter().enumerate() {
-            let mut v = if i == 0 { first.clone() } else { cont.clone() };
-            v.extend(line.spans);
-            self.out.lines.push(Line::from(v));
-        }
-    }
-
     fn end_table_cell(&mut self) {
         let cell = self.inline.take();
         let Some(t) = &mut self.table else { return };
@@ -766,22 +689,7 @@ impl<'a> Renderer<'a> {
     }
 
     fn render_code(&mut self, block: &CodeBlock) {
-        let mut label = block.lang.clone();
-        if block.lang == "mermaid" {
-            if let Some(store) = self.images.filter(|s| s.mermaid_enabled()) {
-                match store.get_mermaid(&block.buf) {
-                    ImageState::Ready(img) => {
-                        let start = self.out.lines.len();
-                        self.push_image(&img);
-                        let key = ImageStore::mermaid_key(&block.buf);
-                        self.out.mermaids.push(MermaidSpan { start, end: self.out.lines.len(), key });
-                        return;
-                    }
-                    ImageState::Loading => label = "mermaid (renderizando…)".into(),
-                    ImageState::Failed(e) => label = format!("mermaid (erro: {})", sanitize(&e)),
-                }
-            }
-        }
+        let Some(label) = self.mermaid_figure(block) else { return };
         let (ss, theme) = hl();
         let syntax = if block.lang.is_empty() || block.buf.len() > self.highlight_left {
             ss.find_syntax_plain_text()
