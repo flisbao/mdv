@@ -61,23 +61,45 @@ pub fn sheet_name(raw: &str, used: &[String]) -> String {
         .map(|c| if "[]:*?/\\".contains(c) || c.is_control() { ' ' } else { c })
         .collect();
     let aparar = |s: &str| s.trim_matches(|c: char| c == ' ' || c == '\'').to_string();
-    let base: String = aparar(&limpo).chars().take(31).collect();
+    let base = utf16_prefix(&aparar(&limpo), 31);
     let base = aparar(&base);
     let base = if base.is_empty() { "Planilha".to_string() } else { base };
     let mut nome = base.clone();
     let mut n = 2;
     while used.iter().any(|u| u.to_lowercase() == nome.to_lowercase()) {
         let sufixo = format!(" ({n})");
-        let cabe = 31 - sufixo.chars().count();
-        nome = format!("{}{sufixo}", base.chars().take(cabe).collect::<String>());
+        let cabe = 31 - sufixo.encode_utf16().count();
+        nome = format!("{}{sufixo}", utf16_prefix(&base, cabe));
         n += 1;
     }
     nome
 }
 
+/// Maior prefixo de `s` com no máximo `max` unidades UTF-16 (o Excel mede o nome da aba assim:
+/// um emoji fora do BMP conta 2), sem partir caractere.
+fn utf16_prefix(s: &str, max: usize) -> String {
+    let mut used = 0;
+    s.chars().take_while(|c| {
+        used += c.len_utf16();
+        used <= max
+    }).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nome_da_aba_conta_unidades_utf16() {
+        let titulo = format!("{}{}", "a".repeat(29), "😀😀😀");
+        let nome = sheet_name(&titulo, &[]);
+        assert_eq!(nome, format!("{}😀", "a".repeat(29)));
+        assert!(nome.encode_utf16().count() <= 31);
+        let outro = sheet_name(&titulo, std::slice::from_ref(&nome));
+        assert!(outro.ends_with(" (2)") && outro.encode_utf16().count() <= 31, "{outro}");
+        let emojis = sheet_name(&"😀".repeat(20), &[]);
+        assert_eq!(emojis.encode_utf16().count(), 30, "15 emojis: o 16º passaria de 31");
+    }
 
     #[test]
     fn numero_so_aceita_decimal_simples() {
