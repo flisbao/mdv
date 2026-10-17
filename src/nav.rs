@@ -1,7 +1,6 @@
 //! Navegação por links na TUI: decide o que um link faz (âncora, `.md` local, URL externa) e abre URLs.
 //! Só decide e executa o mínimo; quem muda a tela é `main.rs`.
 
-use crate::links;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -26,9 +25,9 @@ pub enum Target {
 pub fn resolve(dest: &str, base: Option<&Path>) -> Target {
     let dest = dest.trim();
     if let Some(a) = dest.strip_prefix('#') {
-        return Target::Anchor(links::percent_decode(a));
+        return Target::Anchor(mdv_text::percent_decode(a));
     }
-    if links::is_external(dest) {
+    if mdv_text::is_external(dest) {
         let scheme = dest.split(':').next().unwrap_or("").to_ascii_lowercase();
         let ok = matches!(scheme.as_str(), "http" | "https" | "mailto")
             && dest.len() <= MAX_URL_BYTES
@@ -43,11 +42,11 @@ pub fn resolve(dest: &str, base: Option<&Path>) -> Target {
         };
     }
     let (file, anchor) = match dest.split_once('#') {
-        Some((f, a)) => (f, Some(links::percent_decode(a)).filter(|a| !a.is_empty())),
+        Some((f, a)) => (f, Some(mdv_text::percent_decode(a)).filter(|a| !a.is_empty())),
         None => (dest, None),
     };
-    let file = links::percent_decode(file);
-    if file.is_empty() || !links::is_confined(&file) {
+    let file = mdv_text::percent_decode(file);
+    if file.is_empty() || !mdv_text::is_confined(&file) {
         return Target::Unsupported("caminho fora da pasta do documento".to_string());
     }
     let ext = Path::new(&file).extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
@@ -71,10 +70,10 @@ fn mailto_params_ok(url: &str) -> bool {
 
 /// Índice do título cuja âncora (slug do GitHub, com `-1`, `-2` nos repetidos) é `anchor`.
 pub fn heading_for_anchor(titles: &[&str], anchor: &str) -> Option<usize> {
-    let want = links::slugify(anchor);
+    let want = mdv_text::slugify(anchor);
     let mut seen: HashMap<String, usize> = HashMap::new();
     for (i, t) in titles.iter().enumerate() {
-        let base = links::slugify(t);
+        let base = mdv_text::slugify(t);
         let n = seen.entry(base.clone()).or_insert(0);
         let slug = if *n == 0 { base } else { format!("{base}-{n}") };
         *n += 1;

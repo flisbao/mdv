@@ -1,0 +1,9 @@
+[package]
+name = "mdv-text"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Texto de Markdown compartilhado entre mdv e mdv-tools: saneamento, títulos, links"
+
+[dependencies]
+pulldown-cmark.workspace = true
