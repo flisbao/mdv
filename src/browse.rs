@@ -3,7 +3,8 @@
 use crate::nav::{self, Target};
 use crate::picker::{self, Picker};
 use crate::render::{self, link_id};
-use crate::{image_store, read_markdown_file, App, Source};
+use crate::load::{image_store, read_markdown_file, Source};
+use crate::app::{App, Modal};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Style};
@@ -35,9 +36,9 @@ impl App {
     /// Cada link visível, na ordem do texto: (linha renderizada, índice do link).
     fn link_occurrences(&self) -> Vec<(usize, usize)> {
         let mut out = Vec::new();
-        for i in 0..self.rendered.lines.len() {
+        for i in 0..self.doc.rendered.lines.len() {
             let mut last = None;
-            for sp in &self.rendered.lines[i].spans {
+            for sp in &self.doc.rendered.lines[i].spans {
                 if let Some(id) = link_id(&sp.style) {
                     if last != Some(id) {
                         out.push((i, id));
@@ -76,14 +77,14 @@ impl App {
         if line < self.view.scroll || line >= self.view.scroll + self.view.height.max(1) {
             self.scroll_to(line.saturating_sub(self.view.height / 3));
         }
-        let url = self.rendered.links.get(id).map_or("", String::as_str);
+        let url = self.doc.rendered.links.get(id).map_or("", String::as_str);
         self.notice = Some(format!("link: {}  (Enter abre, Esc cancela)", render::sanitize(url)));
     }
 
     /// `Enter` com um link selecionado: segue o destino.
     pub fn follow_link(&mut self) {
         let Some((_, id)) = self.link_at else { return };
-        let Some(url) = self.rendered.links.get(id).cloned() else { return };
+        let Some(url) = self.doc.rendered.links.get(id).cloned() else { return };
         let base = match &self.source {
             Source::File(p) => p.parent().map(|d| {
                 if d.as_os_str().is_empty() { PathBuf::from(".") } else { d.to_path_buf() }
@@ -94,7 +95,7 @@ impl App {
             Target::Anchor(a) => self.jump_anchor(&a),
             Target::External(u) => {
                 self.notice = Some(format!("abrir no navegador: {u}  (y confirma, outra tecla cancela)"));
-                self.pending_open = Some(u);
+                self.modal = Modal::ConfirmOpen(u);
             }
             Target::Local { path, anchor } => {
                 self.open_file(path, anchor.map(Jump::Anchor), true, crate::cli::Mode::Markdown)
@@ -105,7 +106,7 @@ impl App {
 
     /// Resposta à confirmação de `pending_open`.
     pub fn confirm_open(&mut self, yes: bool) {
-        let Some(url) = self.pending_open.take() else { return };
+        let Modal::ConfirmOpen(url) = std::mem::replace(&mut self.modal, Modal::None) else { return };
         if !yes {
             self.notice = Some("cancelado".to_string());
             return;
@@ -117,10 +118,10 @@ impl App {
     }
 
     fn jump_anchor(&mut self, anchor: &str) {
-        let titles: Vec<&str> = self.rendered.outline.iter().map(|e| e.title.as_str()).collect();
+        let titles: Vec<&str> = self.doc.rendered.outline.iter().map(|e| e.title.as_str()).collect();
         match nav::heading_for_anchor(&titles, anchor) {
             Some(i) => {
-                let line = self.rendered.outline[i].line;
+                let line = self.doc.rendered.outline[i].line;
                 self.scroll_to(line);
             }
             None => self.notice = Some(format!("âncora não encontrada: #{}", render::sanitize(anchor))),
@@ -143,7 +144,7 @@ impl App {
                 if self.back.len() >= MAX_BACK {
                     self.back.remove(0);
                 }
-                self.back.push(Back::File { path: cur.clone(), line: self.view.scroll, mode: self.doc.mode });
+                self.back.push(Back::File { path: cur.clone(), line: self.view.scroll, mode: self.doc.opts.mode });
             }
         }
         self.name = render::sanitize(
@@ -155,15 +156,15 @@ impl App {
         self.source = Source::File(path);
         self.images = image_store(&self.source, &self.cli, false);
         self.seen_images_version = 0;
-        self.md = md;
+        self.doc.md = md;
         self.raw = false;
-        self.doc.mode = mode;
+        self.doc.opts.mode = mode;
         self.link_at = None;
         self.search.clear();
-        self.zoom = None;
+        self.modal = Modal::None;
         self.view.scroll = 0;
         self.pending_jump = jump;
-        self.dirty = true;
+        self.doc.dirty = true;
     }
 
     /// `Backspace`/`H`: volta ao documento anterior.
@@ -171,7 +172,7 @@ impl App {
         match self.back.pop() {
             Some(Back::File { path, line, mode }) => self.open_file(path, Some(Jump::Line(line)), false, mode),
             Some(Back::Picker(p)) => {
-                self.picker = Some(*p);
+                self.modal = Modal::Picker(*p);
                 self.link_at = None;
             }
             None => self.notice = Some("nada para voltar".to_string()),
@@ -202,7 +203,7 @@ impl App {
 impl App {
     /// Teclas no seletor: digitar filtra, ↑/↓ escolhem, Enter abre, Esc sai.
     pub fn on_picker_key(&mut self, k: KeyEvent) -> bool {
-        let Some(p) = self.picker.as_mut() else { return false };
+        let Some(p) = self.picker_mut() else { return false };
         match k.code {
             KeyCode::Esc => return true,
             KeyCode::Up => p.step(-1),
@@ -216,13 +217,13 @@ impl App {
             KeyCode::Enter => {
                 if let Some(path) = p.current().map(|e| e.path.clone()) {
                     let keep = Box::new(p.clone());
-                    self.picker = None;
+                    self.modal = Modal::None;
                     self.open_file(path, None, false, crate::cli::Mode::Markdown);
                     // Só empilha se o arquivo abriu (senão o seletor continua na tela).
                     if matches!(self.source, Source::File(_)) {
                         self.back.push(Back::Picker(keep));
                     } else {
-                        self.picker = Some(*keep);
+                        self.modal = Modal::Picker(*keep);
                     }
                 }
             }
@@ -232,7 +233,7 @@ impl App {
     }
 
     pub fn draw_picker(&self, f: &mut Frame) {
-        let Some(p) = &self.picker else { return };
+        let Some(p) = self.picker() else { return };
         let area = f.area();
         let [body, status] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
         let rows = usize::from(body.height).saturating_sub(2).max(1);

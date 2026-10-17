@@ -125,16 +125,16 @@ mod tests {
     fn local_confinado_so_md() {
         let base = Path::new("/d");
         assert_eq!(
-            resolve("sub/a.md#x", Some(base)),
-            Target::Local { path: PathBuf::from("/d/sub/a.md"), anchor: Some("x".into()) }
+            resolve("sub/a.doc.md#x", Some(base)),
+            Target::Local { path: PathBuf::from("/d/sub/a.doc.md"), anchor: Some("x".into()) }
         );
-        assert!(matches!(resolve("/etc/a.md", Some(base)), Target::Unsupported(_)));
+        assert!(matches!(resolve("/etc/a.doc.md", Some(base)), Target::Unsupported(_)));
         assert!(matches!(resolve("%2Fetc%2Fa.md", Some(base)), Target::Unsupported(_)));
-        assert!(matches!(resolve("../a.md", Some(base)), Target::Unsupported(_)));
-        assert!(matches!(resolve("%2e%2e/a.md", Some(base)), Target::Unsupported(_)));
-        assert!(matches!(resolve("sub/../../a.md", Some(base)), Target::Unsupported(_)));
+        assert!(matches!(resolve("../a.doc.md", Some(base)), Target::Unsupported(_)));
+        assert!(matches!(resolve("%2e%2e/a.doc.md", Some(base)), Target::Unsupported(_)));
+        assert!(matches!(resolve("sub/../../a.doc.md", Some(base)), Target::Unsupported(_)));
         assert!(matches!(resolve("a.png", Some(base)), Target::Unsupported(_)));
-        assert!(matches!(resolve("a.md", None), Target::Unsupported(_)));
+        assert!(matches!(resolve("a.doc.md", None), Target::Unsupported(_)));
     }
 
     #[test]
