@@ -107,7 +107,8 @@ fn text_xml(s: &str) -> String {
             continue;
         }
         flush(&mut out, &mut spaces, first);
-        first = false;
+        // Depois de tab ou quebra de linha o ODF colapsa um espaço único, como no início.
+        first = matches!(c, '\t' | '\n');
         match c {
             '\t' => out.push_str("<text:tab/>"),
             '\n' => out.push_str("<text:line-break/>"),
@@ -126,6 +127,16 @@ mod tests {
     use crate::testutil::{zip_entry as entry, Exhausted};
     use crate::xml::assert_balanced;
     use crate::Unlimited;
+
+    #[test]
+    fn espacos_unicos_conforme_a_posicao() {
+        assert_eq!(text_xml(""), "");
+        assert_eq!(text_xml(" a"), "<text:s text:c=\"1\"/>a");
+        assert_eq!(text_xml("a b"), "a b");
+        assert_eq!(text_xml("a "), "a<text:s text:c=\"1\"/>");
+        assert_eq!(text_xml("a\n b"), "a<text:line-break/><text:s text:c=\"1\"/>b");
+        assert_eq!(text_xml("a\t b"), "a<text:tab/><text:s text:c=\"1\"/>b");
+    }
 
     fn t(s: &str) -> Cell {
         Cell::Text(s.to_string())
