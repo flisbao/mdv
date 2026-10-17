@@ -41,7 +41,6 @@ pub struct Cli {
     pub toc: bool,
     pub stats: bool,
     pub check_links: bool,
-    pub latest: bool,
     pub mode: Mode,
     pub path: Option<String>,
     pub json_path: Option<String>,
@@ -101,7 +100,6 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         toc: false,
         stats: false,
         check_links: false,
-        latest: false,
         mode: Mode::Markdown,
         path: None,
         json_path: None,
@@ -158,7 +156,6 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
                 });
             }
             "--section" => cli.section = Some(value(&mut args, &a)?),
-            "--latest" => cli.latest = true,
             "--no-header" => cli.no_header = true,
             "-w" | "--width" => {
                 let v = args
@@ -238,7 +235,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
         if cli.mode != Mode::Markdown {
             return Err("--extract-code e --section só valem para Markdown".to_string());
         }
-        for (on, flag) in [(cli.toc, "--toc"), (cli.follow, "--follow"), (cli.latest, "--latest")] {
+        for (on, flag) in [(cli.toc, "--toc"), (cli.follow, "--follow")] {
             if on {
                 return Err(format!("--extract-code e --section não combinam com {flag}"));
             }
@@ -253,7 +250,6 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
             (cli.extract_code, "--extract-code"),
             (cli.section.is_some(), "--section"),
             (cli.follow, "--follow"),
-            (cli.latest, "--latest"),
         ];
         if let Some((_, flag)) = others.iter().find(|(on, _)| *on) {
             return Err(format!("--stats não combina com {flag}"));
@@ -269,7 +265,6 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
             (cli.extract_code, "--extract-code"),
             (cli.section.is_some(), "--section"),
             (cli.follow, "--follow"),
-            (cli.latest, "--latest"),
         ];
         if let Some((_, flag)) = others.iter().find(|(on, _)| *on) {
             return Err(format!("--check-links não combina com {flag}"));
@@ -509,8 +504,8 @@ mod tests {
     }
 
     #[test]
-    fn stats_nao_combina_com_toc_extracao_follow_latest() {
-        for f in ["--toc", "--extract-code", "--section", "--follow", "--latest"] {
+    fn stats_nao_combina_com_toc_extracao_follow() {
+        for f in ["--toc", "--extract-code", "--section", "--follow"] {
             let args: Vec<&str> = if f == "--section" { vec!["--stats", f, "x", "a.md"] } else { vec!["--stats", f, "a.md"] };
             let e = run(&args).unwrap_err();
             assert!(e.contains("--stats") && e.contains(f), "{f}: {e}");
@@ -519,7 +514,7 @@ mod tests {
 
     #[test]
     fn check_links_nao_combina_com_outros_modos() {
-        for f in ["--toc", "--stats", "--extract-code", "--section", "--follow", "--latest"] {
+        for f in ["--toc", "--stats", "--extract-code", "--section", "--follow"] {
             let args: Vec<&str> = if f == "--section" { vec!["--check-links", f, "x", "a.md"] } else { vec!["--check-links", f, "a.md"] };
             let e = run(&args).unwrap_err();
             assert!(e.contains("--check-links") && e.contains(f), "{f}: {e}");
@@ -541,8 +536,8 @@ mod tests {
     }
 
     #[test]
-    fn extracao_nao_combina_com_toc_follow_latest() {
-        for f in ["--toc", "--follow", "--latest"] {
+    fn extracao_nao_combina_com_toc_follow() {
+        for f in ["--toc", "--follow"] {
             let e = run(&["--extract-code", f, "a.md"]).unwrap_err();
             assert!(e.contains(f), "{f}: {e}");
         }

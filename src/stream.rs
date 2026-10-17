@@ -1,7 +1,6 @@
-//! Entrada incremental (stdin em streaming) e descoberta do `.md` mais recente.
+//! Entrada incremental (stdin em streaming).
 
 use std::io::Read;
-use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
 
 #[derive(Default)]
@@ -64,26 +63,9 @@ pub fn spawn_stdin_reader(max_bytes: usize) -> Receiver<String> {
     rx
 }
 
-pub fn newest_md(dir: &Path) -> Option<PathBuf> {
-    std::fs::read_dir(dir)
-        .ok()?
-        .filter_map(Result::ok)
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
-        .filter(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|x| x.eq_ignore_ascii_case("md") || x.eq_ignore_ascii_case("markdown"))
-        })
-        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
-        .max_by_key(|(m, _)| *m)
-        .map(|(_, p)| p)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::File;
-    use std::time::{Duration, SystemTime};
 
     #[test]
     fn utf8_dividido_entre_chunks() {
@@ -97,27 +79,5 @@ mod tests {
     fn utf8_invalido_vira_substituto_sem_travar() {
         let mut a = Utf8Accum::new();
         assert_eq!(a.push(b"a\xFFb"), "a\u{FFFD}b");
-    }
-
-    #[test]
-    fn newest_md_escolhe_o_mais_recente_e_ignora_outros() {
-        let d = tempfile::tempdir().unwrap();
-        let old = d.path().join("velho.md");
-        let new = d.path().join("novo.md");
-        let other = d.path().join("maior.txt");
-        for p in [&old, &new, &other] {
-            std::fs::write(p, "x").unwrap();
-        }
-        let now = SystemTime::now();
-        File::options().write(true).open(&old).unwrap().set_modified(now - Duration::from_secs(100)).unwrap();
-        File::options().write(true).open(&new).unwrap().set_modified(now - Duration::from_secs(10)).unwrap();
-        File::options().write(true).open(&other).unwrap().set_modified(now).unwrap();
-        assert_eq!(newest_md(d.path()), Some(new));
-    }
-
-    #[test]
-    fn newest_md_pasta_vazia() {
-        let d = tempfile::tempdir().unwrap();
-        assert_eq!(newest_md(d.path()), None);
     }
 }

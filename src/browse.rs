@@ -163,7 +163,6 @@ impl App {
         self.md = md;
         self.raw = false;
         self.doc.mode = mode;
-        self.latest_dir = None;
         self.changed.clear();
         self.marks.clear();
         self.folded.clear();

@@ -91,35 +91,11 @@ fn check_links_resolve_caminhos_a_partir_da_pasta_do_arquivo() {
 }
 
 #[test]
-fn latest_mostra_o_md_mais_novo_da_pasta() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("a.md"), "# antigo\n").unwrap();
-    std::fs::File::options()
-        .write(true)
-        .open(dir.path().join("a.md"))
-        .unwrap()
-        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(60))
-        .unwrap();
-    std::fs::write(dir.path().join("b.md"), "# novo\n").unwrap();
-    let out = mdv(&["-p", "--latest", dir.path().to_str().unwrap()], "");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    let text = String::from_utf8_lossy(&out.stdout);
-    assert!(text.contains("novo") && !text.contains("antigo"), "{text}");
-}
-
-#[test]
-fn latest_em_pasta_sem_md_e_erro_claro() {
-    let dir = tempfile::tempdir().unwrap();
-    let out = mdv(&["-p", "--latest", dir.path().to_str().unwrap()], "");
-    assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains(".md"));
-}
-
-#[test]
-fn latest_exige_uma_pasta() {
-    let out = mdv(&["-p", "--latest"], "");
-    assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("--latest"));
+fn latest_foi_removido() {
+    let out = mdv(&["-p", "--latest", "."], "");
+    assert_eq!(out.status.code(), Some(2));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("opção desconhecida: --latest"), "{err}");
 }
 
 #[test]
@@ -127,7 +103,7 @@ fn ajuda_documenta_subcomandos_e_opcoes() {
     let out = mdv(&["--help"], "");
     let text = String::from_utf8_lossy(&out.stdout);
     for item in [
-        "mdv json", "mdv csv|tsv", "--remote", "--mermaid", "--follow", "--latest", "--toc", "--stats", "--check-links", "--as",
+        "mdv json", "mdv csv|tsv", "--remote", "--mermaid", "--follow", "--toc", "--stats", "--check-links", "--as",
         "--path", "--head", "--cols", "--no-header", "--delimiter", "MDV_MMDC", "--setup-mermaid",
     ] {
         assert!(text.contains(item), "a ajuda não menciona {item}:\n{text}");
