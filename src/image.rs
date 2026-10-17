@@ -195,6 +195,8 @@ pub struct ImageStore {
     /// versão reduzida, e o zoom (`imgzoom`) decodifica este sob demanda, um por vez.
     mermaid_png: Arc<Mutex<HashMap<String, Arc<Vec<u8>>>>>,
     graphics: bool,
+    /// Teto de pixels guardado no cache; padrão: o do terminal.
+    max_pixels: Option<(u32, u32)>,
     gfx: Mutex<HashMap<(usize, usize, usize), Graphic>>, // (ponteiro da imagem, colunas, linhas)
     /// Próximo `id` gráfico; só cresce, porque o terminal guarda as imagens já enviadas.
     next_gfx: AtomicU32,
@@ -213,6 +215,7 @@ impl ImageStore {
             mermaid_hold: AtomicBool::new(false),
             mermaid_png: Arc::new(Mutex::new(HashMap::new())),
             graphics: false,
+            max_pixels: None,
             gfx: Mutex::new(HashMap::new()),
             next_gfx: AtomicU32::new(1),
             used: Mutex::new(HashSet::new()),
@@ -224,13 +227,21 @@ impl ImageStore {
         self
     }
 
+    /// Guarda as imagens em até `w`×`h` pixels (a exportação precisa de mais que o terminal).
+    pub fn with_max_pixels(mut self, w: u32, h: u32) -> Self {
+        self.max_pixels = Some((w, h));
+        self
+    }
+
     pub fn graphics_enabled(&self) -> bool {
         self.graphics
     }
 
     /// Teto de pixels guardado no cache.
     fn cap(&self) -> (u32, u32) {
-        if self.graphics {
+        if let Some(px) = self.max_pixels {
+            px
+        } else if self.graphics {
             (GFX_MAX_W, GFX_MAX_H)
         } else {
             (
@@ -481,6 +492,18 @@ mod tests {
         let store = ImageStore::new(Some(dir.path().to_path_buf()));
         assert!(matches!(store.get("meu%20diagrama.png"), ImageState::Ready(_)));
         assert!(matches!(store.get("lit%20eral.png"), ImageState::Ready(_)), "nome literal tem prioridade");
+    }
+
+    #[test]
+    fn max_pixels_troca_o_teto_do_cache() {
+        let d = tempfile::tempdir().unwrap();
+        grava_png(d.path(), "g.png", 300, 200);
+        let pequeno = ImageStore::new(Some(d.path().to_path_buf()));
+        let ImageState::Ready(a) = pequeno.get("g.png") else { panic!() };
+        assert!(a.width() as usize <= MAX_IMAGE_COLS);
+        let grande = ImageStore::new(Some(d.path().to_path_buf())).with_max_pixels(1200, 1200);
+        let ImageState::Ready(b) = grande.get("g.png") else { panic!() };
+        assert_eq!((b.width(), b.height()), (300, 200));
     }
 
     #[test]

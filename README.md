@@ -286,6 +286,31 @@ Uma lista de objetos (ou JSONL) abre como **tabela**: uma coluna por chave, obje
 
 O formato também é deduzido da extensão (`.json`, `.jsonl`, `.csv`, `.tsv`) e funciona com `-` (stdin). Tabelas mostram até 200 colunas (o rodapé avisa `+N omitidas`) e cortam células com mais de 500 caracteres; para tabelas com muitas colunas use `t` (zoom) ou `--cols`. CSV/TSV têm colunas numéricas alinhadas à direita e rodapé `N de M linhas · K colunas`. A entrada de dados é limitada a 5 MiB.
 
+## Exportar
+
+```bash
+mdv relatorio.md -o relatorio.pdf                    # também .docx e .odt
+mdv dados.csv -o dados.xlsx                          # também .ods; tsv igual
+mdv relatorio.md -o tabelas.ods --section Vendas     # só as tabelas da seção "Vendas"
+mdv relatorio.md -o tabela2.xlsx --table 2           # só a 2ª tabela do documento
+```
+
+`-o` converte e sai, sem TUI. O formato vem da extensão do arquivo de saída. Um arquivo existente só é sobrescrito com `--force`; a gravação é atômica (nunca sobra um arquivo pela metade).
+
+| Entrada | Saída |
+|---|---|
+| Markdown | `.pdf`, `.docx`, `.odt` (o documento todo) |
+| Markdown | `.xlsx`, `.ods` (só as tabelas; `--section` e `--table` escolhem quais) |
+| CSV / TSV | `.xlsx`, `.ods` |
+
+Limitações:
+
+- PDF com fontes padrão; caracteres fora de Latin-1 viram `?`, com aviso; sem realce de sintaxe.
+- Os formatos são gerados sem biblioteca externa.
+- Planilhas só com texto e número, cabeçalho em negrito.
+- Limites do Excel: 1 048 576 linhas, 16 384 colunas e 32 767 caracteres por célula; ao cortar, o `mdv` avisa.
+- `--head` e `--cols` não valem com `-o`.
+
 ## Configuração
 
 Arquivo opcional `$XDG_CONFIG_HOME/mdv/config` (ou `~/.config/mdv/config`), com linhas `chave = valor` e `#` para comentários:

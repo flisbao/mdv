@@ -5,6 +5,7 @@ mod clip;
 mod config;
 mod data;
 mod doc;
+mod export;
 mod graphics;
 #[cfg(test)]
 mod golden_ansi;
@@ -21,7 +22,6 @@ mod plain;
 mod stats;
 mod stream;
 mod render;
-
 use std::io::{self, IsTerminal};
 use std::path::Path;
 use std::process::ExitCode;
@@ -68,7 +68,7 @@ fn run_cli() -> Result<(), Failure> {
     match cli.command {
         cli::Command::Help => return write_stdout(HELP),
         cli::Command::Version => return write_stdout(&format!("mdv {}\n", env!("CARGO_PKG_VERSION"))),
-        cli::Command::Export(_) => return Err(Failure::Usage("exportação ainda não ligada".into())), _ => {}
+        _ => {}
     }
     let limit = mem::resolve(cli.common.memory_buffer, std::env::var("MDV_MEMORY_BUFFER").ok().as_deref())
         .map_err(Failure::Usage)?;
@@ -83,7 +83,7 @@ fn run_cli() -> Result<(), Failure> {
             eprintln!("mdv: {w}");
         }
     }
-
+    if let cli::Command::Export(e) = &cli.command { return export::run_export(&cli, e); }
     // `--follow` com stdin: a TUI abre na hora e o texto vai chegando aos poucos.
     if cli.common.follow && interactive && cli.command != cli::Command::Toc && reads_stdin(cli.common.path.as_deref()) {
         let rx = stream::spawn_stdin_reader(usize::try_from(MAX_INPUT_BYTES).unwrap_or(usize::MAX));

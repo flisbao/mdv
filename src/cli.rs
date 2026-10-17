@@ -179,7 +179,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
             return Err("--section só vale com -o".to_string());
         }
     }
-    if output.as_deref() == Some("") {
+    if output.as_deref().is_some_and(|o| o.is_empty() || o.starts_with('-')) {
         return Err("a opção -o precisa de um nome de arquivo".to_string());
     }
     let had: Vec<String> = flags.iter().map(|f| f.name.clone()).collect();
@@ -714,6 +714,14 @@ mod tests {
     fn o_sem_valor_ou_vazio_e_erro() {
         assert!(run(&["a.md", "-o"]).is_err());
         assert!(run(&["a.md", "-o", ""]).unwrap_err().contains("-o"));
+    }
+
+    #[test]
+    fn o_com_valor_que_parece_flag_e_erro() {
+        for a in [&["a.md", "-o", "--force"][..], &["a.md", "-o", "-p"]] {
+            let e = run(a).unwrap_err();
+            assert!(e.contains("a opção -o precisa de um nome de arquivo"), "{e}");
+        }
     }
 
     #[test]

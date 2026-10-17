@@ -79,7 +79,7 @@ fn flags_que_foram_para_o_mdv_tools_sao_rejeitadas() {
 fn ajuda_do_mdv_nao_menciona_as_flags_movidas() {
     let out = mdv(&["--help"], "");
     let text = String::from_utf8_lossy(&out.stdout);
-    for item in ["--check-links", "--extract-code", "--section", "--lang"] {
+    for item in ["--check-links", "--extract-code", "--lang"] {
         assert!(!text.contains(item), "a ajuda ainda menciona {item}");
     }
 }
@@ -484,4 +484,119 @@ fn diff_e_split_foram_removidos() {
     let out = mdv(&["-p", "diff"], "");
     assert_eq!(out.status.code(), Some(1));
     assert!(stderr(&out).contains("não consegui ler diff"), "{}", stderr(&out));
+}
+
+fn tmp_out(name: &str) -> (tempfile::TempDir, String) {
+    let d = tempfile::tempdir().unwrap();
+    let p = d.path().join(name).to_str().unwrap().to_string();
+    (d, p)
+}
+
+#[test]
+fn exporta_stdin_para_pdf_docx_odt() {
+    for (name, magic) in [("a.pdf", &b"%PDF"[..]), ("a.docx", b"PK"), ("a.odt", b"PK")] {
+        let (_d, out) = tmp_out(name);
+        let res = mdv(&["-o", &out], "# Oi\n\ntexto **forte**\n");
+        assert!(res.status.success(), "{name}: {}", String::from_utf8_lossy(&res.stderr));
+        assert!(String::from_utf8_lossy(&res.stdout).contains("exportado:"), "{name}");
+        assert!(std::fs::read(&out).unwrap().starts_with(magic), "{name}");
+    }
+}
+
+#[test]
+fn exporta_csv_e_tsv_para_xlsx_e_ods() {
+    for (fmt, stdin) in [("csv", "a,b\n1,2\n"), ("tsv", "a\tb\n1\t2\n")] {
+        for name in ["t.xlsx", "t.ods"] {
+            let (_d, out) = tmp_out(name);
+            let res = mdv(&[fmt, "-", "-o", &out], stdin);
+            assert!(res.status.success(), "{fmt} {name}: {}", String::from_utf8_lossy(&res.stderr));
+            assert!(std::fs::read(&out).unwrap().starts_with(b"PK"), "{fmt} {name}");
+        }
+    }
+}
+
+#[test]
+fn extrai_tabela_do_markdown_para_planilha_por_secao_e_por_numero() {
+    let md = "# A\n\n| x |\n|---|\n| 1 |\n\n# B\n\n| y |\n|---|\n| 2 |\n";
+    for args in [&["--section", "B"][..], &["--table", "2"][..], &[][..]] {
+        let (_d, out) = tmp_out("t.xlsx");
+        let mut a = vec!["-o", out.as_str()];
+        a.extend_from_slice(args);
+        let res = mdv(&a, md);
+        assert!(res.status.success(), "{args:?}: {}", String::from_utf8_lossy(&res.stderr));
+        assert!(std::fs::read(&out).unwrap().starts_with(b"PK"), "{args:?}");
+    }
+}
+
+#[test]
+fn markdown_sem_tabela_para_planilha_sai_com_1_e_nao_cria_arquivo() {
+    let (_d, out) = tmp_out("t.ods");
+    let res = mdv(&["-o", &out], "# so texto\n");
+    assert_eq!(res.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&res.stderr).contains("não tem tabelas"));
+    assert!(!std::path::Path::new(&out).exists());
+}
+
+#[test]
+fn csv_para_pdf_sai_com_1_e_nao_cria_arquivo() {
+    let (_d, out) = tmp_out("t.pdf");
+    let res = mdv(&["csv", "-", "-o", &out], "a\n1\n");
+    assert_eq!(res.status.code(), Some(1));
+    assert!(!std::path::Path::new(&out).exists());
+}
+
+#[test]
+fn exportar_recusa_sobrescrever_sem_force() {
+    let (_d, out) = tmp_out("a.xlsx");
+    std::fs::write(&out, "antigo").unwrap();
+    let res = mdv(&["csv", "-", "-o", &out], "a\n1\n");
+    assert_eq!(res.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&res.stderr).contains("--force"));
+    assert_eq!(std::fs::read_to_string(&out).unwrap(), "antigo");
+    let res = mdv(&["csv", "-", "-o", &out, "--force"], "a\n1\n");
+    assert!(res.status.success());
+    assert!(std::fs::read(&out).unwrap().starts_with(b"PK"));
+}
+
+#[test]
+fn exportar_formato_desconhecido_sai_com_1_e_lista_os_formatos() {
+    let (_d, out) = tmp_out("a.txt");
+    let res = mdv(&["-o", &out], "x\n");
+    assert_eq!(res.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&res.stderr);
+    assert!(err.contains(".xlsx") && err.contains(".pdf"), "{err}");
+    assert!(!std::path::Path::new(&out).exists());
+}
+
+#[test]
+fn exportar_combinacoes_invalidas_saem_com_2() {
+    for args in [
+        vec!["--toc", "-o", "a.pdf"],
+        vec!["--force"],
+        vec!["--section", "A"],
+        vec!["-o", "a.xlsx", "--section", "A", "--table", "1"],
+        vec!["csv", "-", "-o", "a.xlsx", "--head", "3"],
+        vec!["json", "-", "-o", "a.xlsx"],
+    ] {
+        let res = mdv(&args, "# t\n");
+        assert_eq!(res.status.code(), Some(2), "{args:?}");
+        assert!(!String::from_utf8_lossy(&res.stderr).is_empty(), "{args:?}");
+    }
+}
+
+#[test]
+fn exporta_as_amostras_do_repositorio() {
+    for (sample, name) in [
+        ("samples/exportar.md", "x.pdf"),
+        ("samples/exportar.md", "x.docx"),
+        ("samples/exportar.md", "x.odt"),
+        ("samples/tabelas-export.md", "x.xlsx"),
+        ("samples/tabelas-export.md", "x.ods"),
+        ("samples/dados.csv", "x.xlsx"),
+        ("samples/dados.tsv", "x.ods"),
+    ] {
+        let (_d, out) = tmp_out(name);
+        let res = Command::new(env!("CARGO_BIN_EXE_mdv")).args([sample, "-o", &out]).output().unwrap();
+        assert!(res.status.success(), "{sample} → {name}: {}", String::from_utf8_lossy(&res.stderr));
+    }
 }

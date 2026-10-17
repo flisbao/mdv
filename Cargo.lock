@@ -800,6 +800,7 @@ version = "0.4.4"
 dependencies = [
  "csv",
  "image",
+ "mdv-export",
  "mdv-text",
  "mermaid-rs-renderer",
  "pulldown-cmark",
