@@ -2,6 +2,7 @@ mod app;
 mod browse;
 mod cli;
 mod clip;
+mod config;
 mod data;
 mod doc;
 mod graphics;

@@ -21,9 +21,9 @@ pub enum JsonView {
 /// Protocolo gráfico para imagens (só no modo interativo).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Graphics {
-    #[default]
     Off,
     Kitty,
+    #[default]
     Auto,
 }
 
@@ -325,8 +325,8 @@ mod tests {
     }
 
     #[test]
-    fn graphics_tem_padrao_off_e_aceita_kitty_e_auto() {
-        assert_eq!(run(&["a.md"]).unwrap().common.graphics, Graphics::Off);
+    fn graphics_tem_padrao_auto_e_aceita_kitty_e_off() {
+        assert_eq!(run(&["a.md"]).unwrap().common.graphics, Graphics::Auto);
         assert_eq!(run(&["--graphics", "kitty", "a.md"]).unwrap().common.graphics, Graphics::Kitty);
         assert_eq!(run(&["--graphics", "auto", "a.md"]).unwrap().common.graphics, Graphics::Auto);
         assert_eq!(run(&["--graphics", "off", "a.md"]).unwrap().common.graphics, Graphics::Off);

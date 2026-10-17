@@ -26,12 +26,19 @@ ratatui = "0.30"
 syntect = { version = "5", default-features = false, features = ["parsing", "default-syntaxes", "default-themes", "regex-fancy"] }
 unicode-width = "0.2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
-ureq = { version = "2", default-features = false, features = ["tls"] }
-url = "2"
+ureq = { version = "2", default-features = false, features = ["tls"], optional = true }
+url = { version = "2", optional = true }
 serde_json = { version = "1", features = ["preserve_order"] }
 csv = "1"
-mermaid-rs-renderer = { version = "0.3.1", default-features = false }
-resvg = { version = "0.48", default-features = false, features = ["text", "system-fonts"] }
+mermaid-rs-renderer = { version = "0.3.1", default-features = false, optional = true }
+resvg = { version = "0.48", default-features = false, features = ["text", "system-fonts"], optional = true }
+
+[features]
+default = ["images", "mermaid", "remote"]
+# `image` não é opcional: `images` existe só para `mermaid`/`remote` dependerem dela (decisão da fase 6).
+images = []
+mermaid = ["images", "dep:mermaid-rs-renderer", "dep:resvg"]
+remote = ["images", "dep:ureq", "dep:url"]
 
 [dev-dependencies]
 tempfile.workspace = true

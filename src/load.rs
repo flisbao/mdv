@@ -4,6 +4,7 @@ use std::fs;
 use std::io::{self, IsTerminal, Read};
 use std::path::{Path, PathBuf};
 
+use crate::config::Config;
 use crate::{cli, graphics, image, mem, net, Failure};
 
 /// Teto de bytes lidos de arquivo ou stdin (protege a memória).
@@ -44,6 +45,17 @@ pub(crate) fn load_source(path: Option<&str>) -> Result<(Source, String), Failur
 /// `--remote` baixa imagens de URLs; os diagramas Mermaid usam o renderizador nativo
 /// (`blocking`: espera, como no `--plain`).
 pub(crate) fn image_store(source: &Source, cli: &cli::Cli, blocking: bool) -> image::ImageStore {
+    store_for(source, cli, blocking, &Config::load(), |k| std::env::var(k).ok())
+}
+
+/// `image_store` com a configuração e o ambiente injetados (testável).
+fn store_for(
+    source: &Source,
+    cli: &cli::Cli,
+    blocking: bool,
+    config: &Config,
+    env: impl Fn(&str) -> Option<String>,
+) -> image::ImageStore {
     let base = match source {
         Source::File(p) => p
             .parent()
@@ -55,14 +67,16 @@ pub(crate) fn image_store(source: &Source, cli: &cli::Cli, blocking: bool) -> im
         && match cli.common.graphics {
             cli::Graphics::Off => false,
             cli::Graphics::Kitty => true,
-            cli::Graphics::Auto => graphics::supports_kitty(|k| std::env::var(k).ok()),
+            cli::Graphics::Auto => graphics::supports_kitty(env),
         };
     let mut store = image::ImageStore::new(base).with_graphics(graphics);
     if cli.common.remote {
         store = store.with_remote(net::FetchPolicy::default(), blocking);
     }
-    // Diagramas Mermaid saem do renderizador nativo.
-    store = store.with_native_mermaid(blocking);
+    // Diagramas Mermaid saem do renderizador nativo, salvo `mermaid = off` na configuração.
+    if config.mermaid {
+        store = store.with_native_mermaid(blocking);
+    }
     store
 }
 
@@ -102,6 +116,32 @@ pub(crate) fn read_limited(reader: impl Read, max: u64) -> io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
+
+    fn kitty(k: &str) -> Option<String> {
+        (k == "TERM").then(|| "xterm-kitty".to_string())
+    }
+
+    fn mermaid_on(args: &[&str], blocking: bool, cfg: &Config, env: fn(&str) -> Option<String>) -> bool {
+        let cli = cli::parse(args.iter().map(|a| (*a).to_string())).unwrap();
+        store_for(&Source::Stdin, &cli, blocking, cfg, env).mermaid_enabled()
+    }
+
+    #[test]
+    fn mermaid_liga_sozinho_em_terminal_kitty() {
+        let on = Config::default();
+        assert_eq!(mermaid_on(&["a.md"], false, &on, kitty), cfg!(feature = "mermaid"));
+        assert!(!mermaid_on(&["a.md"], false, &on, |_| None), "terminal sem suporte: só código");
+        assert!(!mermaid_on(&["a.md"], true, &on, kitty), "plain nunca desenha");
+        assert!(!mermaid_on(&["--graphics", "off", "a.md"], false, &on, kitty));
+    }
+
+    #[test]
+    fn config_desligada_nao_desenha_mermaid_nem_com_kitty() {
+        let off = Config { mermaid: false };
+        assert!(!mermaid_on(&["a.md"], false, &off, kitty));
+        assert!(!mermaid_on(&["--graphics", "kitty", "a.md"], false, &off, kitty));
+    }
 
     #[test]
     fn read_limited_aceita_exatamente_o_teto() {

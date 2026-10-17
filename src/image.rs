@@ -264,7 +264,7 @@ impl ImageStore {
 
     /// Diagrama só vira figura com o protocolo gráfico ativo; sem ele o bloco fica como código.
     pub fn mermaid_enabled(&self) -> bool {
-        self.mermaid.is_some() && self.graphics
+        cfg!(feature = "mermaid") && self.mermaid.is_some() && self.graphics
     }
 
     /// Mermaid só com o renderizador nativo (padrão): em processo, sem subprocesso.
@@ -749,10 +749,14 @@ mod tests {
         assert!(matches!(store.get("."), ImageState::Failed(_)));
     }
 
+    #[cfg(feature = "remote")]
     use crate::net::FetchPolicy;
+    #[cfg(feature = "remote")]
     use std::io::{Read, Write};
+    #[cfg(feature = "remote")]
     use std::net::TcpListener;
 
+    #[cfg(feature = "remote")]
     fn serve_png() -> String {
         let body = png_bytes(4, 4);
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -771,16 +775,19 @@ mod tests {
         format!("http://127.0.0.1:{port}/a.png")
     }
 
+    #[cfg(feature = "remote")]
     fn local_ok() -> FetchPolicy {
         FetchPolicy { allow_private: true, ..FetchPolicy::default() }
     }
 
+    #[cfg(feature = "remote")]
     #[test]
     fn remoto_bloqueante_devolve_pronto() {
         let store = ImageStore::new(None).with_remote(local_ok(), true);
         assert!(matches!(store.get(&serve_png()), ImageState::Ready(_)));
     }
 
+    #[cfg(feature = "remote")]
     #[test]
     fn remoto_assincrono_comeca_loading_e_termina_pronto() {
         let store = ImageStore::new(None).with_remote(local_ok(), false);
@@ -796,6 +803,7 @@ mod tests {
         panic!("download não terminou");
     }
 
+    #[cfg(feature = "remote")]
     #[test]
     fn limite_de_imagens_remotas() {
         let store = ImageStore::new(None).with_remote(local_ok(), false);
@@ -822,7 +830,16 @@ mod tests {
         let sem = ImageStore::new(None).with_native_mermaid(true);
         assert!(!sem.mermaid_enabled(), "sem gráficos o diagrama fica como código");
         let com = ImageStore::new(None).with_native_mermaid(true).with_graphics(true);
-        assert!(com.mermaid_enabled());
+        assert_eq!(com.mermaid_enabled(), cfg!(feature = "mermaid"));
         assert!(!ImageStore::new(None).with_graphics(true).mermaid_enabled(), "gráficos sem mermaid ligado");
+    }
+
+    #[cfg(not(feature = "mermaid"))]
+    #[test]
+    fn sem_a_feature_mermaid_o_diagrama_nunca_e_habilitado() {
+        let store = ImageStore::new(None).with_native_mermaid(true).with_graphics(true);
+        assert!(!store.mermaid_enabled());
+        let err = crate::mermaid_native::render_png("graph TD; A-->B").unwrap_err();
+        assert!(err.contains("recompile com --features mermaid"), "{err}");
     }
 }
