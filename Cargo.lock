@@ -1094,6 +1094,7 @@ version = "0.4.4"
 dependencies = [
  "mdv-text",
  "pulldown-cmark",
+ "tempfile",
 ]
 
 [[package]]
