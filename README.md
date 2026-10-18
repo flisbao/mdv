@@ -2,7 +2,7 @@
 
 **Leia Markdown no terminal como deveria ser: com cor, estrutura e sem sair do teclado.** E converta para PDF, Word, LibreOffice e planilhas quando precisar.
 
-`mdv` transforma qualquer `.md` numa página bem formatada direto no terminal e abre num leitor interativo com busca, navegação por títulos e recarga com `r`. Também abre **JSON, CSV e TSV** como tabelas, desenha **imagens e diagramas Mermaid**, acompanha a saída de **agentes e LLMs** (`--follow`) e **exporta** para PDF, DOCX, ODT, XLSX e ODS. Um único binário, sem runtime, sem navegador.
+`mdv` transforma qualquer `.md` numa página bem formatada direto no terminal e abre num leitor interativo com busca, navegação por títulos e recarga com `r`. Também abre **JSON, CSV e TSV** como tabelas, desenha **imagens e diagramas Mermaid**, acompanha a saída de **agentes e LLMs** (`--follow`) e **exporta** para PDF, DOCX, ODT, XLSX e ODS. Dois binários pequenos e independentes (`mdv` e `mdv-tools`), sem runtime, sem navegador.
 
 [![release](https://img.shields.io/github/v/release/flisbao/mdv)](https://github.com/flisbao/mdv/releases/latest)
 [![ci](https://github.com/flisbao/mdv/actions/workflows/ci.yml/badge.svg)](https://github.com/flisbao/mdv/actions/workflows/ci.yml)
@@ -27,11 +27,11 @@ mdv vendas.csv -o vendas.xlsx          # CSV/TSV para planilha (também .ods)
 - **Feito para agentes e LLMs:** `--follow`, `--toc`, `--stats` e as ferramentas do `mdv-tools`. [Detalhes](#markdown-de-agentes-e-llms)
 - **Funciona em pipe:** com `-p`, ou quando a saída não é um terminal, imprime ANSI (serve em scripts, `less -R` e CI).
 - **Seguro com entrada não confiável:** sequências de escape do documento são neutralizadas, o tamanho de entrada e a memória têm teto, e a rede só entra com `--remote`.
-- **Portátil:** binário único em Rust para Linux (glibc e musl), macOS e Windows.
+- **Portátil:** binários em Rust, sem dependências de runtime, para Linux (glibc e musl), macOS e Windows.
 
 ## Instalação
 
-Baixe o binário da última release, extraia e coloque `mdv` no seu `PATH`:
+Baixe o pacote da última release, extraia e coloque `mdv` e `mdv-tools` no seu `PATH`:
 
 <!-- mdv:install:start -->
 | Plataforma | Download |
@@ -96,6 +96,52 @@ No macOS, se o Gatekeeper bloquear o binário baixado pelo navegador: `xattr -d 
 ```bash
 cargo install --git https://github.com/flisbao/mdv
 ```
+
+## Dois binários, cada um com seu trabalho
+
+Cada release traz dois executáveis. Eles não dependem um do outro: instale só o que for usar.
+
+| | `mdv` | `mdv-tools` |
+|---|---|---|
+| Para que serve | **ler** e **converter** documentos | **extrair** pedaços e **conferir** Markdown |
+| Quem usa | você, no terminal | scripts, CI e agentes de IA |
+| Saída | TUI colorida, ANSI ou arquivo (PDF, DOCX, ODT, XLSX, ODS) | texto puro, sem cor |
+| Peso | maior (Mermaid, imagens, TLS) | mínimo (só o analisador de Markdown) |
+
+### `mdv`: o leitor
+
+Abre Markdown, JSON, CSV e TSV num leitor interativo (busca, títulos, links, zoom de tabela e de diagrama), imprime ANSI com `-p`, acompanha texto que ainda está chegando (`--follow`), mostra índice e estatísticas (`--toc`, `--stats`) e exporta com `-o`.
+
+```bash
+mdv README.md                      # leitor interativo
+mdv -p README.md                   # imprime colorido, sem TUI
+mdv relatorio.md -o relatorio.pdf  # exporta (também .docx, .odt, .xlsx, .ods)
+```
+
+### `mdv-tools`: a caixa de ferramentas
+
+Imprime só o que você pede, sem cor, pronto para ir a um pipe. Lê de arquivo ou de stdin (`-`).
+
+| Subcomando | O que faz |
+|---|---|
+| `extract-code` | imprime só o texto dos blocos de código (`--lang`, `-n`, `--section`) |
+| `section <título>` | imprime o Markdown de uma seção |
+| `check-links` | confere offline âncoras, arquivos e imagens relativos e cercas sem fechar; sai com `1` se achar problema |
+
+```bash
+mdv-tools extract-code --lang bash -n 2 plano.md        # o 2º bloco bash
+mdv-tools section "Instalação" plano.md                 # só aquela seção
+mdv-tools extract-code --section "Instalação" plano.md | sh
+mdv-tools check-links doc.md                            # use no CI
+```
+
+### Por que dois binários?
+
+O `mdv` começou como um leitor simples e foi ganhando de tudo um pouco: chat com IA, diff entre versões, dobra de seções, `mmdc` para diagramas, recarga automática. Cada ideia era boa sozinha, mas juntas viraram um canivete suíço que não cortava bem nada. O build deu o recado: uma compilação limpa levava quase 2 minutos, e boa parte vinha de Mermaid e TLS, que quem só queria extrair um bloco de código nunca usaria. Hoje, medido em release (12 núcleos), o `mdv` compila do zero em ~1min35 e gera 14 MB; o `mdv-tools` compila em ~6 s e tem menos de 1 MB.
+
+Na 0.5.0 veio a faxina. O `mdv` voltou a fazer uma coisa só: **ler documentos** (e, de quebra, convertê-los). As ferramentas de script, que eram flags soltas (`--extract-code`, `--section`, `--check-links`), ganharam casa própria no `mdv-tools`. O texto que os dois precisam (saneamento, títulos, links) foi para a biblioteca `mdv-text`, e a exportação ficou na `mdv-export`. Ninguém copia código, e o `mdv-tools` nunca depende do `mdv`.
+
+No fim, o que antes era uma ferramenta enorme virou duas pequenas: uma para você, outra para os seus scripts. Um CI que só confere links não baixa um leitor de 14 MB, e quem lê Markdown não carrega ferramentas que nunca vai chamar.
 
 ## Uso
 
@@ -451,11 +497,11 @@ cargo test --workspace --no-default-features   # núcleo sem Mermaid nem rede
 cargo run --release -p mdv-tools -- --help
 ```
 
-Workspace com quatro crates: `mdv` (CLI e TUI), `mdv-text` (texto de Markdown compartilhado), `mdv-tools` (extrair, seções e links) e `mdv-export` (PDF/DOCX/ODT/XLSX/ODS). Features do Cargo, todas ligadas por padrão (`--no-default-features` gera um binário bem menor): `mermaid` (diagramas nativos) e `remote` (`--remote`); sem elas o bloco Mermaid sai como código e a imagem remota mostra `recompile com --features remote`. O pipeline é um só: entrada → linhas do `ratatui` → TUI ou ANSI; I/O de imagens, rede e diagramas nunca fica dentro de `src/render/`. Os blocos de instalação, ajuda e changelog são gerados pela CI a cada release (`scripts/update-readme.sh`): não edite o que está entre os marcadores `<!-- mdv:… -->`. `scripts/validar-exportacao.sh` confere as exportações com o LibreOffice (precisa de `libreoffice-calc` e `libreoffice-writer`).
+Workspace com quatro crates, dois binários e duas bibliotecas: `mdv` (binário: CLI e TUI), `mdv-tools` (binário: extrair, seções e links), `mdv-text` (biblioteca: texto de Markdown compartilhado) e `mdv-export` (biblioteca: PDF/DOCX/ODT/XLSX/ODS). Features do Cargo, todas ligadas por padrão (`--no-default-features` gera um binário bem menor): `mermaid` (diagramas nativos) e `remote` (`--remote`); sem elas o bloco Mermaid sai como código e a imagem remota mostra `recompile com --features remote`. O pipeline é um só: entrada → linhas do `ratatui` → TUI ou ANSI; I/O de imagens, rede e diagramas nunca fica dentro de `src/render/`. Os blocos de instalação, ajuda e changelog são gerados pela CI a cada release (`scripts/update-readme.sh`): não edite o que está entre os marcadores `<!-- mdv:… -->`. `scripts/validar-exportacao.sh` confere as exportações com o LibreOffice (precisa de `libreoffice-calc` e `libreoffice-writer`).
 
 ## Removido na 0.5.0
 
-Saíram para manter o `mdv` focado em **ler documentos**; o código está na tag `v0.4.4` (`git show v0.4.4:src/<arquivo>.rs`): dobra de seções (`z`/`Z`), `mmdc` e `--mermaid`/`--setup-mermaid`, tecla `?` e `MDV_AI_CMD`, `mdv chat`, `<think>`, `--idle`, `--latest`, reload automático por `mtime` (a tecla `r` continua), marcas de mudança (`{`/`}`/`c`) e `mdv diff`/`--split`. Movidos para o `mdv-tools`: `--extract-code`, `--section` e `--check-links`. (`--section` voltou ao `mdv`, mas só com `-o`, para exportar tabelas.)
+Saíram para manter o `mdv` focado em **ler documentos** (a história completa está em [Dois binários](#dois-binários-cada-um-com-seu-trabalho)); o código está na tag `v0.4.4` (`git show v0.4.4:src/<arquivo>.rs`): dobra de seções (`z`/`Z`), `mmdc` e `--mermaid`/`--setup-mermaid`, tecla `?` e `MDV_AI_CMD`, `mdv chat`, `<think>`, `--idle`, `--latest`, reload automático por `mtime` (a tecla `r` continua), marcas de mudança (`{`/`}`/`c`) e `mdv diff`/`--split`. Movidos para o `mdv-tools`: `--extract-code`, `--section` e `--check-links`. (`--section` voltou ao `mdv`, mas só com `-o`, para exportar tabelas.)
 
 ## Licença
 
