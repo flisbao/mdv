@@ -796,7 +796,7 @@ dependencies = [
 
 [[package]]
 name = "mdv"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "csv",
  "image",
@@ -816,7 +816,7 @@ dependencies = [
 
 [[package]]
 name = "mdv-export"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "csv",
  "flate2",
@@ -827,14 +827,14 @@ dependencies = [
 
 [[package]]
 name = "mdv-text"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "pulldown-cmark",
 ]
 
 [[package]]
 name = "mdv-tools"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "mdv-text",
  "pulldown-cmark",
