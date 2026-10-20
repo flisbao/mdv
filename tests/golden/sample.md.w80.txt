@@ -41,7 +41,9 @@ de exemplo (https://www.rust-lang.org).
 │ Crate          │       Papel        │ Versão │
 ├────────────────┼────────────────────┼────────┤
 │ pulldown-cmark │ parser de Markdown │   0.13 │
+├────────────────┼────────────────────┼────────┤
 │ ratatui        │  interface (TUI)   │   0.29 │
+├────────────────┼────────────────────┼────────┤
 │ syntect        │  cores no código   │      5 │
 └────────────────┴────────────────────┴────────┘
 

@@ -74,9 +74,12 @@ pub(super) fn layout_table(
             idx.iter().map(|&c| row.get(c).map_or(&[][..], Vec::as_slice)).collect();
         drawn_rows.push(draw_table_row(cont, &cells, &widths, &aligns));
     }
-    // Com célula quebrada em várias linhas, sem separador não dá para saber onde uma linha
-    // da tabela termina e a próxima começa; então toda linha de dados ganha uma régua.
-    let ruled = drawn_rows.iter().skip(usize::from(t.has_header)).any(|d| d.len() > 1);
+    // Sem régua, o olho se perde entre colunas afastadas ou células quebradas. Linha de dados
+    // com a primeira célula vazia continua o grupo da anterior (convenção para agrupar), então
+    // não ganha régua. Tabelas muito longas (dados) ficam compactas.
+    let body = drawn_rows.len().saturating_sub(usize::from(t.has_header));
+    let ruled = (2..=MAX_RULED_ROWS).contains(&body);
+    let starts_group = |ri: usize| t.rows[ri].first().is_some_and(|c| c.iter().any(|p| p.width() > 0));
     let mut lines: Vec<Line<'static>> = vec![table_border(first, &widths, ["┌", "┬", "┐"])];
     let mut pinned = 1;
     let last = drawn_rows.len().saturating_sub(1);
@@ -86,7 +89,7 @@ pub(super) fn layout_table(
             pinned += drawn.len() + 1;
         }
         lines.extend(drawn);
-        if is_head || (ruled && ri < last) {
+        if is_head || (ruled && ri < last && starts_group(ri + 1)) {
             lines.push(table_border(cont, &widths, ["├", "┼", "┤"]));
         }
     }

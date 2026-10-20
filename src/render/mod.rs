@@ -246,6 +246,8 @@ const MIN_COL_WIDTH: usize = 3;
 
 /// Teto de linhas por célula de tabela; o que passa disso termina em "…".
 const MAX_CELL_LINES: usize = 8;
+/// Acima disso (linhas de dados) a tabela não ganha réguas entre as linhas.
+const MAX_RULED_ROWS: usize = 40;
 
 #[cfg(test)]
 mod testutil;

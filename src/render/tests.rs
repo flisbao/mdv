@@ -838,14 +838,31 @@ fn sem_store_mantem_comportamento_antigo() {
         assert_eq!((v.first_col, v.shown_cols, v.total_cols), (1, 2, 2));
     }
 
+    fn regras(md: &str) -> usize {
+        render(md, 30).lines.iter().map(line_to_string).filter(|l| l.starts_with('├')).count()
+    }
+
     #[test]
-    fn tabela_com_celula_quebrada_separa_as_linhas() {
-        let md = "| A | B |\n|---|---|\n| texto bem longo que precisa quebrar | x |\n| b | y |\n";
-        let lines: Vec<String> = render(md, 24).lines.iter().map(line_to_string).collect();
-        let rules = lines.iter().filter(|l| l.starts_with('├')).count();
-        assert_eq!(rules, 2, "cabeçalho e uma régua entre as duas linhas de dados: {lines:#?}");
-        let curta: Vec<String> = render("| A |\n|---|\n| 1 |\n| 2 |\n", 24).lines.iter().map(line_to_string).collect();
-        assert_eq!(curta.iter().filter(|l| l.starts_with('├')).count(), 1, "sem quebra, só a régua do cabeçalho");
+    fn tabela_separa_as_linhas_de_dados() {
+        let longa = "| A | B |\n|---|---|\n| texto bem longo que precisa quebrar | x |\n| b | y |\n";
+        assert_eq!(regras(longa), 2, "cabeçalho e uma régua entre as duas linhas de dados");
+        assert_eq!(regras("| A |\n|---|\n| 1 |\n| 2 |\n"), 2, "vale também sem quebra de célula");
+        assert_eq!(regras("| A |\n|---|\n| 1 |\n"), 1, "uma linha só: apenas a do cabeçalho");
+    }
+
+    #[test]
+    fn primeira_celula_vazia_continua_o_grupo() {
+        let md = "| G | V |\n|---|---|\n| a | 1 |\n| | 2 |\n| | 3 |\n| b | 4 |\n";
+        assert_eq!(regras(md), 2, "cabeçalho e a régua antes do grupo `b`, nenhuma dentro do grupo `a`");
+    }
+
+    #[test]
+    fn tabela_muito_longa_fica_compacta() {
+        let mut md = String::from("| A |\n|---|\n");
+        for i in 0..=MAX_RULED_ROWS {
+            md.push_str(&format!("| {i} |\n"));
+        }
+        assert_eq!(regras(&md), 1, "só a régua do cabeçalho");
     }
 
     #[test]

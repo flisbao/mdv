@@ -656,9 +656,9 @@ mod tests {
     #[test]
     fn sem_cabecalho_nao_desenha_separador() {
         let o = TableOpts { no_header: true, ..opts() };
-        let t = text(&render_table_data("1,2\n3,4\n", &o, 40));
+        let t = text(&render_table_data("1,2\n", &o, 40));
         assert!(!t.contains('├'), "{t}");
-        assert!(t.contains('1') && t.contains('3'));
+        assert!(t.contains('1') && t.contains('2'));
     }
 
     #[test]
