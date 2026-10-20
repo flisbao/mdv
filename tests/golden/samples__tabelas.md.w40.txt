@@ -28,6 +28,7 @@ Tabelas
 │      │      │      │ 4   │ 5   │ 6   │
 ├──────┼──────┼──────┼─────┼─────┼─────┤
 │ 1    │ 2    │ 3    │ 4   │ 5   │ 6   │
+├──────┼──────┼──────┼─────┼─────┼─────┤
 │ um   │ b    │ c    │ d   │ e   │ f   │
 │ valo │      │      │     │     │     │
 │ r    │      │      │     │     │     │
@@ -71,6 +72,7 @@ Tabelas
 │                   │ saem quebradas   │
 │                   │ na largura       │
 │                   │ pedida, então…   │
+├───────────────────┼──────────────────┤
 │ https://example.c │ URL sem espaços  │
 │ om/um/caminho/mui │ quebra por       │
 │ to/longo/sem/espa │ caractere        │

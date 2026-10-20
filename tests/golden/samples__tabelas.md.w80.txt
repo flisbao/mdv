@@ -28,6 +28,7 @@ Tabelas
 │       │       │       │       │       │       │       │       │       │ 10   │
 ├───────┼───────┼───────┼───────┼───────┼───────┼───────┼───────┼───────┼──────┤
 │ 1     │ 2     │ 3     │ 4     │ 5     │ 6     │ 7     │ 8     │ 9     │ 10   │
+├───────┼───────┼───────┼───────┼───────┼───────┼───────┼───────┼───────┼──────┤
 │ um    │ b     │ c     │ d     │ e     │ f     │ g     │ h     │ i     │ j    │
 │ valor │       │       │       │       │       │       │       │       │      │
 │ bem   │       │       │       │       │       │       │       │       │      │
@@ -66,6 +67,7 @@ Tabelas
 │                                       │ do pulldown-cmark: as linhas já saem │
 │                                       │ quebradas na largura pedida, então   │
 │                                       │ quem consome não faz wrap.           │
+├───────────────────────────────────────┼──────────────────────────────────────┤
 │ https://example.com/um/caminho/muito/ │ URL sem espaços quebra por caractere │
 │ longo/sem/espacos/que/nao/cabe/na/col │                                      │
 │ una/index.html                        │                                      │

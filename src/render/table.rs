@@ -65,21 +65,28 @@ pub(super) fn layout_table(
         idx.iter().map(|&c| t.aligns.get(c).copied().unwrap_or(Alignment::None)).collect();
     let widths = compute_column_widths(&natural_widths(&t.rows, &idx), avail);
 
-    let mut lines: Vec<Line<'static>> = vec![table_border(first, &widths, ["┌", "┬", "┐"])];
-    let mut pinned = 1;
-    for (ri, row) in t.rows.iter().enumerate() {
+    let mut drawn_rows: Vec<Vec<Line<'static>>> = Vec::with_capacity(t.rows.len());
+    for row in &t.rows {
         if mem::exceeded() {
             break;
         }
         let cells: Vec<&[Piece]> =
             idx.iter().map(|&c| row.get(c).map_or(&[][..], Vec::as_slice)).collect();
-        let drawn = draw_table_row(cont, &cells, &widths, &aligns);
+        drawn_rows.push(draw_table_row(cont, &cells, &widths, &aligns));
+    }
+    // Com célula quebrada em várias linhas, sem separador não dá para saber onde uma linha
+    // da tabela termina e a próxima começa; então toda linha de dados ganha uma régua.
+    let ruled = drawn_rows.iter().skip(usize::from(t.has_header)).any(|d| d.len() > 1);
+    let mut lines: Vec<Line<'static>> = vec![table_border(first, &widths, ["┌", "┬", "┐"])];
+    let mut pinned = 1;
+    let last = drawn_rows.len().saturating_sub(1);
+    for (ri, drawn) in drawn_rows.into_iter().enumerate() {
         let is_head = ri == 0 && t.has_header;
         if is_head {
             pinned += drawn.len() + 1;
         }
         lines.extend(drawn);
-        if is_head {
+        if is_head || (ruled && ri < last) {
             lines.push(table_border(cont, &widths, ["├", "┼", "┤"]));
         }
     }

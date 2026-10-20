@@ -839,6 +839,16 @@ fn sem_store_mantem_comportamento_antigo() {
     }
 
     #[test]
+    fn tabela_com_celula_quebrada_separa_as_linhas() {
+        let md = "| A | B |\n|---|---|\n| texto bem longo que precisa quebrar | x |\n| b | y |\n";
+        let lines: Vec<String> = render(md, 24).lines.iter().map(line_to_string).collect();
+        let rules = lines.iter().filter(|l| l.starts_with('├')).count();
+        assert_eq!(rules, 2, "cabeçalho e uma régua entre as duas linhas de dados: {lines:#?}");
+        let curta: Vec<String> = render("| A |\n|---|\n| 1 |\n| 2 |\n", 24).lines.iter().map(line_to_string).collect();
+        assert_eq!(curta.iter().filter(|l| l.starts_with('├')).count(), 1, "sem quebra, só a régua do cabeçalho");
+    }
+
+    #[test]
     fn draw_sem_cabecalho_fixa_so_a_borda() {
         let out = render_table_only(vec![vec!["a".into()]], false, vec![Alignment::Left], 40);
         assert_eq!(out.tables[0].data.draw(40, 0).pinned, 1);

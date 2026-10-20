@@ -55,5 +55,6 @@ semana 41.
 │ a    │ uma descrição bem comprida    │
 │      │ para forçar o truncamento da  │
 │      │ célula na largura estreita    │
+├──────┼───────────────────────────────┤
 │ b    │ curta                         │
 └──────┴───────────────────────────────┘
