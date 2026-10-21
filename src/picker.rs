@@ -27,9 +27,10 @@ pub struct Picker {
     pub truncated: bool,
 }
 
-fn is_markdown(name: &str) -> bool {
+/// Arquivos listados no seletor: Markdown e e-mails `.msg`.
+fn is_listed(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
-    n.ends_with(".md") || n.ends_with(".markdown")
+    n.ends_with(".md") || n.ends_with(".markdown") || n.ends_with(".msg")
 }
 
 impl Picker {
@@ -40,7 +41,7 @@ impl Picker {
         for e in fs::read_dir(dir)? {
             let Ok(e) = e else { continue };
             let name = crate::render::sanitize(&e.file_name().to_string_lossy()).into_owned();
-            if !is_markdown(&name) {
+            if !is_listed(&name) {
                 continue;
             }
             // `metadata` segue links simbólicos: só entra o que é arquivo regular.
@@ -165,11 +166,13 @@ mod tests {
         fs::write(d.path().join("velho.md"), "a").unwrap();
         fs::write(d.path().join("nota.txt"), "a").unwrap();
         fs::create_dir(d.path().join("sub.md")).unwrap();
+        let c = fs::File::create(d.path().join("c.msg")).unwrap();
+        c.set_modified(SystemTime::now() + Duration::from_secs(50)).unwrap();
         let f = fs::File::create(d.path().join("novo.md")).unwrap();
         f.set_modified(SystemTime::now() + Duration::from_secs(100)).unwrap();
         let p = Picker::scan(d.path()).unwrap();
         let names: Vec<_> = p.entries.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(names, ["novo.md", "velho.md"]);
+        assert_eq!(names, ["novo.md", "c.msg", "velho.md"]);
     }
 
     #[cfg(unix)]

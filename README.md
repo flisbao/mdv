@@ -155,6 +155,7 @@ USO:
     mdv json [opções] <arquivo|->
     mdv csv|tsv [opções] <arquivo|->
     mdv [opções] <arquivo.md> -o <saída.pdf|docx|odt|xlsx|ods>
+    mdv [opções] <email.msg> [-o <saída.md|pdf|docx|odt>]
     mdv csv|tsv [opções] <arquivo|-> -o <saída.xlsx|ods>
     mdv <pasta>            (seletor: .md da pasta por data, filtro ao digitar)
     (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
@@ -172,6 +173,7 @@ OPÇÕES:
     -o, --output <A>   converte e sai (sem TUI); o formato vem da extensão de A:
                          .md  → .pdf .docx .odt (documento) ou .xlsx .ods (só as tabelas)
                          .csv/.tsv → .xlsx .ods
+                         .msg → .md .pdf .docx .odt .xlsx .ods
         --force        com -o: sobrescreve o arquivo de destino se ele já existir
         --section <T>  com -o e Markdown → planilha: só as tabelas da seção de título T
                        (com --table N: só a N-ésima tabela do documento)
@@ -247,6 +249,18 @@ mdv-tools check-links doc.md                         # confere links, sem rede
 
 O título casa por igualdade (sem distinguir caixa) ou por trecho único; ambíguo ou ausente sai com código 1. `check-links` confere âncoras (regra de slug do GitHub), arquivos e imagens relativos, links de referência sem definição e cercas de código sem fechamento, imprime um problema por linha e sai com `1` se achar algo (serve em CI). Ignora `http(s)://`, `mailto:`, `data:`, caminhos absolutos, UNC e com unidade. Limites: 200 problemas, 20 000 links, 50 outros `.md` (até 5 MiB cada).
 
+## E-mails `.msg` do Outlook
+
+`mdv` abre um `.msg` direto: assunto, remetente, destinatários, anexos e corpo viram Markdown; tabelas do HTML viram tabelas e as respostas citadas viram citações. O seletor de pasta também lista `.msg`.
+
+```bash
+mdv email.msg                  # lê o e-mail no terminal
+mdv email.msg -o email.md      # grava o Markdown (só para .msg; com --force sobrescreve)
+mdv email.msg -o email.pdf     # também .docx, .odt, .xlsx e .ods
+```
+
+A entrada é limitada a 32 MiB. Um `.msg` inválido sai com erro e código 1.
+
 ## JSON, CSV e TSV
 
 ```bash
@@ -266,6 +280,7 @@ O formato também é deduzido da extensão (`.json`, `.jsonl`, `.csv`, `.tsv`) e
 
 ```bash
 mdv relatorio.md -o relatorio.pdf                    # também .docx e .odt
+mdv email.msg -o email.md                            # .msg → Markdown (só .msg aceita -o .md)
 mdv dados.csv -o dados.xlsx                          # também .ods; tsv igual
 mdv relatorio.md -o tabelas.ods --section Vendas     # só as tabelas da seção "Vendas"
 mdv relatorio.md -o tabela2.xlsx --table 2           # só a 2ª tabela do documento

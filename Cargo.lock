@@ -948,6 +948,7 @@ dependencies = [
  "csv",
  "image",
  "mdv-export",
+ "mdv-msg",
  "mdv-text",
  "mermaid-rs-renderer",
  "pulldown-cmark",

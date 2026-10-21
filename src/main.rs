@@ -14,6 +14,7 @@ mod imgzoom;
 mod load;
 mod image;
 mod mem;
+mod msg;
 mod mermaid_native;
 mod nav;
 mod net;

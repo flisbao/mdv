@@ -31,7 +31,7 @@ pub(crate) fn load_source(path: Option<&str>) -> Result<(Source, String), Failur
             "{p} é uma pasta: abra sem -p num terminal para escolher o arquivo"
         ))),
         Some(p) => {
-            let md = read_markdown_file(Path::new(p)).map_err(read_failure(p))?;
+            let md = read_document(Path::new(p)).map_err(read_failure(p))?;
             Ok((Source::File(PathBuf::from(p)), md))
         }
         None if !io::stdin().is_terminal() => {
@@ -88,6 +88,15 @@ pub(crate) fn read_stdin() -> io::Result<String> {
     read_limited(io::stdin().lock(), MAX_INPUT_BYTES)
 }
 
+/// Lê o documento de um caminho: `.msg` vira Markdown pelo `mdv-msg`; o resto é Markdown puro.
+pub(crate) fn read_document(path: &Path) -> io::Result<String> {
+    if crate::msg::is_msg(path) {
+        crate::msg::read_msg_file(path)
+    } else {
+        read_markdown_file(path)
+    }
+}
+
 /// Lê um arquivo regular (nunca dispositivo, FIFO ou diretório) respeitando o teto.
 pub(crate) fn read_markdown_file(path: &Path) -> io::Result<String> {
     let meta = fs::metadata(path)?;
@@ -102,14 +111,20 @@ pub(crate) fn read_markdown_file(path: &Path) -> io::Result<String> {
     read_limited(fs::File::open(path)?, MAX_INPUT_BYTES)
 }
 
-/// Lê UTF-8 de `reader`, falhando se passar de `max` bytes (sem ler além de `max + 1`).
-pub(crate) fn read_limited(reader: impl Read, max: u64) -> io::Result<String> {
+/// Lê até `max` bytes de `reader` (sem ler além de `max + 1`), falhando se passar do teto.
+pub(crate) fn read_limited_bytes(reader: impl Read, max: u64) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     reader.take(max + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > max {
         let msg = format!("entrada maior que {} MiB", max / (1024 * 1024));
         return Err(io::Error::new(io::ErrorKind::InvalidData, msg));
     }
+    Ok(bytes)
+}
+
+/// Lê UTF-8 de `reader`, falhando se passar de `max` bytes.
+pub(crate) fn read_limited(reader: impl Read, max: u64) -> io::Result<String> {
+    let bytes = read_limited_bytes(reader, max)?;
     String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 

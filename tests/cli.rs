@@ -611,3 +611,66 @@ fn exportar_com_limite_acima_da_memoria_livre_avisa_uma_vez_no_stderr() {
     assert!(res.status.success(), "{}", String::from_utf8_lossy(&res.stderr));
     assert_eq!(String::from_utf8_lossy(&res.stderr).matches("aviso: o limite de memória").count(), 1);
 }
+
+/// Grava um `.msg` de teste numa pasta temporária e devolve o caminho.
+fn msg_file(dir: &tempfile::TempDir, name: &str, bytes: &[u8]) -> String {
+    let p = dir.path().join(name);
+    std::fs::write(&p, bytes).unwrap();
+    p.to_string_lossy().into_owned()
+}
+
+fn email_com_tabela() -> Vec<u8> {
+    use mdv_msg::testutil::{tags, MsgBuilder};
+    let html = "<html><body><table><tr><td>a</td><td>b</td></tr><tr><td>1</td><td>2</td></tr></table></body></html>";
+    MsgBuilder::new().string(tags::SUBJECT, "Relatório mensal").binary(tags::HTML, html.as_bytes()).build()
+}
+
+#[test]
+fn msg_no_modo_plain_mostra_cabecalho_e_tabela() {
+    let d = tempfile::TempDir::new().unwrap();
+    let p = msg_file(&d, "mail.msg", &email_com_tabela());
+    let out = Command::new(env!("CARGO_BIN_EXE_mdv")).args(["-p", "-w", "80", &p]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("Relatório mensal"), "{text}");
+    assert!(text.contains('│'), "{text}");
+}
+
+#[test]
+fn msg_exporta_markdown() {
+    let d = tempfile::TempDir::new().unwrap();
+    let p = msg_file(&d, "mail.msg", &email_com_tabela());
+    let saida = d.path().join("out.md").to_string_lossy().into_owned();
+    let out = Command::new(env!("CARGO_BIN_EXE_mdv")).args([&p, "-o", &saida]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let md = std::fs::read_to_string(&saida).unwrap();
+    assert!(md.starts_with("# "), "{md}");
+    let again = Command::new(env!("CARGO_BIN_EXE_mdv")).args([&p, "-o", &saida]).output().unwrap();
+    assert_ne!(again.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&again.stderr).contains("já existe"), "{}", String::from_utf8_lossy(&again.stderr));
+}
+
+#[test]
+fn msg_invalido_sai_com_erro_e_codigo_1() {
+    let d = tempfile::TempDir::new().unwrap();
+    let p = msg_file(&d, "ruim.msg", b"n\xc3\xa3o sou ole2");
+    let out = Command::new(env!("CARGO_BIN_EXE_mdv")).args(["-p", &p]).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("não é um arquivo .msg válido"));
+}
+
+#[test]
+fn msg_com_limite_de_memoria_baixo_nao_trava() {
+    use mdv_msg::testutil::{tags, MsgBuilder};
+    let d = tempfile::TempDir::new().unwrap();
+    let html = format!("<html><body>{}</body></html>", "<b>".repeat(1024 * 1024 / 3));
+    let bytes = MsgBuilder::new().string(tags::SUBJECT, "Grande").binary(tags::HTML, html.as_bytes()).build();
+    let p = msg_file(&d, "grande.msg", &bytes);
+    let out = Command::new(env!("CARGO_BIN_EXE_mdv"))
+        .args(["-p", &p])
+        .env("MDV_MEMORY_BUFFER", "32M")
+        .output()
+        .unwrap();
+    // Sucesso ou erro de memória são aceitos; o que não pode acontecer é morrer por sinal.
+    assert!(out.status.code().is_some(), "terminou por sinal: {:?}", out.status);
+}

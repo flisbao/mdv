@@ -20,6 +20,7 @@ USO:
     mdv json [opções] <arquivo|->
     mdv csv|tsv [opções] <arquivo|->
     mdv [opções] <arquivo.md> -o <saída.pdf|docx|odt|xlsx|ods>
+    mdv [opções] <email.msg> [-o <saída.md|pdf|docx|odt>]
     mdv csv|tsv [opções] <arquivo|-> -o <saída.xlsx|ods>
     mdv <pasta>            (seletor: .md da pasta por data, filtro ao digitar)
     (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
@@ -37,6 +38,7 @@ OPÇÕES:
     -o, --output <A>   converte e sai (sem TUI); o formato vem da extensão de A:
                          .md  → .pdf .docx .odt (documento) ou .xlsx .ods (só as tabelas)
                          .csv/.tsv → .xlsx .ods
+                         .msg → .md .pdf .docx .odt .xlsx .ods
         --force        com -o: sobrescreve o arquivo de destino se ele já existir
         --section <T>  com -o e Markdown → planilha: só as tabelas da seção de título T
                        (com --table N: só a N-ésima tabela do documento)
