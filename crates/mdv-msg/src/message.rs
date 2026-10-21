@@ -193,6 +193,7 @@ fn le_anexo(
             cfb.embutidas += 1;
             match le_mensagem(cfb, &objeto, profundidade + 1, budget) {
                 Ok(embutida) => Some(Box::new(embutida)),
+                Err(erro) if erro == container::ERRO_GRANDE => return Err(erro),
                 Err(_) => {
                     // Erro de orçamento aborta; erro de conteúdo só tira o corpo da embutida (o anexo segue listado).
                     budget.check()?;
@@ -436,5 +437,18 @@ mod tests {
                 && m.attachments[0].embedded.is_none()
         });
         assert!(degradado, "nenhum corte degradou o anexo embutido sem abortar a leitura");
+    }
+
+    #[test]
+    fn teto_agregado_estourado_na_embutida_aborta_a_leitura() {
+        let bytes = MsgBuilder::new()
+            .attachment(AttachSpec {
+                name: "m.msg".into(),
+                embedded: Some(MsgBuilder::new().binary(tags::HTML, &vec![b'x'; 512])),
+                ..Default::default()
+            })
+            .build();
+        let erro = read_com_limites(&bytes, &Unlimited, 200, MAX_ATTACHMENTS).expect_err("teto deve abortar");
+        assert!(erro.contains("grande demais"), "{erro}");
     }
 }
