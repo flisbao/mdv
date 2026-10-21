@@ -926,7 +926,7 @@ fn table_alem_do_que_existe_avisa_e_nao_abre() {
 #[test]
 fn arquivos_de_producao_dentro_do_teto() {
     let arquivos: &[(&str, &str, usize)] = &[
-        ("main.rs", include_str!("../main.rs"), 125),
+        ("main.rs", include_str!("../main.rs"), 122),
         ("load.rs", include_str!("../load.rs"), 500),
         ("plain.rs", include_str!("../plain.rs"), 500),
         ("doc.rs", include_str!("../doc.rs"), 500),

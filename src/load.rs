@@ -133,6 +133,19 @@ mod tests {
     use super::*;
     use crate::config::Config;
 
+    #[test]
+    fn read_document_converte_msg_e_devolve_md_intacto() {
+        let d = tempfile::tempdir().unwrap();
+        let msg = d.path().join("oi.msg");
+        fs::write(&msg, mdv_msg::testutil::MsgBuilder::new().string(mdv_msg::testutil::tags::SUBJECT, "Oi").build())
+            .unwrap();
+        let texto = read_document(&msg).unwrap();
+        assert!(texto.contains("# Oi"), "{texto}");
+        let md = d.path().join("nota.md");
+        fs::write(&md, "# Nota\n\ntexto *puro*\n").unwrap();
+        assert_eq!(read_document(&md).unwrap(), "# Nota\n\ntexto *puro*\n");
+    }
+
     fn kitty(k: &str) -> Option<String> {
         (k == "TERM").then(|| "xterm-kitty".to_string())
     }

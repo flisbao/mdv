@@ -699,6 +699,8 @@ mod tests {
         assert!(run(&["-", "-o", "b.md"]).unwrap_err().contains("só vale para .msg"));
         let c = run(&["a.MSG", "-o", "b.md"]).unwrap();
         assert!(matches!(c.command, Command::Export(Export { doc: Doc::Markdown, .. })));
+        assert!(run(&["a.msg", "-o", "b.md", "--section", "X"]).is_err());
+        assert!(run(&["a.msg", "-o", "b.md", "--table", "1"]).is_err());
     }
 
     #[test]

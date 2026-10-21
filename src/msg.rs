@@ -35,7 +35,11 @@ pub(crate) fn read_msg_file(path: &Path) -> io::Result<String> {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "não é um arquivo regular"));
     }
     if meta.len() > MAX_MSG_BYTES {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "arquivo .msg grande demais (máximo 32 MiB)"));
+        let teto = MAX_MSG_BYTES / (1024 * 1024);
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("arquivo .msg grande demais (máximo {teto} MiB)"),
+        ));
     }
     mem::check_input(meta.len()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
     let bytes = load::read_limited_bytes(fs::File::open(path)?, MAX_MSG_BYTES)?;
