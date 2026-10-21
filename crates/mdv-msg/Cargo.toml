@@ -13,3 +13,7 @@ scraper = "0.29"
 
 [features]
 testutil = []
+
+[[test]]
+name = "sample"
+required-features = ["testutil"]

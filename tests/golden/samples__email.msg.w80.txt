@@ -1,0 +1,47 @@
+Re: Fechamento de outubro
+════════════════════════════════════════════════════════════════════════════════
+
+• De: Ana Souza <ana.souza@exemplo.com.br>
+• Para: Bruno Lima <bruno.lima@exemplo.com.br>; Carla Dias
+  <carla.dias@exemplo.com.br>
+• Cc: Diego Rocha <diego.rocha@exemplo.com.br>
+• Data: 2026-10-21 14:32 (-03:00)
+• Anexos: planilha.xlsx (2 KiB,
+  application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
+
+────────────────────────────────────────────────────────────────────────────────
+
+Olá, Bruno!
+
+Segue o fechamento de outubro. Os números estão na tabela abaixo; se houver
+algum ajuste, me avisa até sexta.
+
+┌─────────────┬───────────────┬────────────┐
+│ Área        │ Valor         │ Situação   │
+├─────────────┼───────────────┼────────────┤
+│ Receita     │ R$ 152.300,00 │ Fechado    │
+├─────────────┼───────────────┼────────────┤
+│ Despesas    │ R$ 98.750,40  │ Em revisão │
+├─────────────┼───────────────┼────────────┤
+│ Ação social │ R$ 5.000,00   │ Aprovado   │
+└─────────────┴───────────────┴────────────┘
+
+Pontos de atenção:
+
+• Conferir a nota do fornecedor de setembro
+• Atualizar a previsão de caixa de novembro
+
+Abraço,
+Ana
+
+▎ ──────────────────────────────────────────────────────────────────────────────
+
+▎ De: Bruno Lima <bruno.lima@exemplo.com.br>
+▎ Enviado: segunda-feira, 20 de outubro de 2026 17:05
+▎ Para: Ana Souza <ana.souza@exemplo.com.br>
+▎ Assunto: Fechamento de outubro
+▎ 
+▎ Oi, Ana. Você pode revisar os números de outubro até sexta?
+▎ 
+▎ Obrigado,
+▎ Bruno
