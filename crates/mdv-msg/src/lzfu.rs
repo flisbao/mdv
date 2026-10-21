@@ -46,7 +46,7 @@ pub(crate) fn decompress(data: &[u8], max: usize) -> Result<Vec<u8>, String> {
     let rawsize = u32_le(data, 4) as usize;
     let crc = u32_le(data, 12);
     let fim = match compsize.checked_add(4) {
-        Some(f) if f <= data.len() => f,
+        Some(f) if (CABECALHO..=data.len()).contains(&f) => f,
         _ => return Err(ERRO_TRUNCADO.into()),
     };
     if rawsize > max {
@@ -72,7 +72,8 @@ pub(crate) fn decompress(data: &[u8], max: usize) -> Result<Vec<u8>, String> {
 
 /// Laço LZFu: bytes de controle com 8 flags (bit 0 = literal, bit 1 = referência de 2 bytes).
 fn descomprime_lzfu(corpo: &[u8], rawsize: usize) -> Result<Vec<u8>, String> {
-    let mut saida = Vec::with_capacity(rawsize);
+    // Dica de capacidade: cada byte de controle produz no máximo 8 referências de 17 bytes.
+    let mut saida = Vec::with_capacity(rawsize.min(corpo.len().saturating_mul(9)));
     let mut dicionario = [0u8; DICT_SIZE];
     dicionario[..INIT_DICT.len()].copy_from_slice(INIT_DICT);
     let mut escrita = INIT_DICT.len();
@@ -189,5 +190,81 @@ mod tests {
         for n in 0..c.len() {
             let _ = decompress(&c[..n], 1 << 20);
         }
+    }
+
+    #[test]
+    fn compsize_menor_que_o_cabecalho_nao_entra_em_panico() {
+        for compsize in 0u32..12 {
+            let mut c = hex(EXEMPLO);
+            c[0..4].copy_from_slice(&compsize.to_le_bytes());
+            assert!(decompress(&c, 1 << 20).is_err(), "COMPSIZE {compsize} aceito");
+        }
+    }
+
+    enum Item {
+        Lit(u8),
+        Ref(usize, usize),
+    }
+
+    /// Codificador LZFu mínimo, só para testes: agrupa os itens de 8 em 8 atrás de um byte de controle.
+    fn codifica(itens: &[Item]) -> Vec<u8> {
+        let mut corpo = Vec::new();
+        let mut controle = 0u8;
+        let mut grupo = Vec::new();
+        let mut n = 0;
+        for item in itens {
+            match *item {
+                Item::Lit(b) => grupo.push(b),
+                Item::Ref(off, len) => {
+                    controle |= 1 << n;
+                    let v = ((off << 4) | (len - 2)) as u16;
+                    grupo.extend_from_slice(&v.to_be_bytes());
+                }
+            }
+            n += 1;
+            if n == 8 {
+                corpo.push(controle);
+                corpo.extend_from_slice(&grupo);
+                grupo.clear();
+                controle = 0;
+                n = 0;
+            }
+        }
+        if n > 0 {
+            corpo.push(controle);
+            corpo.extend_from_slice(&grupo);
+        }
+        corpo
+    }
+
+    /// Monta o bloco completo (cabeçalho + corpo) com CRC e tamanhos corretos.
+    fn bloco(corpo: &[u8], rawsize: usize) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(&((12 + corpo.len()) as u32).to_le_bytes());
+        b.extend_from_slice(&(rawsize as u32).to_le_bytes());
+        b.extend_from_slice(b"LZFu");
+        b.extend_from_slice(&crc32(corpo).to_le_bytes());
+        b.extend_from_slice(corpo);
+        b
+    }
+
+    #[test]
+    fn dicionario_circular_da_a_volta_em_entradas_grandes() {
+        // 10 000 bytes > 4096: o dicionário dá a volta. A cópia parte de um byte cuja posição
+        // no dicionário é 4090 e atravessa o fim (4090..4096 e 0..11).
+        let mut data: Vec<u8> = (0..10_000usize).map(|i| (i * 31 % 251) as u8).collect();
+        let origem = 3883;
+        let tam = 17;
+        for k in 0..tam {
+            data[4000 + k] = data[origem + k];
+        }
+        let fonte = (INIT_DICT.len() + origem) % DICT_SIZE;
+        assert!(fonte + tam > DICT_SIZE, "a cópia precisa atravessar o fim do dicionário");
+        let mut itens: Vec<Item> = data[..4000].iter().map(|&b| Item::Lit(b)).collect();
+        itens.push(Item::Ref(fonte, tam));
+        itens.extend(data[4000 + tam..].iter().map(|&b| Item::Lit(b)));
+        itens.push(Item::Ref((INIT_DICT.len() + data.len()) % DICT_SIZE, 2));
+        let c = bloco(&codifica(&itens), data.len());
+        assert_eq!(decompress(&c, 1 << 20).unwrap(), data);
     }
 }
