@@ -151,6 +151,16 @@ fn celula_longa_vira_layout_sem_perder_texto() {
     assert!(r.contains("FIM"), "{r}");
     assert!(!r.contains('…'), "{r}");
 }
+
+#[test]
+fn celula_com_muitos_caracteres_escapaveis_vira_layout_sem_perder_texto() {
+    let escapavel = "*".repeat(300);
+    let h = format!("<table><tr><td>{escapavel}</td><td>x</td></tr><tr><td>1</td><td>2</td></tr></table>");
+    let r = md(&h);
+    assert!(r.contains(&"\\*".repeat(300)), "texto truncado: {r}");
+    assert!(!r.contains('…'), "corte inesperado: {r}");
+}
+
 #[test]
 fn imagem_data_uri_nao_vai_para_o_markdown() {
     let r = md(r#"<p><img src="data:image/png;base64,iVBORw0KGgo=" alt="Logo"></p><p><img src="data:image/gif;base64,R0lGOD"></p>"#);

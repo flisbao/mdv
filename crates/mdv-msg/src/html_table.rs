@@ -30,7 +30,9 @@ pub(crate) fn tabela(c: &Ctx<'_>, el: ElementRef<'_>, depth: usize, cell: bool) 
         return Ok(vec![]);
     }
     if eh_tabela_de_dados(&grade) {
-        return tabela_gfm(c, &grade, depth);
+        if let Some(md) = tabela_gfm(c, &grade, depth)? {
+            return Ok(md);
+        }
     }
     let mut f = Flow::new(c, cell, true);
     for (cel, _) in grade.iter().flatten() {
@@ -89,7 +91,7 @@ fn texto_longo(cel: ElementRef<'_>) -> bool {
 }
 
 /// GFM: a primeira linha é o cabeçalho; `colspan` repete a célula vazia; colunas até `MAX_TABLE_COLS`.
-fn tabela_gfm(c: &Ctx<'_>, grade: &Grade<'_>, depth: usize) -> Result<Vec<String>, String> {
+fn tabela_gfm(c: &Ctx<'_>, grade: &Grade<'_>, depth: usize) -> Result<Option<Vec<String>>, String> {
     let colunas = grade
         .iter()
         .map(|r| r.iter().map(|(_, s)| *s).sum::<usize>())
@@ -107,6 +109,11 @@ fn tabela_gfm(c: &Ctx<'_>, grade: &Grade<'_>, depth: usize) -> Result<Vec<String
             let mut f = Flow::new(c, true, true);
             f.nodes(&kids(*cel), 0, depth + 1)?;
             let md = f.finish().join(" ").replace('\n', " ");
+            // O escape pode dobrar o tamanho do texto. Se o Markdown renderizado passa do teto,
+            // reclassifica a tabela como layout para não cortar conteúdo da conversa.
+            if md.chars().count() > MAX_CELL_CHARS {
+                return Ok(None);
+            }
             casas.push(escape::cap(&md));
             casas.extend(std::iter::repeat_n(String::new(), span - 1));
         }
@@ -121,5 +128,5 @@ fn tabela_gfm(c: &Ctx<'_>, grade: &Grade<'_>, depth: usize) -> Result<Vec<String
             linhas.push(sep);
         }
     }
-    Ok(vec![linhas.join("\n")])
+    Ok(Some(vec![linhas.join("\n")]))
 }
