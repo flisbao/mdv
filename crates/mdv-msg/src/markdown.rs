@@ -55,11 +55,13 @@ fn titulo(m: &Message, depth: usize) -> String {
         .map(linha_unica)
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "(sem assunto)".to_string());
-    if depth == 0 {
-        assunto
-    } else {
-        format!("Mensagem anexada: {assunto}")
+    let mut texto = if depth == 0 { assunto } else { format!("Mensagem anexada: {assunto}") };
+    // Um `#` final seria lido como fechamento de título ATX: escapa-se.
+    if texto.ends_with('#') {
+        texto.pop();
+        texto.push_str("\\#");
     }
+    texto
 }
 
 /// Linhas `- **Campo:** valor` do cabeçalho; campos ausentes somem.
@@ -106,7 +108,7 @@ fn pessoa(nome: Option<&str>, email: Option<&str>) -> Option<String> {
     let nome = nome.map(linha_unica).filter(|s| !s.is_empty());
     let email = email.map(linha_unica).filter(|s| !s.is_empty());
     match (nome, email) {
-        (Some(n), Some(e)) => Some(format!("{n} <{e}>")),
+        (Some(n), Some(e)) => Some(format!("{n} \\<{e}\\>")),
         (Some(n), None) => Some(n),
         (None, Some(e)) => Some(e),
         (None, None) => None,
@@ -117,8 +119,8 @@ fn pessoa(nome: Option<&str>, email: Option<&str>) -> Option<String> {
 fn data(m: &Message, transporte: &str) -> Option<String> {
     date::header(transporte, "Date")
         .and_then(|v| date::from_rfc2822(&v))
-        .or_else(|| m.submit_time.map(date::from_filetime))
-        .or_else(|| m.delivery_time.map(date::from_filetime))
+        .or_else(|| m.submit_time.filter(|&t| t != 0).map(date::from_filetime))
+        .or_else(|| m.delivery_time.filter(|&t| t != 0).map(date::from_filetime))
 }
 
 /// Anexos visíveis (sem os ocultos e sem as mensagens embutidas, que têm seção própria).
@@ -167,20 +169,24 @@ fn tamanho_legivel(n: u32) -> String {
 }
 
 /// Corpo da mensagem: S/MIME avisa; depois HTML, RTF (HTML ou texto) e texto puro, nesta ordem.
+/// Erro de orçamento (`Budget`) aborta; erro de um passo só o tira da lista de tentativas.
 fn corpo(m: &Message, budget: &dyn Budget) -> Result<String, String> {
     if m.class.as_deref().is_some_and(|c| c.to_ascii_lowercase().starts_with("ipm.note.smime")) {
         return Ok(AVISO_SMIME.to_string());
     }
     let mut erros = Vec::new();
     if let Some(html) = &m.html {
-        if let Some(md) = aceita(html_para_md(html, m.html_codepage, budget), &mut erros) {
+        budget.check()?;
+        if let Some(md) = aceita(html_para_md(html, m.html_codepage, budget), &mut erros, budget)? {
             return Ok(md);
         }
     }
+    budget.check()?;
     let rtf = match &m.rtf {
         Some(bruto) => match rtf_corpo(bruto, budget) {
             Ok(corpo) => Some(corpo),
             Err(e) => {
+                budget.check()?;
                 erros.push(e);
                 None
             }
@@ -188,7 +194,8 @@ fn corpo(m: &Message, budget: &dyn Budget) -> Result<String, String> {
         None => None,
     };
     if let Some(RtfBody::Html(h)) = &rtf {
-        if let Some(md) = aceita(html::to_markdown(h, budget), &mut erros) {
+        budget.check()?;
+        if let Some(md) = aceita(html::to_markdown(h, budget), &mut erros, budget)? {
             return Ok(md);
         }
     }
@@ -200,6 +207,7 @@ fn corpo(m: &Message, budget: &dyn Budget) -> Result<String, String> {
             return texto_puro(texto, budget);
         }
     }
+    budget.check()?;
     if erros.is_empty() {
         Ok(SEM_CORPO.to_string())
     } else {
@@ -207,14 +215,20 @@ fn corpo(m: &Message, budget: &dyn Budget) -> Result<String, String> {
     }
 }
 
-/// Um passo do corpo só vale se produziu texto; erro vai para a lista e o próximo passo é tentado.
-fn aceita(resultado: Result<String, String>, erros: &mut Vec<String>) -> Option<String> {
+/// Um passo do corpo só vale se produziu texto. Erro do passo vai para a lista, mas antes
+/// consulta o orçamento: se ele estourou, o erro de orçamento é propagado e aborta a conversão.
+fn aceita(
+    resultado: Result<String, String>,
+    erros: &mut Vec<String>,
+    budget: &dyn Budget,
+) -> Result<Option<String>, String> {
     match resultado {
-        Ok(md) if !md.trim().is_empty() => Some(md),
-        Ok(_) => None,
+        Ok(md) if !md.trim().is_empty() => Ok(Some(md)),
+        Ok(_) => Ok(None),
         Err(e) => {
+            budget.check()?;
             erros.push(e);
-            None
+            Ok(None)
         }
     }
 }
@@ -267,8 +281,9 @@ fn rtf_corpo(bruto: &[u8], budget: &dyn Budget) -> Result<RtfBody, String> {
     rtf::extract(&rtf, budget)
 }
 
-/// Texto puro: quebras normalizadas, cada linha escapada para início de linha; linhas em branco
-/// são mantidas, e um bloco de três ou mais vira uma só.
+/// Texto puro: quebras normalizadas. Linhas consecutivas viram quebra forçada (`\` no fim da linha),
+/// porque o mdv renderiza quebra simples como espaço. Recuo vira espaços não separáveis (tab = 4),
+/// para não virar bloco de código. Blocos separados por linhas em branco; três ou mais viram uma.
 fn texto_puro(texto: &str, budget: &dyn Budget) -> Result<String, String> {
     let mut linhas: Vec<String> = Vec::new();
     let mut vazias = 0usize;
@@ -279,15 +294,22 @@ fn texto_puro(texto: &str, budget: &dyn Budget) -> Result<String, String> {
             vazias += 1;
             continue;
         }
-        if !linhas.is_empty() {
+        if let Some(anterior) = linhas.last_mut().filter(|_| vazias == 0) {
+            anterior.push('\\');
+        } else if !linhas.is_empty() {
             let brancos = if vazias >= 3 { 1 } else { vazias };
             for _ in 0..brancos {
                 linhas.push(String::new());
             }
         }
         vazias = 0;
-        let escapada = escape::line_start(&mdv_text::sanitize(linha));
-        tamanho += escapada.len() + 1;
+        let sem_recuo = linha.trim_start_matches([' ', '\t']);
+        let recuo = &linha[..linha.len() - sem_recuo.len()];
+        let largura: usize = recuo.chars().map(|c| if c == '\t' { 4 } else { 1 }).sum();
+        let mut com_recuo = "\u{a0}".repeat(largura);
+        com_recuo.push_str(sem_recuo);
+        let escapada = escape::line_start(&mdv_text::sanitize(&com_recuo));
+        tamanho += escapada.len() + 2;
         if tamanho > MAX_MARKDOWN_BYTES {
             return Err(EXCESSO.to_string());
         }
@@ -316,7 +338,34 @@ fn linha_unica(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use crate::testutil::{tags, AttachSpec, MsgBuilder};
-    use crate::{to_markdown, Unlimited};
+    use crate::{to_markdown, Budget, Unlimited};
+    use std::cell::Cell;
+
+    /// Orçamento que estoura depois de `n` chamadas (de `check` ou `check_html`) e continua estourado.
+    struct Cota(Cell<usize>);
+
+    const MSG_COTA: &str = "limite de memória de teste";
+
+    impl Cota {
+        fn gasta(&self) -> Result<(), String> {
+            let restante = self.0.get();
+            if restante == 0 {
+                return Err(MSG_COTA.to_string());
+            }
+            self.0.set(restante - 1);
+            Ok(())
+        }
+    }
+
+    impl Budget for Cota {
+        fn check(&self) -> Result<(), String> {
+            self.gasta()
+        }
+
+        fn check_html(&self, _len: usize) -> Result<(), String> {
+            self.gasta()
+        }
+    }
 
     fn md(bytes: &[u8]) -> String {
         to_markdown(bytes, &Unlimited).expect("conversão")
@@ -348,7 +397,7 @@ mod tests {
         let cabeca = saida.split("\n\n---\n\n").next().unwrap();
         assert_eq!(
             cabeca,
-            "# Assunto\n\n- **De:** Ana <ana@ex.com>\n- **Para:** Bia <bia@ex.com>; Caio\n- **Cc:** Duda <duda@ex.com>\n- **Data:** 2026-10-21 14:32 (-03:00)"
+            "# Assunto\n\n- **De:** Ana \\<ana@ex.com\\>\n- **Para:** Bia \\<bia@ex.com\\>; Caio\n- **Cc:** Duda \\<duda@ex.com\\>\n- **Data:** 2026-10-21 14:32 (-03:00)"
         );
         assert!(saida.ends_with("corpo\n"));
     }
@@ -374,7 +423,48 @@ mod tests {
     #[test]
     fn texto_puro_quando_so_ha_body() {
         let bytes = MsgBuilder::new().string(tags::BODY, "linha 1\r\n# linha 2").build();
-        assert!(md(&bytes).contains("linha 1\n\\# linha 2"));
+        assert!(md(&bytes).contains("linha 1\\\n\\# linha 2"));
+    }
+
+    #[test]
+    fn texto_puro_preserva_linhas_e_recuo() {
+        let bytes = MsgBuilder::new().string(tags::BODY, "Att,\r\nAna\r\n    recuado").build();
+        assert!(md(&bytes).contains("Att,\\\nAna\\\n\u{a0}\u{a0}\u{a0}\u{a0}recuado"));
+    }
+
+    #[test]
+    fn titulo_com_cerquilha_final_nao_vira_fechamento() {
+        let bytes = MsgBuilder::new().string(tags::SUBJECT, "Pedido #").string(tags::BODY, "x").build();
+        assert!(md(&bytes).starts_with("# Pedido \\#\n"));
+    }
+
+    #[test]
+    fn data_zero_conta_como_ausente() {
+        let bytes = MsgBuilder::new()
+            .time(tags::CLIENT_SUBMIT_TIME, 0)
+            .time(tags::MESSAGE_DELIVERY_TIME, 0)
+            .string(tags::BODY, "x")
+            .build();
+        assert!(!md(&bytes).contains("- **Data:**"));
+    }
+
+    #[test]
+    fn estouro_do_budget_aborta() {
+        let bytes = MsgBuilder::new()
+            .binary(tags::HTML, b"<p>ok html</p>")
+            .string(tags::BODY, "texto")
+            .build();
+        let mut viu_erro = false;
+        for n in 0..=200 {
+            match to_markdown(&bytes, &Cota(Cell::new(n))) {
+                Ok(saida) => assert!(saida.contains("ok html"), "com cota {n}: {saida}"),
+                Err(e) => {
+                    assert_eq!(e, MSG_COTA, "com cota {n}");
+                    viu_erro = true;
+                }
+            }
+        }
+        assert!(viu_erro);
     }
 
     #[test]

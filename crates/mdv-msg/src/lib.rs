@@ -3,8 +3,8 @@
 //! O limite de trabalho vem por `Budget`; os tetos de tamanho e contagem são as constantes abaixo.
 
 mod codepage;
-mod date;
 mod container;
+mod date;
 mod escape;
 mod html;
 mod html_lista;
