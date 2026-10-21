@@ -5,9 +5,31 @@ use crate::codepage;
 use crate::MAX_MSG_BYTES;
 use cfb::CompoundFile;
 use std::io::{Cursor, Read};
+use std::ops::{Deref, DerefMut};
 
-/// Contêiner aberto sobre bytes em memória.
-pub(crate) type Cfb<'a> = CompoundFile<Cursor<&'a [u8]>>;
+/// Contêiner aberto sobre bytes em memória, com o orçamento agregado da leitura:
+/// bytes já lidos dos streams (contra `teto`) e embutidas já abertas (contra `teto_embutidas`).
+pub(crate) struct Cfb<'a> {
+    arq: CompoundFile<Cursor<&'a [u8]>>,
+    lidos: u64,
+    teto: u64,
+    pub(crate) embutidas: usize,
+    pub(crate) teto_embutidas: usize,
+}
+
+impl<'a> Deref for Cfb<'a> {
+    type Target = CompoundFile<Cursor<&'a [u8]>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.arq
+    }
+}
+
+impl<'a> DerefMut for Cfb<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.arq
+    }
+}
 
 pub(crate) const ERRO_NAO_OLE: &str = "não é um arquivo .msg válido (contêiner OLE2 ausente)";
 pub(crate) const ERRO_GRANDE: &str = "anexo/propriedade grande demais no .msg";
@@ -72,8 +94,9 @@ pub(crate) fn nome_propriedade(id: u16, tipo: u16) -> String {
 }
 
 /// Abre o contêiner; bytes que não são OLE2 viram erro claro.
-pub(crate) fn abre(bytes: &[u8]) -> Result<Cfb<'_>, String> {
-    CompoundFile::open(Cursor::new(bytes)).map_err(|_| ERRO_NAO_OLE.to_string())
+pub(crate) fn abre(bytes: &[u8], teto: u64, teto_embutidas: usize) -> Result<Cfb<'_>, String> {
+    let arq = CompoundFile::open(Cursor::new(bytes)).map_err(|_| ERRO_NAO_OLE.to_string())?;
+    Ok(Cfb { arq, lidos: 0, teto, embutidas: 0, teto_embutidas })
 }
 
 /// Lê um stream inteiro, recusando os que passam de `MAX_MSG_BYTES`. Ausente vira `None`.
@@ -82,17 +105,24 @@ pub(crate) fn le_stream(cfb: &mut Cfb<'_>, caminho: &str) -> Result<Option<Vec<u
         return Ok(None);
     }
     let tamanho = cfb.entry(caminho).map_err(|_| ERRO_ILEGIVEL.to_string())?.len();
-    if tamanho > MAX_MSG_BYTES {
+    if tamanho > MAX_MSG_BYTES || cfb.lidos.saturating_add(tamanho) > cfb.teto {
         return Err(ERRO_GRANDE.to_string());
     }
-    let mut fluxo = cfb.open_stream(caminho).map_err(|_| ERRO_ILEGIVEL.to_string())?;
-    let mut dados = Vec::new();
-    fluxo
-        .by_ref()
-        .take(MAX_MSG_BYTES + 1)
-        .read_to_end(&mut dados)
-        .map_err(|_| ERRO_ILEGIVEL.to_string())?;
+    let dados = {
+        let mut fluxo = cfb.open_stream(caminho).map_err(|_| ERRO_ILEGIVEL.to_string())?;
+        let mut dados = Vec::new();
+        fluxo
+            .by_ref()
+            .take(MAX_MSG_BYTES + 1)
+            .read_to_end(&mut dados)
+            .map_err(|_| ERRO_ILEGIVEL.to_string())?;
+        dados
+    };
     if dados.len() as u64 > MAX_MSG_BYTES {
+        return Err(ERRO_GRANDE.to_string());
+    }
+    cfb.lidos = cfb.lidos.saturating_add(dados.len() as u64);
+    if cfb.lidos > cfb.teto {
         return Err(ERRO_GRANDE.to_string());
     }
     Ok(Some(dados))
@@ -191,10 +221,10 @@ pub(crate) fn texto(cfb: &mut Cfb<'_>, dir: &str, id: u16, cp: u32) -> Result<Op
     }
 }
 
-/// Só o texto UTF-16LE (`001F`) da propriedade.
-pub(crate) fn texto_unicode(cfb: &mut Cfb<'_>, dir: &str, id: u16) -> Result<Option<String>, String> {
+/// Texto UTF-16LE (`001F`) sem sanitizar, sem NULs finais (usado no HTML, que segue o caminho dos bytes).
+pub(crate) fn texto_unicode_bruto(cfb: &mut Cfb<'_>, dir: &str, id: u16) -> Result<Option<String>, String> {
     let bytes = le_stream(cfb, &junta(dir, &nome_propriedade(id, TIPO_UNICODE)))?;
-    Ok(bytes.and_then(|b| limpa(&decodifica_utf16le(&b))))
+    Ok(bytes.map(|b| decodifica_utf16le(&b).trim_end_matches('\0').to_string()))
 }
 
 /// Bytes brutos de uma propriedade do tipo indicado.

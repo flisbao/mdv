@@ -2,7 +2,7 @@
 
 use crate::container::{self, tags::*, Cfb, Propriedades};
 use crate::container::{TIPO_BINARIO, TIPO_STRING8};
-use crate::{Budget, MAX_ATTACHMENTS, MAX_EMBED_DEPTH, MAX_RECIPIENTS};
+use crate::{Budget, MAX_ATTACHMENTS, MAX_EMBED_DEPTH, MAX_MSG_BYTES, MAX_RECIPIENTS};
 
 const CABECALHO_RAIZ: usize = 32;
 const CABECALHO_EMBUTIDA: usize = 24;
@@ -10,6 +10,7 @@ const CABECALHO_ITEM: usize = 8;
 const PREFIXO_DESTINATARIO: &str = "__recip_version1.0_#";
 const PREFIXO_ANEXO: &str = "__attach_version1.0_#";
 const CP_PADRAO: u32 = 1252;
+const CP_UTF8: u32 = 65001;
 const DEST_PARA: i32 = 1;
 const DEST_CC: i32 = 2;
 const DEST_CCO: i32 = 3;
@@ -56,13 +57,24 @@ pub(crate) struct Attachment {
 
 /// Lê um `.msg` inteiro. Bytes que não são OLE2 e contêineres truncados viram `Err`, nunca pânico.
 pub(crate) fn read(bytes: &[u8], budget: &dyn Budget) -> Result<Message, String> {
-    let mut cfb = container::abre(bytes)?;
+    read_com_limites(bytes, budget, MAX_MSG_BYTES, MAX_ATTACHMENTS)
+}
+
+/// Leitura com os tetos agregados explícitos: bytes lidos no total e mensagens embutidas abertas no total.
+pub(crate) fn read_com_limites(
+    bytes: &[u8],
+    budget: &dyn Budget,
+    teto_total: u64,
+    teto_embutidas: usize,
+) -> Result<Message, String> {
+    let mut cfb = container::abre(bytes, teto_total, teto_embutidas)?;
     le_mensagem(&mut cfb, "/", 0, budget)
 }
 
 /// Lê uma mensagem em `dir` (`/` para a raiz). `profundidade` 0 é a raiz; embutidas vão até `MAX_EMBED_DEPTH`.
 fn le_mensagem(cfb: &mut Cfb<'_>, dir: &str, profundidade: usize, budget: &dyn Budget) -> Result<Message, String> {
     let cabecalho = if profundidade == 0 { CABECALHO_RAIZ } else { CABECALHO_EMBUTIDA };
+    budget.check()?;
     let mut m = Message::default();
     // As propriedades fixas são consumidas antes da recursão para não manter dois streams grandes vivos.
     let props = Propriedades::ler(cfb, dir, cabecalho)?;
@@ -87,8 +99,15 @@ fn le_mensagem(cfb: &mut Cfb<'_>, dir: &str, profundidade: usize, budget: &dyn B
     m.transport_headers = container::texto(cfb, dir, TRANSPORT_MESSAGE_HEADERS, cp)?;
     m.class = container::texto(cfb, dir, MESSAGE_CLASS, cp)?;
     m.text = container::texto(cfb, dir, BODY, cp)?;
-    m.html = corpo_html(cfb, dir)?;
+    budget.check()?;
+    if let Some((html, ja_utf8)) = corpo_html(cfb, dir)? {
+        m.html = Some(html);
+        if ja_utf8 {
+            m.html_codepage = CP_UTF8;
+        }
+    }
     m.rtf = container::binario(cfb, dir, RTF_COMPRESSED, TIPO_BINARIO)?;
+    budget.check()?;
 
     let (destinatarios, trunc_dest) = container::filhos_numerados(cfb, dir, PREFIXO_DESTINATARIO, MAX_RECIPIENTS)?;
     m.recipients_truncated = trunc_dest;
@@ -126,15 +145,16 @@ fn eh_endereco_exchange(endereco: &str) -> bool {
     endereco.as_bytes().get(..3).is_some_and(|p| p.eq_ignore_ascii_case(b"/O="))
 }
 
-/// Corpo HTML: bytes brutos (`0102` ou `001E`, decodificados depois com a codepage do HTML) ou texto `001F` em UTF-8.
-fn corpo_html(cfb: &mut Cfb<'_>, dir: &str) -> Result<Option<Vec<u8>>, String> {
+/// Corpo HTML: bytes brutos (`0102` ou `001E`, decodificados depois com a codepage do HTML) ou
+/// texto `001F` em UTF-8. O booleano diz se já são UTF-8 (caso do texto). Sem sanitizar em nenhum caminho.
+fn corpo_html(cfb: &mut Cfb<'_>, dir: &str) -> Result<Option<(Vec<u8>, bool)>, String> {
     if let Some(bytes) = container::binario(cfb, dir, HTML, TIPO_BINARIO)? {
-        return Ok(Some(bytes));
+        return Ok(Some((bytes, false)));
     }
     if let Some(bytes) = container::binario(cfb, dir, HTML, TIPO_STRING8)? {
-        return Ok(Some(bytes));
+        return Ok(Some((bytes, false)));
     }
-    Ok(container::texto_unicode(cfb, dir, HTML)?.map(String::into_bytes))
+    Ok(container::texto_unicode_bruto(cfb, dir, HTML)?.map(|t| (t.into_bytes(), true)))
 }
 
 fn le_destinatario(cfb: &mut Cfb<'_>, caminho: &str, cp: u32) -> Result<(i32, Recipient), String> {
@@ -164,9 +184,13 @@ fn le_anexo(
     let name = primeiro(cfb, caminho, cp, &[ATTACH_LONG_FILENAME, ATTACH_FILENAME, DISPLAY_NAME])?
         .unwrap_or_else(|| "anexo".to_string());
     let mime = container::texto(cfb, caminho, ATTACH_MIME_TAG, cp)?;
-    let embedded = if metodo == Some(METODO_EMBUTIDA) && profundidade < MAX_EMBED_DEPTH {
+    let embedded = if metodo == Some(METODO_EMBUTIDA)
+        && profundidade < MAX_EMBED_DEPTH
+        && cfb.embutidas < cfb.teto_embutidas
+    {
         let objeto = container::junta(caminho, &container::nome_propriedade(ATTACH_DATA, container::TIPO_OBJETO));
         if cfb.is_storage(&objeto) {
+            cfb.embutidas += 1;
             Some(Box::new(le_mensagem(cfb, &objeto, profundidade + 1, budget)?))
         } else {
             None
@@ -181,7 +205,7 @@ fn le_anexo(
 mod tests {
     use super::*;
     use crate::testutil::{tags, AttachSpec, MsgBuilder};
-    use crate::Unlimited;
+    use crate::{Unlimited, MAX_MSG_BYTES};
 
     const RTF_EXEMPLO: &str = "2d 00 00 00 2b 00 00 00 4c 5a 46 75 f1 c5 c7 a7 03 00 0a 00 72 63 70 67 31 32 35 42 32 0a f3 20 68 65 6c 09 00 20 62 77 05 b0 6c 64 7d 0a 80 0f a0";
 
@@ -348,5 +372,41 @@ mod tests {
         for n in (0..bytes.len()).step_by(512) {
             let _ = read(&bytes[..n], &Unlimited);
         }
+    }
+
+    #[test]
+    fn html_em_string_vira_utf8_com_codepage_65001() {
+        let bytes = MsgBuilder::new().string(tags::HTML, "<p>ação</p>").build();
+        let m = ler(&bytes);
+        assert_eq!(m.html, Some("<p>ação</p>".as_bytes().to_vec()));
+        assert_eq!(m.html_codepage, 65001);
+    }
+
+    #[test]
+    fn total_lido_acima_do_teto_agregado_e_recusado() {
+        let bytes = MsgBuilder::new()
+            .string(tags::SUBJECT, &"x".repeat(1500))
+            .string(tags::BODY, &"y".repeat(1500))
+            .build();
+        let erro = read_com_limites(&bytes, &Unlimited, 4096, MAX_ATTACHMENTS).expect_err("deve recusar");
+        assert!(erro.contains("grande demais"), "{erro}");
+        assert!(read_com_limites(&bytes, &Unlimited, 1 << 20, MAX_ATTACHMENTS).is_ok());
+    }
+
+    #[test]
+    fn total_de_embutidas_e_limitado() {
+        let mut b = MsgBuilder::new();
+        for i in 0..5 {
+            b = b.attachment(AttachSpec {
+                name: format!("m{i}.msg"),
+                embedded: Some(MsgBuilder::new().string(tags::SUBJECT, &format!("E{i}"))),
+                ..Default::default()
+            });
+        }
+        let m = read_com_limites(&b.build(), &Unlimited, MAX_MSG_BYTES, 3).expect("leitura");
+        assert_eq!(m.attachments.len(), 5);
+        assert!(m.attachments[2].embedded.is_some());
+        assert!(m.attachments[3].embedded.is_none());
+        assert!(m.attachments[4].embedded.is_none());
     }
 }

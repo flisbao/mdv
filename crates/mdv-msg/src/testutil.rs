@@ -9,6 +9,10 @@ pub use crate::container::tags;
 
 type Escritor = cfb::CompoundFile<Cursor<Vec<u8>>>;
 
+/// Valores de `PR_ATTACH_METHOD` usados pelas fixtures.
+const METODO_NORMAL: i32 = 1;
+const METODO_EMBUTIDA: i32 = 5;
+
 /// Anexo a montar. Com `embedded`, o anexo é uma mensagem embutida (`ATTACH_METHOD = 5`).
 #[derive(Default)]
 pub struct AttachSpec {
@@ -133,12 +137,14 @@ fn escreve_mensagem(cfb: &mut Escritor, dir: &str, m: &MsgBuilder, cabecalho: us
         cfb.create_storage(dir).expect("storage de teste");
     }
     grava_bytes(cfb, &junta(dir, "__nameid_version1.0"), &[]);
-    // Raiz: contagens nos offsets 16 e 20; embutida: nos offsets 8 e 12.
+    // Cabeçalho de raiz (32) e de embutida (24), MS-OXMSG: reservado (8), NextRecipientID @8,
+    // NextAttachmentID @12, RecipientCount @16, AttachmentCount @20; a raiz tem 8 reservados no fim.
     let mut cabec = vec![0u8; cabecalho];
     let (rec, anx) = (m.recipients.len() as u32, m.attachments.len() as u32);
-    let (off_rec, off_anx) = if cabecalho == 32 { (16, 20) } else { (8, 12) };
-    cabec[off_rec..off_rec + 4].copy_from_slice(&rec.to_le_bytes());
-    cabec[off_anx..off_anx + 4].copy_from_slice(&anx.to_le_bytes());
+    cabec[8..12].copy_from_slice(&rec.to_le_bytes());
+    cabec[12..16].copy_from_slice(&anx.to_le_bytes());
+    cabec[16..20].copy_from_slice(&rec.to_le_bytes());
+    cabec[20..24].copy_from_slice(&anx.to_le_bytes());
     escreve_props(cfb, dir, &m.props, cabec);
     for (i, props) in m.recipients.iter().enumerate() {
         let pasta = junta(dir, &format!("__recip_version1.0_#{i:08X}"));
@@ -153,7 +159,7 @@ fn escreve_mensagem(cfb: &mut Escritor, dir: &str, m: &MsgBuilder, cabecalho: us
 }
 
 fn escreve_anexo(cfb: &mut Escritor, pasta: &str, a: &AttachSpec) {
-    let metodo = if a.embedded.is_some() { 5 } else { 1 };
+    let metodo = if a.embedded.is_some() { METODO_EMBUTIDA } else { METODO_NORMAL };
     let mut props = vec![
         texto(tags::ATTACH_LONG_FILENAME, &a.name),
         texto(tags::ATTACH_FILENAME, &a.name),

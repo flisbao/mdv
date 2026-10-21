@@ -83,7 +83,7 @@ mod tests {
     }
 
     #[test]
-    fn codepages_279_e_874_mapeadas() {
+    fn codepages_28599_e_28601_mapeadas() {
         use encoding_rs::{WINDOWS_1254, WINDOWS_874};
         assert_eq!(encoding_for(28599), WINDOWS_1254);
         assert_eq!(encoding_for(28601), WINDOWS_874);
