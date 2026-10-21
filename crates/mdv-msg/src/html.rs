@@ -51,6 +51,16 @@ impl<'a> Ctx<'a> {
     pub(crate) fn gasta(&self, n: usize) {
         self.usado.set(self.usado.get().saturating_add(n));
     }
+
+    /// Contexto isolado para tentativas que podem ser descartadas (por exemplo, GFM em tabela).
+    pub(crate) fn tentativa(&self) -> Ctx<'a> {
+        Ctx::new(self.b, self.limite.saturating_sub(self.usado.get()))
+    }
+
+    /// Incorpora ao orçamento principal a saída de uma tentativa aceita.
+    pub(crate) fn aceita(&self, tentativa: &Ctx<'_>) {
+        self.gasta(tentativa.usado.get());
+    }
 }
 
 /// Converte o corpo HTML num Markdown com blocos separados por linha em branco.

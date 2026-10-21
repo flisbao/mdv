@@ -171,6 +171,18 @@ fn celula_com_muitos_caracteres_escapaveis_vira_layout_sem_perder_texto() {
 }
 
 #[test]
+fn tentativa_gfm_descartada_nao_duplica_orcamento_de_saida() {
+    let destino = "(".repeat(3 * 1024 * 1024);
+    let h = format!(
+        "<table><tr><td><a href=\"https://x.test/{destino}\">x</a></td><td>y</td></tr><tr><td>1</td><td>2</td></tr></table>"
+    );
+    let r = to_markdown(&h, &Unlimited).expect("fallback de layout deve caber no teto");
+    assert!(r.starts_with("[x](https://x.test/%28%28%28"));
+    assert_eq!(r.matches("%28").count(), 3 * 1024 * 1024, "destino foi truncado");
+    assert!(r.len() < MAX_MARKDOWN_BYTES);
+}
+
+#[test]
 fn imagem_data_uri_nao_vai_para_o_markdown() {
     let r = md(r#"<p><img src="data:image/png;base64,iVBORw0KGgo=" alt="Logo"></p><p><img src="data:image/gif;base64,R0lGOD"></p>"#);
     assert_eq!(r, "[imagem: Logo]\n\n[imagem: imagem embutida]");

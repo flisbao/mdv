@@ -31,7 +31,9 @@ pub(crate) fn tabela(c: &Ctx<'_>, el: ElementRef<'_>, depth: usize, cell: bool) 
         return Ok(vec![]);
     }
     if eh_tabela_de_dados(&grade) {
-        if let Some(md) = tabela_gfm(c, &grade, depth)? {
+        let tentativa = c.tentativa();
+        if let Some(md) = tabela_gfm(&tentativa, &grade, depth)? {
+            c.aceita(&tentativa);
             return Ok(md);
         }
     }
