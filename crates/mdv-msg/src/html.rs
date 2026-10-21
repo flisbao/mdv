@@ -5,6 +5,7 @@
 
 use crate::html_resposta::{cabecalho_apos_separador, cabecalho_de, is_reply_header, pular_brancos, proxima_e_cabecalho};
 use crate::html_lista::lista;
+use crate::html_profundidade;
 use crate::html_table::tabela;
 use crate::{escape, Budget, MAX_HTML_BYTES, MAX_HTML_DEPTH, MAX_MARKDOWN_BYTES};
 use scraper::{ElementRef, Html, Node};
@@ -65,6 +66,7 @@ fn to_markdown_com_teto(html: &str, budget: &dyn Budget, teto: usize) -> Result<
         ));
     }
     budget.check_html(html.len())?;
+    html_profundidade::confere(html)?;
     let doc = Html::parse_document(html);
     let c = Ctx::new(budget, teto);
     let mut f = Flow::new(&c, false, true);

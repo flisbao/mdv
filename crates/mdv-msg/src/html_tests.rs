@@ -123,3 +123,15 @@ fn celula_com_titulo_pre_imagem_e_autolink_nao_quebra_a_tabela() {
 fn ol_start_enorme_nao_entra_em_panico() {
     assert_eq!(md(r#"<ol start="18446744073709551615"><li>a</li></ol>"#), "999999000. a");
 }
+#[test]
+fn html_aninhado_demais_e_recusado_rapido() {
+    let h = "<center>".repeat(50_000);
+    let inicio = std::time::Instant::now();
+    let e = to_markdown(&h, &Unlimited).unwrap_err();
+    assert!(e.contains("aninhado demais"), "{e}");
+    assert!(inicio.elapsed() < std::time::Duration::from_secs(2), "{:?}", inicio.elapsed());
+}
+#[test]
+fn html_com_muitas_tags_irmas_nao_e_recusado() {
+    assert_eq!(md(&"<p>a</p>".repeat(50_000)), "a\n\n".repeat(49_999) + "a");
+}

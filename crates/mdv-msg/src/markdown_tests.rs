@@ -236,3 +236,13 @@ fn mensagem_grande_demais_e_recusada_sem_ler() {
     let grande = vec![0u8; crate::MAX_MSG_BYTES as usize + 1];
     assert_eq!(to_markdown(&grande, &Unlimited).unwrap_err(), "arquivo .msg grande demais");
 }
+
+#[test]
+fn html_muito_aninhado_cai_no_texto_do_corpo() {
+    let bytes = MsgBuilder::new()
+        .binary(tags::HTML, "<center>".repeat(50_000).as_bytes())
+        .string(tags::BODY, "texto do corpo")
+        .build();
+    let saida = md(&bytes);
+    assert!(saida.contains("texto do corpo"), "{saida}");
+}

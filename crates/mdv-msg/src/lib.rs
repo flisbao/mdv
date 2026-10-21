@@ -8,6 +8,7 @@ mod date;
 mod escape;
 mod html;
 mod html_lista;
+mod html_profundidade;
 mod html_resposta;
 mod html_table;
 mod lzfu;
@@ -37,6 +38,8 @@ pub const MAX_HTML_DEPTH: usize = 100;
 pub const MAX_TABLE_COLS: usize = 200;
 /// Número máximo de caracteres por célula de tabela.
 pub const MAX_CELL_CHARS: usize = 500;
+/// Profundidade máxima de elementos abertos ao mesmo tempo antes de o HTML ser recusado (o parser é quadrático).
+pub const MAX_HTML_PARSE_DEPTH: usize = 5000;
 
 /// Converte o `.msg` (bytes) em Markdown. Erros viram texto em português; nunca entra em pânico.
 pub fn to_markdown(bytes: &[u8], budget: &dyn Budget) -> Result<String, String> {
