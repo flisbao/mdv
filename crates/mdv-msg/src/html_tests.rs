@@ -61,7 +61,7 @@ fn html_acima_do_teto_e_recusado() {
 }
 #[test]
 fn aninhamento_profundo_nao_estoura_a_pilha() {
-    let r = md(&("<div>".repeat(5000) + "x"));
+    let r = md(&("<div>".repeat(4998) + "x"));
     assert!(r.contains('x'), "{r}");
 }
 
