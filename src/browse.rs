@@ -3,7 +3,7 @@
 use crate::nav::{self, Target};
 use crate::picker::{self, Picker};
 use crate::render::{self, link_id};
-use crate::load::{image_store, read_markdown_file, Source};
+use crate::load::{image_store, read_document, Source};
 use crate::app::{App, Modal};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
@@ -131,7 +131,7 @@ impl App {
     /// Troca o documento por `path`. Com `push`, guarda o atual em "voltar".
     /// Devolve `false` (sem mexer no documento atual) se o arquivo não pôde ser lido.
     pub fn open_file(&mut self, path: PathBuf, jump: Option<Jump>, push: bool, doc: crate::cli::Doc) -> bool {
-        let md = match read_markdown_file(&path) {
+        let md = match read_document(&path) {
             Ok(md) => md,
             Err(e) => {
                 self.notice = Some(

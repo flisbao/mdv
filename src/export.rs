@@ -84,16 +84,29 @@ pub(crate) fn export_to_file(
     let ext = out.extension().and_then(|e| e.to_str()).unwrap_or("");
     let format = Format::from_ext(ext)
         .ok_or_else(|| format!("formato de saída não suportado: .{ext} (use {FORMATS_HELP})"))?;
+    check_destination(out, force)?;
+    let pictures = StorePictures(store);
+    let output = convert(input, select, format, &Context { budget: &MemBudget, pictures: &pictures })?;
+    write_atomic(out, &output.bytes, force)?;
+    Ok(output.warnings)
+}
+
+/// Checagens comuns a todo `-o`: o destino não pode ser pasta, e sem `--force` não sobrescreve.
+fn check_destination(out: &Path, force: bool) -> Result<(), String> {
     if out.is_dir() {
         return Err(format!("{} é uma pasta", out.display()));
     }
     if out.exists() && !force {
         return Err(format!("{} já existe (use --force para sobrescrever)", out.display()));
     }
-    let pictures = StorePictures(store);
-    let output = convert(input, select, format, &Context { budget: &MemBudget, pictures: &pictures })?;
-    write_atomic(out, &output.bytes, force)?;
-    Ok(output.warnings)
+    Ok(())
+}
+
+/// `-o x.md` (só de `.msg`): grava o Markdown já convertido, com as mesmas checagens e a mesma
+/// gravação atômica das demais saídas.
+pub(crate) fn write_markdown(out: &Path, text: &str, force: bool) -> Result<(), String> {
+    check_destination(out, force)?;
+    write_atomic(out, text.as_bytes(), force)
 }
 
 fn write_atomic(out: &Path, bytes: &[u8], force: bool) -> Result<(), String> {
@@ -137,6 +150,11 @@ pub(crate) fn run_export(cli: &cli::Cli, e: &cli::Export, mem_warning: Option<&s
         eprintln!("mdv: {w}");
     }
     let (source, text) = load_source(cli.common.path.as_deref())?;
+    if cli::saida_markdown(&e.output) {
+        // A entrada já é o Markdown do `.msg` (`load_source` converte); só falta gravar.
+        write_markdown(Path::new(&e.output), &text, e.force).map_err(Failure::Runtime)?;
+        return write_stdout(&format!("exportado: {}\n", render::sanitize(&e.output)));
+    }
     let side = mdv_export::images::MAX_SIDE;
     let store = image_store(&source, cli, true).with_max_pixels(side, side);
     let label = sheet_label(&source);

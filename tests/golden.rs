@@ -23,6 +23,7 @@ const FILES: &[&str] = &[
     "samples/dados.json",
     "samples/itens.json",
     "samples/eventos.jsonl",
+    "samples/email.msg",
 ];
 
 const WIDTHS: [usize; 2] = [40, 80];

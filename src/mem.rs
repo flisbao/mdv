@@ -147,6 +147,14 @@ pub fn check_parse(len: usize) -> Result<(), MemoryLimit> {
     check_against(len.saturating_mul(24), limit())
 }
 
+/// Estimativa do HTML do corpo de um `.msg` antes de analisá-lo (`mdv-msg`). Medido com
+/// `/usr/bin/time -v` e `ulimit -v 4000000`, HTML de ~1 MiB: tabela de 6500×10 células pico de
+/// ~80 MiB de RSS (~74 bytes por byte de HTML, descontada a base de ~7 MiB); `<b>` aninhados
+/// ~52. Fator 80: o pior caso medido, arredondado para cima.
+pub fn check_html(len: usize) -> Result<(), MemoryLimit> {
+    check_against(len.saturating_mul(80), limit())
+}
+
 /// Estimativa do `serde_json::Value` (~16× o texto de números pequenos como `0,`).
 pub fn check_json(len: usize) -> Result<(), MemoryLimit> {
     check_against(len.saturating_mul(16), limit())

@@ -4,6 +4,8 @@
 //! para um formato existem apenas na variante de `Doc` correspondente, com uma função de
 //! parsing por formato.
 
+use std::path::Path;
+
 use crate::{mem, render};
 
 pub const DEFAULT_HEAD: usize = 1000;
@@ -183,6 +185,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
         return Err("a opção -o precisa de um nome de arquivo".to_string());
     }
     let had: Vec<String> = flags.iter().map(|f| f.name.clone()).collect();
+    let md_out = output.as_deref().is_some_and(saida_markdown);
 
     // `--delimiter` força o modo tabela mesmo com outra extensão ou subcomando.
     let format = if flags.iter().any(|f| f.name == "--delimiter") {
@@ -198,7 +201,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
         Format::Table(delimiter) => parse_table(common, &flags, delimiter),
     }?;
     match output {
-        Some(output) => into_export(cli, output, force, section, &had),
+        Some(output) => into_export(cli, output, force, section, &had, md_out),
         None => Ok(cli),
     }
 }
@@ -215,8 +218,20 @@ fn take_bool(flags: &mut Vec<Flag>, name: &str) -> bool {
     found
 }
 
+/// `-o` com extensão `.md`: o texto convertido de um `.msg` gravado como Markdown.
+pub(crate) fn saida_markdown(output: &str) -> bool {
+    Path::new(output).extension().is_some_and(|e| e.eq_ignore_ascii_case("md"))
+}
+
 /// `-o`: troca a visualização por uma exportação, recusando o que não faz sentido com ela.
-fn into_export(cli: Cli, output: String, force: bool, section: Option<String>, had: &[String]) -> Result<Cli, String> {
+fn into_export(
+    cli: Cli,
+    output: String,
+    force: bool,
+    section: Option<String>,
+    had: &[String],
+    md_out: bool,
+) -> Result<Cli, String> {
     let Cli { common, command } = cli;
     let doc = match command {
         Command::View(doc) => doc,
@@ -226,6 +241,10 @@ fn into_export(cli: Cli, output: String, force: bool, section: Option<String>, h
     };
     if common.follow {
         return Err("-o não combina com --follow".to_string());
+    }
+    let entrada_msg = common.path.as_deref().is_some_and(|p| crate::msg::is_msg(Path::new(p)));
+    if md_out && !(matches!(doc, Doc::Markdown) && entrada_msg) {
+        return Err("-o .md só vale para .msg".to_string());
     }
     match &doc {
         Doc::Json { .. } => return Err("JSON ainda não exporta (use .md, .csv ou .tsv)".to_string()),
@@ -240,6 +259,9 @@ fn into_export(cli: Cli, output: String, force: bool, section: Option<String>, h
         Doc::Markdown => {
             if section.is_some() && common.table.is_some() {
                 return Err("--section não combina com --table".to_string());
+            }
+            if md_out && (section.is_some() || common.table.is_some()) {
+                return Err("-o .md não combina com --section nem --table".to_string());
             }
         }
     }
@@ -666,6 +688,19 @@ mod tests {
         assert!(matches!(e.doc, Doc::Table { delimiter: b',', no_header: true, .. }));
         let e = export(&["tsv", "-", "-o", "t.ods"]);
         assert!(matches!(e.doc, Doc::Table { delimiter: b'\t', .. }));
+    }
+
+    #[test]
+    fn saida_md_so_com_msg() {
+        let e = run(&["a.md", "-o", "b.md"]).unwrap_err();
+        assert!(e.contains("só vale para .msg"), "{e}");
+        let e = run(&["a.csv", "-o", "b.md"]).unwrap_err();
+        assert!(e.contains("só vale para .msg"), "{e}");
+        assert!(run(&["-", "-o", "b.md"]).unwrap_err().contains("só vale para .msg"));
+        let c = run(&["a.MSG", "-o", "b.md"]).unwrap();
+        assert!(matches!(c.command, Command::Export(Export { doc: Doc::Markdown, .. })));
+        assert!(run(&["a.msg", "-o", "b.md", "--section", "X"]).unwrap_err().contains("não combina"));
+        assert!(run(&["a.msg", "-o", "b.md", "--table", "1"]).unwrap_err().contains("não combina"));
     }
 
     #[test]

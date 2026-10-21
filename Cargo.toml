@@ -1,9 +1,9 @@
 [workspace]
-members = [".", "crates/mdv-text", "crates/mdv-tools", "crates/mdv-export"]
+members = [".", "crates/mdv-text", "crates/mdv-tools", "crates/mdv-export", "crates/mdv-msg"]
 resolver = "2"
 
 [workspace.package]
-version = "0.5.2"
+version = "0.6.0"
 edition = "2021"
 license = "MIT"
 
@@ -12,6 +12,7 @@ pulldown-cmark = { version = "0.13", default-features = false }
 tempfile = "3"
 mdv-text = { path = "crates/mdv-text" }
 mdv-export = { path = "crates/mdv-export" }
+mdv-msg = { path = "crates/mdv-msg" }
 
 [package]
 name = "mdv"
@@ -24,6 +25,7 @@ description = "Visualizador de Markdown no terminal (renderizador + TUI)"
 pulldown-cmark.workspace = true
 mdv-text.workspace = true
 mdv-export.workspace = true
+mdv-msg.workspace = true
 tempfile.workspace = true
 ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 syntect = { version = "5", default-features = false, features = ["parsing", "default-syntaxes", "default-themes", "regex-fancy"] }
@@ -45,6 +47,7 @@ remote = ["images", "dep:ureq", "dep:url"]
 
 [dev-dependencies]
 tempfile.workspace = true
+mdv-msg = { workspace = true, features = ["testutil"] }
 
 [profile.release]
 lto = "thin"
