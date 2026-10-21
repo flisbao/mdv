@@ -40,6 +40,8 @@ pub(crate) fn encoding_for(cp: u32) -> &'static Encoding {
         28603 => ISO_8859_13,
         28604 => ISO_8859_14,
         28605 => ISO_8859_15,
+        28599 => WINDOWS_1254,
+        28601 => WINDOWS_874,
         28606 => ISO_8859_16,
         50220..=50222 => ISO_2022_JP,
         51932 => EUC_JP,
@@ -49,8 +51,15 @@ pub(crate) fn encoding_for(cp: u32) -> &'static Encoding {
 }
 
 /// Decodifica bytes da codepage `cp`; bytes inválidos viram U+FFFD.
+/// Sem BOM (exceto UTF-8 e UTF-16LE): um texto 1252 que começa com FF FE continua sendo "ÿþ".
 pub(crate) fn decode(bytes: &[u8], cp: u32) -> String {
-    let (texto, _, _) = encoding_for(cp).decode(bytes);
+    let encoding = encoding_for(cp);
+    let (texto, _) = if cp == 65001 || cp == 1200 {
+        let (texto, _, _) = encoding.decode(bytes);
+        (texto, false)
+    } else {
+        encoding.decode_without_bom_handling(bytes)
+    };
     texto.into_owned()
 }
 
@@ -65,5 +74,18 @@ mod tests {
         assert_eq!(decode(b"\xe7", 999_999), "ç"); // padrão 1252
         assert_eq!(decode("ação".as_bytes(), 65001), "ação");
         assert_eq!(encoding_for(932), SHIFT_JIS);
+    }
+
+    #[test]
+    fn bom_nao_reinterpreta_texto_1252() {
+        assert_eq!(decode(b"\xff\xfeA", 1252), "ÿþA");
+        assert_eq!(decode("\u{feff}ação".as_bytes(), 65001), "ação");
+    }
+
+    #[test]
+    fn codepages_279_e_874_mapeadas() {
+        use encoding_rs::{WINDOWS_1254, WINDOWS_874};
+        assert_eq!(encoding_for(28599), WINDOWS_1254);
+        assert_eq!(encoding_for(28601), WINDOWS_874);
     }
 }

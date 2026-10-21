@@ -5,9 +5,15 @@
 #[allow(dead_code)]
 mod codepage;
 #[allow(dead_code)]
+mod container;
+#[allow(dead_code)]
 mod lzfu;
 #[allow(dead_code)]
+mod message;
+#[allow(dead_code)]
 mod rtf;
+#[cfg(any(test, feature = "testutil"))]
+pub mod testutil;
 
 /// Tamanho máximo aceito para um arquivo `.msg` inteiro.
 pub const MAX_MSG_BYTES: u64 = 32 * 1024 * 1024;
