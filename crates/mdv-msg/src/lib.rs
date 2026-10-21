@@ -7,6 +7,12 @@ mod codepage;
 #[allow(dead_code)]
 mod container;
 #[allow(dead_code)]
+mod escape;
+#[allow(dead_code)]
+mod html;
+#[allow(dead_code)]
+mod html_table;
+#[allow(dead_code)]
 mod lzfu;
 #[allow(dead_code)]
 mod message;
