@@ -15,6 +15,7 @@ const HTML: &str = r#"<html><head><meta charset="utf-8"></head><body>
 <div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td>
 <p>Olá, Bruno!</p>
+<p><img src="cid:logo.png@01" alt="Logo"></p>
 <p>Segue o fechamento de outubro. Os números estão na tabela abaixo; se houver algum ajuste, me avisa até sexta.</p>
 <table border="1" cellpadding="4" cellspacing="0">
 <tr><th>Área</th><th>Valor</th><th>Situação</th></tr>
@@ -28,10 +29,10 @@ const HTML: &str = r#"<html><head><meta charset="utf-8"></head><body>
 <li>Atualizar a previsão de caixa de novembro</li>
 </ul>
 <p>Abraço,<br>Ana</p>
-<div id="divRplyFwdMsg" dir="ltr">
 <hr style="display:inline-block;width:98%" tabindex="-1">
+<div id="divRplyFwdMsg" dir="ltr">
 <p><b>De:</b> Bruno Lima &lt;bruno.lima@exemplo.com.br&gt;<br>
-<b>Enviado:</b> segunda-feira, 20 de outubro de 2026 17:05<br>
+<b>Enviado:</b> terça-feira, 20 de outubro de 2026 17:05<br>
 <b>Para:</b> Ana Souza &lt;ana.souza@exemplo.com.br&gt;<br>
 <b>Assunto:</b> Fechamento de outubro</p>
 </div>
@@ -53,7 +54,7 @@ fn monta_email() -> MsgBuilder {
         .string(tags::SENDER_SMTP_ADDRESS, "ana.souza@exemplo.com.br")
         .string(
             tags::TRANSPORT_MESSAGE_HEADERS,
-            "Date: Tue, 21 Oct 2026 14:32:10 -0300\r\nFrom: Ana Souza <ana.souza@exemplo.com.br>\r\n",
+            "Date: Wed, 21 Oct 2026 14:32:10 -0300\r\nFrom: Ana Souza <ana.souza@exemplo.com.br>\r\n",
         )
         .recipient(1, "Bruno Lima", "bruno.lima@exemplo.com.br")
         .recipient(1, "Carla Dias", "carla.dias@exemplo.com.br")
@@ -91,4 +92,15 @@ fn sample_commitado_bate_com_o_gerador() {
     let do_gerador = to_markdown(&monta_email().build(), &Unlimited).expect("gerador converte");
     assert_eq!(do_arquivo, do_gerador);
     assert!(do_arquivo.contains(SUBJECT), "{do_arquivo}");
+}
+
+#[test]
+fn amostra_convertida_mostra_imagem_tabela_e_citacao() {
+    let commitado = fs::read(caminho_amostra()).expect("samples/email.msg deve existir");
+    let md = to_markdown(&commitado, &Unlimited).expect("amostra converte");
+    assert!(md.contains("[imagem: Logo]"), "{md}");
+    assert!(md.contains("| Área | Valor | Situação |"), "{md}");
+    assert!(!md.contains("logo.png ("), "imagem oculta não entra em Anexos: {md}");
+    assert!(!md.contains("> ---"), "o <hr> antes da resposta some: {md}");
+    assert!(md.contains("> **De:** Bruno Lima"), "{md}");
 }
