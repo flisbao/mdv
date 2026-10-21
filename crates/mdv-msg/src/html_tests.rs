@@ -143,6 +143,15 @@ fn celula_com_varios_paragrafos_vira_layout_sem_perder_texto() {
     assert!(!r.contains('…'), "{r}");
     assert!(!r.contains("| --- |"), "{r}");
 }
+
+#[test]
+fn bloco_conteiner_com_um_bloco_interno_mantem_tabela_de_dados() {
+    let h = "<table><tr><td><div><p>valor</p></div></td><td>coluna</td></tr><tr><td>1</td><td>2</td></tr></table>";
+    let r = md(h);
+    assert!(r.contains("| --- |"), "estrutura de dados perdida: {r}");
+    assert!(r.contains("valor"), "conteúdo perdido: {r}");
+}
+
 #[test]
 fn celula_longa_vira_layout_sem_perder_texto() {
     let longo = "palavra ".repeat(75);

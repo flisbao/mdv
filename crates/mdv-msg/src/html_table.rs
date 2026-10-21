@@ -3,11 +3,12 @@
 use crate::escape;
 use crate::html::{kids, Ctx, Flow};
 use crate::{MAX_CELL_CHARS, MAX_TABLE_COLS};
-use scraper::ElementRef;
+use scraper::{ElementRef, Node};
+use std::collections::HashMap;
 
 /// Elementos que, dentro de uma célula, indicam conteúdo de texto corrido (layout, não dados).
 const BLOCOS_CELULA: &[&str] = &[
-    "p", "div", "ul", "ol", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "table",
+    "p", "div", "ul", "ol", "li", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "table",
 ];
 
 type Grade<'a> = Vec<Vec<(ElementRef<'a>, usize)>>;
@@ -64,18 +65,37 @@ fn eh_tabela_de_dados(grade: &Grade<'_>) -> bool {
     largas >= 2 && !aninhada && !complexa
 }
 
-/// Mais de um bloco com texto dentro da célula, em qualquer profundidade (para ao achar o segundo).
+/// Mais de um bloco de saída com texto. Wrappers como `div > p` contam como um bloco; irmãos `p` contam separados.
 fn varios_blocos(cel: ElementRef<'_>) -> bool {
-    let mut n = 0;
-    for el in cel.descendants().filter_map(ElementRef::wrap) {
-        if BLOCOS_CELULA.contains(&el.value().name()) && el.text().any(|t| !t.trim().is_empty()) {
-            n += 1;
-            if n > 1 {
-                return true;
+    // Reverso da ordem de preordem: filhos são calculados antes do pai sem recursão no stack Rust.
+    let mut elementos = vec![cel];
+    elementos.extend(cel.descendants().filter_map(ElementRef::wrap));
+    let mut info = HashMap::new();
+    for el in elementos.into_iter().rev() {
+        let mut blocos_filhos = 0usize;
+        let mut texto_inline = false;
+        for filho in el.children() {
+            match filho.value() {
+                Node::Text(t) => texto_inline |= !t.text.trim().is_empty(),
+                Node::Element(_) => {
+                    if let Some(&(blocos, inline)) = info.get(&filho.id()) {
+                        blocos_filhos += blocos;
+                        texto_inline |= inline;
+                    }
+                }
+                _ => {}
             }
         }
+        let bloco = BLOCOS_CELULA.contains(&el.value().name());
+        let contagem = if bloco {
+            blocos_filhos + usize::from(texto_inline)
+        } else {
+            blocos_filhos
+        };
+        let inline = !bloco && texto_inline;
+        info.insert(el.id(), (contagem, inline));
     }
-    false
+    info.get(&cel.id()).is_some_and(|&(n, inline)| n + usize::from(inline && n > 0) > 1)
 }
 
 /// Texto da célula acima de `MAX_CELL_CHARS` caracteres (para ao passar do teto).
