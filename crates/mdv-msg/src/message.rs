@@ -71,7 +71,7 @@ pub(crate) fn read_com_limites(
     le_mensagem(&mut cfb, "/", 0, budget).map_err(ErroLeitura::texto)
 }
 
-/// Keeps budget failures distinguishable while an embedded message is allowed to degrade on content errors.
+/// Mantém erros do orçamento separados para só degradar erros de conteúdo em mensagens embutidas.
 enum ErroLeitura {
     Budget(String),
     Conteudo(String),
