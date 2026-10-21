@@ -3,7 +3,7 @@
 //! cabeçalhos de resposta ("De:"/"From:") viram citações aninhadas, até `MAX_NIVEIS_CITACAO`.
 //! Texto do e-mail é escapado uma vez, no ponto em que é emitido (ver `escape`).
 
-use crate::html_resposta::{cabecalho_apos_separador, cabecalho_de, is_reply_header, proxima_e_cabecalho};
+use crate::html_resposta::{cabecalho_apos_separador, cabecalho_de, is_reply_header, pular_brancos, proxima_e_cabecalho};
 use crate::html_lista::lista;
 use crate::html_table::tabela;
 use crate::{escape, Budget, MAX_HTML_BYTES, MAX_HTML_DEPTH, MAX_MARKDOWN_BYTES};
@@ -147,7 +147,14 @@ impl<'a> Flow<'a> {
         let cab = cabecalho_de(el).unwrap_or(el);
         let mut q = Flow::new(self.c, self.cell, true);
         q.niveis = self.niveis + 1;
-        q.element(cab, depth + 1)?;
+        let filhos = kids(cab);
+        let j0 = pular_brancos(&filhos, 0);
+        if matches!(filhos.get(j0), Some(Kid::Elemento(h)) if h.value().name() == "hr") {
+            // `<hr>` logo no início do cabeçalho é separador, não conteúdo: os filhos seguem sem ele.
+            q.nodes(&filhos, j0 + 1, depth + 1)?;
+        } else {
+            q.element(cab, depth + 1)?;
+        }
         let mut j = i + 1;
         if cab.attr("id") == Some("appendonsend") {
             if let Some((k, prox)) = cabecalho_apos_separador(ks, j) {

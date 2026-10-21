@@ -55,7 +55,7 @@ fn cabecalho_direto(el: ElementRef<'_>) -> bool {
 }
 
 /// Pula textos só com espaço a partir de `j`.
-fn pular_brancos(ks: &[Kid<'_>], mut j: usize) -> usize {
+pub(crate) fn pular_brancos(ks: &[Kid<'_>], mut j: usize) -> usize {
     while matches!(ks.get(j), Some(Kid::Texto(t)) if t.trim().is_empty()) {
         j += 1;
     }

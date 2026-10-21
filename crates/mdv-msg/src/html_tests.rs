@@ -76,6 +76,11 @@ fn owa_appendonsend_abre_um_nivel_so() {
     assert_eq!(md(h), "Resp\n\n> **De:** Ana\n>\n> Original");
 }
 #[test]
+fn hr_dentro_do_cabecalho_de_resposta_e_descartado() {
+    let h = r#"<div><p>Resp</p><div id="divRplyFwdMsg"><hr><p><b>De:</b> Ana</p></div><div>Original</div></div>"#;
+    assert_eq!(md(h), "Resp\n\n> **De:** Ana\n>\n> Original");
+}
+#[test]
 fn citacao_limitada_a_20_niveis() {
     let mut h = String::from("<div>");
     for k in 0..25 {
