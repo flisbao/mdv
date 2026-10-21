@@ -63,6 +63,12 @@ pub(crate) fn decode(bytes: &[u8], cp: u32) -> String {
     texto.into_owned()
 }
 
+/// Decodifica com um rótulo de charset HTML (ex.: `utf-8`, `iso-8859-1`); `None` se o rótulo não existe.
+pub(crate) fn decode_label(bytes: &[u8], rotulo: &str) -> Option<String> {
+    let encoding = Encoding::for_label(rotulo.as_bytes())?;
+    Some(encoding.decode_without_bom_handling(bytes).0.into_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

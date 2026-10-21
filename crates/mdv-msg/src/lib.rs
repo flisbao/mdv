@@ -2,25 +2,17 @@
 //! Biblioteca pura: recebe bytes e devolve texto; a leitura do arquivo fica com o chamador.
 //! O limite de trabalho vem por `Budget`; os tetos de tamanho e contagem são as constantes abaixo.
 
-#[allow(dead_code)]
 mod codepage;
-#[allow(dead_code)]
+mod date;
 mod container;
-#[allow(dead_code)]
 mod escape;
-#[allow(dead_code)]
 mod html;
-#[allow(dead_code)]
 mod html_lista;
-#[allow(dead_code)]
 mod html_resposta;
-#[allow(dead_code)]
 mod html_table;
-#[allow(dead_code)]
 mod lzfu;
-#[allow(dead_code)]
+mod markdown;
 mod message;
-#[allow(dead_code)]
 mod rtf;
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
@@ -45,6 +37,15 @@ pub const MAX_HTML_DEPTH: usize = 100;
 pub const MAX_TABLE_COLS: usize = 200;
 /// Número máximo de caracteres por célula de tabela.
 pub const MAX_CELL_CHARS: usize = 500;
+
+/// Converte o `.msg` (bytes) em Markdown. Erros viram texto em português; nunca entra em pânico.
+pub fn to_markdown(bytes: &[u8], budget: &dyn Budget) -> Result<String, String> {
+    if bytes.len() as u64 > MAX_MSG_BYTES {
+        return Err("arquivo .msg grande demais".to_string());
+    }
+    let mensagem = message::read(bytes, budget)?;
+    markdown::render(&mensagem, 0, budget)
+}
 
 /// Orçamento de trabalho consultado pelos laços de conversão.
 pub trait Budget {
