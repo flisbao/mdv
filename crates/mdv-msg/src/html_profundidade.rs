@@ -32,6 +32,14 @@ const FORMATACAO: &[&str] = &[
 ];
 /// Raízes de conteúdo estrangeiro (SVG e MathML): dentro delas, void e texto cru não valem.
 const ESTRANGEIROS: &[&str] = &["svg", "math"];
+/// Tags de HTML que fazem o parser sair do conteúdo SVG/MathML. `font` é conservador: no parser
+/// só sai se tiver color/face/size, mas tratá-lo sempre como saída evita depender do tokenizador de atributos.
+const SAIDA_ESTRANGEIRO: &[&str] = &[
+    "b", "big", "blockquote", "body", "br", "center", "code", "dd", "div", "dl", "dt", "em", "embed", "font",
+    "h1", "h2", "h3", "h4", "h5", "h6", "head", "hr", "i", "img", "li", "listing", "menu", "meta", "nobr",
+    "ol", "p", "pre", "ruby", "s", "small", "span", "strong", "strike", "sub", "sup", "table", "tt", "u", "ul",
+    "var",
+];
 /// Elementos implícitos que o parser pode criar sob cada `<table>` (tbody, tr, colgroup).
 const EXTRA_POR_TABELA: usize = 3;
 pub(crate) const MSG_ANINHADO: &str = "HTML aninhado demais";
@@ -60,6 +68,9 @@ pub(crate) fn confere(html: &str) -> Result<(), String> {
                 let fim_nome = fim_do_nome(b, at + 1);
                 let nome = b[at + 1..fim_nome].to_ascii_lowercase();
                 let fim = fim_da_tag(b, fim_nome);
+                if pilha.estrangeiro() && esta(SAIDA_ESTRANGEIRO, &nome) {
+                    pilha.sai_de_conteudo_estrangeiro();
+                }
                 let estrangeiro = pilha.estrangeiro();
                 if !estrangeiro && esta(VAZIAS, &nome) {
                     fim
@@ -104,6 +115,20 @@ impl Pilha {
 
     fn estrangeiro(&self) -> bool {
         ESTRANGEIROS.iter().any(|n| self.posicoes.contains_key(n.as_bytes()))
+    }
+
+    /// O tree builder retira o elemento SVG/MathML e seus descendentes antes de tratar estas tags como HTML.
+    fn sai_de_conteudo_estrangeiro(&mut self) {
+        let Some(raiz) = self
+            .nomes
+            .iter()
+            .rposition(|(nome, _)| ESTRANGEIROS.iter().any(|n| n.as_bytes() == nome.as_slice()))
+        else {
+            return;
+        };
+        while self.nomes.len() > raiz {
+            self.desempilha();
+        }
     }
 
     fn abre(&mut self, nome: Vec<u8>) -> Result<(), String> {
@@ -316,6 +341,17 @@ mod tests {
         let h = "<svg><![CDATA[></svg>]]><style>".to_string() + &"<g>".repeat(5100);
         assert!(profundidade_real(&h) >= 5000);
         assert!(confere(&h).is_err());
+    }
+
+    #[test]
+    fn cdata_depois_de_escape_de_conteudo_estrangeiro_nao_esconde_tags() {
+        for h in [
+            "<svg><p><![CDATA[>".to_string() + &"<div>".repeat(5100),
+            "<math><p><![CDATA[>".to_string() + &"<div>".repeat(5100) + "]]>",
+        ] {
+            assert!(profundidade_real(&h) >= 5000);
+            assert!(confere(&h).is_err());
+        }
     }
 
     #[test]
