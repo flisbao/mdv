@@ -1,11 +1,14 @@
 //! Conversão do HTML do corpo do e-mail (Outlook) em Markdown.
-//! Tabelas de dados viram GFM; tabelas de layout viram sequências de blocos; cabeçalhos
-//! de resposta ("De:"/"From:") viram citações aninhadas. Texto do e-mail é escapado uma
-//! vez, no ponto em que é emitido (ver `escape`).
+//! Tabelas de dados viram GFM (em `html_table`); tabelas de layout viram sequências de blocos;
+//! cabeçalhos de resposta ("De:"/"From:") viram citações aninhadas, até `MAX_NIVEIS_CITACAO`.
+//! Texto do e-mail é escapado uma vez, no ponto em que é emitido (ver `escape`).
 
+use crate::html_resposta::{cabecalho_apos_separador, cabecalho_de, is_reply_header, proxima_e_cabecalho};
+use crate::html_lista::lista;
 use crate::html_table::tabela;
-use crate::{escape, Budget, MAX_HTML_BYTES, MAX_HTML_DEPTH};
+use crate::{escape, Budget, MAX_HTML_BYTES, MAX_HTML_DEPTH, MAX_MARKDOWN_BYTES};
 use scraper::{ElementRef, Html, Node};
+use std::cell::Cell;
 
 /// Elementos que sempre produzem bloco (o resto é transparente ou inline).
 const BLOCOS: &[&str] = &[
@@ -19,9 +22,42 @@ const IGNORADOS: &[&str] = &[
     "head", "style", "script", "title", "meta", "link", "noscript", "template", "iframe", "object",
     "embed", "svg", "canvas", "video", "audio", "input", "button", "select", "textarea",
 ];
+/// Níveis máximos de citação; respostas mais fundas ficam no último nível.
+const MAX_NIVEIS_CITACAO: usize = 20;
+const MSG_GRANDE_DEMAIS: &str = "e-mail grande demais para converter";
+
+/// Contexto da conversão: orçamento de trabalho e total de saída produzido até agora.
+pub(crate) struct Ctx<'a> {
+    b: &'a dyn Budget,
+    limite: usize,
+    usado: Cell<usize>,
+}
+
+impl<'a> Ctx<'a> {
+    fn new(b: &'a dyn Budget, limite: usize) -> Self {
+        Ctx { b, limite, usado: Cell::new(0) }
+    }
+
+    /// Confirma o orçamento e o teto de saída; chamado a cada nó, bloco, item, linha e citação.
+    pub(crate) fn check(&self) -> Result<(), String> {
+        if self.usado.get() > self.limite {
+            return Err(MSG_GRANDE_DEMAIS.to_string());
+        }
+        self.b.check()
+    }
+
+    /// Registra `n` bytes produzidos; o teto é conferido em `check`.
+    pub(crate) fn gasta(&self, n: usize) {
+        self.usado.set(self.usado.get().saturating_add(n));
+    }
+}
 
 /// Converte o corpo HTML num Markdown com blocos separados por linha em branco.
 pub(crate) fn to_markdown(html: &str, budget: &dyn Budget) -> Result<String, String> {
+    to_markdown_com_teto(html, budget, MAX_MARKDOWN_BYTES)
+}
+
+fn to_markdown_com_teto(html: &str, budget: &dyn Budget, teto: usize) -> Result<String, String> {
     if html.len() > MAX_HTML_BYTES {
         return Err(format!(
             "corpo HTML grande demais: {} bytes (máximo {MAX_HTML_BYTES})",
@@ -30,9 +66,12 @@ pub(crate) fn to_markdown(html: &str, budget: &dyn Budget) -> Result<String, Str
     }
     budget.check_html(html.len())?;
     let doc = Html::parse_document(html);
-    let mut f = Flow::new(budget, false, true);
-    f.nodes(&[Kid::Elemento(doc.root_element())], 0, 0, false)?;
-    Ok(f.finish().join("\n\n").trim_end().to_string())
+    let c = Ctx::new(budget, teto);
+    let mut f = Flow::new(&c, false, true);
+    f.nodes(&[Kid::Elemento(doc.root_element())], 0, 0)?;
+    let md = f.finish().join("\n\n").trim_end().to_string();
+    c.check()?;
+    Ok(md)
 }
 
 /// Filho de um elemento: texto ou elemento (comentários e demais tipos de nó são descartados).
@@ -54,7 +93,7 @@ pub(crate) fn kids(el: ElementRef<'_>) -> Vec<Kid<'_>> {
 
 /// Estado de uma sequência de conteúdo: o trecho em linha em construção e os blocos prontos.
 pub(crate) struct Flow<'a> {
-    b: &'a dyn Budget,
+    c: &'a Ctx<'a>,
     /// Dentro de célula de tabela de dados: quebras viram espaço e `|` é escapado.
     cell: bool,
     buf: String,
@@ -62,12 +101,14 @@ pub(crate) struct Flow<'a> {
     quebra: bool,
     /// Início de bloco (falso dentro de um trecho inline, como `<b>`).
     inicio: bool,
+    /// Quantas citações envolvem este trecho.
+    niveis: usize,
     blocos: Vec<String>,
 }
 
 impl<'a> Flow<'a> {
-    pub(crate) fn new(b: &'a dyn Budget, cell: bool, inicio: bool) -> Self {
-        Flow { b, cell, buf: String::new(), quebra: false, inicio, blocos: Vec::new() }
+    pub(crate) fn new(c: &'a Ctx<'a>, cell: bool, inicio: bool) -> Self {
+        Flow { c, cell, buf: String::new(), quebra: false, inicio, niveis: 0, blocos: Vec::new() }
     }
 
     pub(crate) fn finish(mut self) -> Vec<String> {
@@ -75,16 +116,15 @@ impl<'a> Flow<'a> {
         self.blocos
     }
 
-    /// Processa `ks` a partir de `from`. `entrada` indica que `ks[from]` é o próprio cabeçalho
-    /// de resposta de uma citação, que não deve ser citado de novo.
-    pub(crate) fn nodes(&mut self, ks: &[Kid<'_>], from: usize, depth: usize, entrada: bool) -> Result<(), String> {
+    /// Processa `ks` a partir de `from`.
+    pub(crate) fn nodes(&mut self, ks: &[Kid<'_>], from: usize, depth: usize) -> Result<(), String> {
         let mut i = from;
         while i < ks.len() {
-            self.b.check()?;
+            self.c.check()?;
             match ks[i] {
                 Kid::Texto(t) => self.text(t),
                 Kid::Elemento(el) => {
-                    if depth < MAX_HTML_DEPTH && !(entrada && i == from) && is_reply_header(el) {
+                    if self.niveis < MAX_NIVEIS_CITACAO && depth < MAX_HTML_DEPTH && is_reply_header(el) {
                         return self.quote(ks, i, depth);
                     }
                     if el.value().name() == "hr" && proxima_e_cabecalho(ks, i) {
@@ -99,14 +139,27 @@ impl<'a> Flow<'a> {
         Ok(())
     }
 
-    /// Cabeçalho de resposta em `ks[from]`: ele e os irmãos seguintes viram uma citação.
-    fn quote(&mut self, ks: &[Kid<'_>], from: usize, depth: usize) -> Result<(), String> {
+    /// Cabeçalho de resposta em `ks[i]`: ele e os irmãos seguintes viram uma citação.
+    /// Após `appendonsend`, um `<hr>` e o `divRplyFwdMsg` seguinte abrem um nível só.
+    fn quote(&mut self, ks: &[Kid<'_>], i: usize, depth: usize) -> Result<(), String> {
+        let Kid::Elemento(el) = ks[i] else { return Ok(()) };
         self.flush();
-        let mut q = Flow::new(self.b, self.cell, true);
-        q.nodes(ks, from, depth + 1, true)?;
+        let cab = cabecalho_de(el).unwrap_or(el);
+        let mut q = Flow::new(self.c, self.cell, true);
+        q.niveis = self.niveis + 1;
+        q.element(cab, depth + 1)?;
+        let mut j = i + 1;
+        if cab.attr("id") == Some("appendonsend") {
+            if let Some((k, prox)) = cabecalho_apos_separador(ks, j) {
+                q.element(prox, depth + 1)?;
+                j = k;
+            }
+        }
+        q.nodes(ks, j, depth + 1)?;
         let blocos = q.finish();
         if !blocos.is_empty() {
-            self.blocos.push(cita(&blocos));
+            let s = cita(self.c, &blocos)?;
+            self.blocos.push(s);
         }
         Ok(())
     }
@@ -124,7 +177,7 @@ impl<'a> Flow<'a> {
         match nome {
             "br" => self.quebra = true,
             "img" => {
-                let md = imagem(el);
+                let md = imagem(el, self.cell);
                 self.piece(&md);
             }
             "a" => {
@@ -136,17 +189,17 @@ impl<'a> Flow<'a> {
             "s" | "strike" | "del" => self.marcado(el, depth, "~~")?,
             _ if BLOCOS.contains(&nome) => {
                 self.flush();
-                let blocos = bloco(self.b, el, depth, self.cell)?;
+                let blocos = bloco(self.c, el, depth, self.cell)?;
                 self.blocos.extend(blocos);
             }
-            _ => self.nodes(&kids(el), 0, depth + 1, false)?,
+            _ => self.nodes(&kids(el), 0, depth + 1)?,
         }
         Ok(())
     }
 
     /// Negrito/itálico/tachado: a marca fica colada ao texto; espaços das pontas ficam de fora.
     fn marcado(&mut self, el: ElementRef<'_>, depth: usize, marca: &str) -> Result<(), String> {
-        let miolo = inline_of(self.b, self.cell, el, depth)?;
+        let miolo = inline_of(self.c, self.cell, el, depth)?;
         let nucleo = miolo.trim_matches(' ');
         let bruto = texto_bruto(el);
         let ini = bruto.starts_with(char::is_whitespace);
@@ -167,19 +220,17 @@ impl<'a> Flow<'a> {
 
     /// Link: `[texto](destino)`, ou autolink `<destino>` quando o texto é o próprio endereço.
     fn link(&self, el: ElementRef<'_>, depth: usize) -> Result<String, String> {
-        let miolo = inline_of(self.b, self.cell, el, depth)?;
+        let miolo = inline_of(self.c, self.cell, el, depth)?;
         let texto = miolo.trim();
         let bruto = colapsa(&texto_bruto(el));
-        let bruto = bruto.trim();
         let href = el.attr("href").map(|h| mdv_text::sanitize(h.trim()).into_owned()).unwrap_or_default();
         if href.is_empty() {
             return Ok(miolo);
         }
-        let auto = !href.chars().any(|c| c.is_whitespace() || c == '<' || c == '>') && href.contains(':');
-        if auto && (texto.is_empty() || href == bruto) {
+        if autolink_valido(&href) && (texto.is_empty() || href == bruto.trim()) {
             return Ok(format!("<{href}>"));
         }
-        if texto.is_empty() || href == bruto {
+        if texto.is_empty() {
             return Ok(miolo);
         }
         Ok(format!("[{texto}]({})", destino(&href)))
@@ -231,12 +282,18 @@ impl<'a> Flow<'a> {
         } else {
             md
         };
+        if md.starts_with('[') && self.buf.ends_with('!') {
+            // `!` seguido de `[` formaria imagem: a exclamação vira entidade, sem o `![` no texto.
+            self.buf.pop();
+            self.buf.push_str("&#33;");
+        }
         self.buf.push_str(md);
     }
 
     fn flush(&mut self) {
         let t = self.buf.trim_end_matches(' ');
         if !t.is_empty() {
+            self.c.gasta(t.len());
             self.blocos.push(t.to_string());
         }
         self.buf.clear();
@@ -246,147 +303,84 @@ impl<'a> Flow<'a> {
 }
 
 /// Conteúdo inline de um elemento (sem separar blocos; blocos internos viram espaços).
-fn inline_of(b: &dyn Budget, cell: bool, el: ElementRef<'_>, depth: usize) -> Result<String, String> {
-    let mut f = Flow::new(b, cell, false);
-    f.nodes(&kids(el), 0, depth + 1, false)?;
+pub(crate) fn inline_of(c: &Ctx<'_>, cell: bool, el: ElementRef<'_>, depth: usize) -> Result<String, String> {
+    let mut f = Flow::new(c, cell, false);
+    f.nodes(&kids(el), 0, depth + 1)?;
     Ok(f.finish().join(" "))
 }
 
 /// Bloco de um elemento de bloco (títulos, listas, citações, código, tabelas, genéricos).
-fn bloco(b: &dyn Budget, el: ElementRef<'_>, depth: usize, cell: bool) -> Result<Vec<String>, String> {
+fn bloco(c: &Ctx<'_>, el: ElementRef<'_>, depth: usize, cell: bool) -> Result<Vec<String>, String> {
     let nome = el.value().name();
     match nome {
         "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
             let nivel = (nome.as_bytes()[1] - b'0') as usize;
-            let t = inline_of(b, false, el, depth)?.replace("\\\n", " ");
+            let t = inline_of(c, cell, el, depth)?.replace("\\\n", " ");
             let t = t.trim();
-            Ok(if t.is_empty() { vec![] } else { vec![format!("{} {t}", "#".repeat(nivel))] })
+            if t.is_empty() {
+                return Ok(vec![]);
+            }
+            let s = format!("{} {t}", "#".repeat(nivel));
+            c.gasta(s.len());
+            Ok(vec![s])
         }
-        "ul" | "ol" => lista(b, el, depth, cell),
+        "ul" | "ol" => lista(c, el, depth, cell),
         "blockquote" => {
-            let blocos = filho_de_bloco(b, el, depth, cell)?;
-            Ok(if blocos.is_empty() { vec![] } else { vec![cita(&blocos)] })
+            let blocos = filho_de_bloco(c, el, depth, cell)?;
+            Ok(if blocos.is_empty() { vec![] } else { vec![cita(c, &blocos)?] })
         }
-        "pre" => Ok(pre(el)),
+        "pre" => Ok(pre(c, el, cell)),
         "hr" => Ok(vec!["---".to_string()]),
-        "table" => tabela(b, el, depth, cell),
-        _ => filho_de_bloco(b, el, depth, cell),
+        "table" => tabela(c, el, depth, cell),
+        _ => filho_de_bloco(c, el, depth, cell),
     }
 }
 
-fn filho_de_bloco(b: &dyn Budget, el: ElementRef<'_>, depth: usize, cell: bool) -> Result<Vec<String>, String> {
-    let mut f = Flow::new(b, cell, true);
-    f.nodes(&kids(el), 0, depth + 1, false)?;
+pub(crate) fn filho_de_bloco(c: &Ctx<'_>, el: ElementRef<'_>, depth: usize, cell: bool) -> Result<Vec<String>, String> {
+    let mut f = Flow::new(c, cell, true);
+    f.nodes(&kids(el), 0, depth + 1)?;
     Ok(f.finish())
 }
 
-/// Lista: cada filho direto é um item; itens vazios somem.
-fn lista(b: &dyn Budget, el: ElementRef<'_>, depth: usize, cell: bool) -> Result<Vec<String>, String> {
-    let ordenada = el.value().name() == "ol";
-    let inicio = el.attr("start").and_then(|s| s.trim().parse::<usize>().ok()).unwrap_or(1);
-    let mut itens: Vec<String> = Vec::new();
-    for filho in el.child_elements() {
-        b.check()?;
-        let mut f = Flow::new(b, cell, true);
-        f.element(filho, depth + 1)?;
-        let blocos = f.finish();
-        if blocos.is_empty() {
-            continue;
-        }
-        let marca = if ordenada { format!("{}. ", inicio + itens.len()) } else { "- ".to_string() };
-        let mut item = String::new();
-        for (k, bl) in blocos.iter().enumerate() {
-            if k == 0 {
-                item.push_str(&marca);
-                item.push_str(&recua(bl, false));
-            } else {
-                item.push_str("\n\n");
-                item.push_str(&recua(bl, true));
-            }
-        }
-        itens.push(item);
-    }
-    Ok(if itens.is_empty() { vec![] } else { vec![itens.join("\n")] })
-}
-
 /// Bloco de código: conteúdo cru, cercado por crases mais longas que qualquer sequência interna.
-fn pre(el: ElementRef<'_>) -> Vec<String> {
+/// Dentro de célula de tabela vira texto de célula (sem cerca, que quebraria a linha).
+fn pre(c: &Ctx<'_>, el: ElementRef<'_>, cell: bool) -> Vec<String> {
     let bruto = texto_bruto(el).replace('\r', "");
+    if cell {
+        let t = colapsa(&bruto);
+        let t = t.trim();
+        return if t.is_empty() { vec![] } else { vec![escape::cell(t)] };
+    }
     let corpo = bruto.trim_matches('\n');
     if corpo.trim().is_empty() {
         return vec![];
     }
     let (mut maior, mut atual) = (0, 0);
-    for c in corpo.chars() {
-        atual = if c == '`' { atual + 1 } else { 0 };
+    for ch in corpo.chars() {
+        atual = if ch == '`' { atual + 1 } else { 0 };
         maior = maior.max(atual);
     }
     let cerca = "`".repeat(maior.max(2) + 1);
-    vec![format!("{cerca}\n{corpo}\n{cerca}")]
+    let s = format!("{cerca}\n{corpo}\n{cerca}");
+    c.gasta(s.len());
+    vec![s]
 }
 
 /// Citação: cada linha do conteúdo recebe `> ` (linha vazia vira `>`).
-pub(crate) fn cita(blocos: &[String]) -> String {
-    blocos
+pub(crate) fn cita(c: &Ctx<'_>, blocos: &[String]) -> Result<String, String> {
+    c.check()?;
+    let s = blocos
         .join("\n\n")
         .split('\n')
         .map(|l| if l.is_empty() { ">".to_string() } else { format!("> {l}") })
         .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// Recuo de 2 espaços nas linhas de um bloco de item de lista (a primeira só se `todas`).
-fn recua(s: &str, todas: bool) -> String {
-    s.split('\n')
-        .enumerate()
-        .map(|(i, l)| {
-            if (i == 0 && !todas) || l.is_empty() {
-                l.to_string()
-            } else {
-                format!("  {l}")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// Cabeçalho de resposta do Outlook: id conhecido, ou div com borda superior e "De:"/"From:".
-fn is_reply_header(el: ElementRef<'_>) -> bool {
-    if matches!(el.attr("id"), Some("divRplyFwdMsg" | "appendonsend")) {
-        return true;
-    }
-    if el.value().name() != "div" {
-        return false;
-    }
-    let estilo: String = el.attr("style").unwrap_or("").chars().filter(|c| !c.is_whitespace()).collect();
-    if !estilo.to_ascii_lowercase().contains("border-top:solid") {
-        return false;
-    }
-    let mut inicio = String::new();
-    for pedaco in el.text() {
-        inicio.push_str(pedaco);
-        if inicio.trim_start().chars().count() >= 8 {
-            break;
-        }
-    }
-    let inicio = inicio.trim_start();
-    inicio.starts_with("De:") || inicio.starts_with("From:")
-}
-
-/// Indica se o próximo nó que não é espaço em branco, depois de `ks[i]`, é um cabeçalho de resposta.
-fn proxima_e_cabecalho(ks: &[Kid<'_>], i: usize) -> bool {
-    for k in &ks[i + 1..] {
-        match *k {
-            Kid::Texto(t) if t.trim().is_empty() => continue,
-            Kid::Texto(_) => return false,
-            Kid::Elemento(el) => return is_reply_header(el),
-        }
-    }
-    false
+        .join("\n");
+    c.gasta(s.len());
+    Ok(s)
 }
 
 /// Texto de um elemento, com `<br>` como quebra. Iterativo (não cresce a pilha com a profundidade).
-fn texto_bruto(el: ElementRef<'_>) -> String {
+pub(crate) fn texto_bruto(el: ElementRef<'_>) -> String {
     let mut s = String::new();
     for n in el.descendants() {
         match n.value() {
@@ -399,7 +393,7 @@ fn texto_bruto(el: ElementRef<'_>) -> String {
 }
 
 /// Colapsa espaços em branco (inclui U+00A0) num único espaço.
-fn colapsa(s: &str) -> String {
+pub(crate) fn colapsa(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         let c = if c.is_whitespace() { ' ' } else { c };
@@ -410,8 +404,20 @@ fn colapsa(s: &str) -> String {
     out
 }
 
+/// Autolink `<..>` só com esquema válido (`[A-Za-z][A-Za-z0-9+.-]{1,31}:`) e sem `|`, `\`, `<`, `>` ou espaço.
+pub(crate) fn autolink_valido(h: &str) -> bool {
+    if h.chars().any(|c| c.is_whitespace() || matches!(c, '|' | '\\' | '<' | '>')) {
+        return false;
+    }
+    let Some((esq, _)) = h.split_once(':') else { return false };
+    let mut cs = esq.chars();
+    matches!(cs.next(), Some(c) if c.is_ascii_alphabetic())
+        && (2..=32).contains(&esq.len())
+        && cs.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'))
+}
+
 /// Imagem: `cid:` vira rótulo (o anexo não entra no Markdown); URL remota vira imagem com destino.
-fn imagem(el: ElementRef<'_>) -> String {
+fn imagem(el: ElementRef<'_>, cell: bool) -> String {
     let src = el.attr("src").map(|s| mdv_text::sanitize(s.trim()).into_owned()).unwrap_or_default();
     let alt = colapsa(&mdv_text::sanitize(el.attr("alt").unwrap_or(""))).trim().to_string();
     let cid = src.get(..4).is_some_and(|p| p.eq_ignore_ascii_case("cid:"));
@@ -419,6 +425,8 @@ fn imagem(el: ElementRef<'_>) -> String {
     let texto = if alt.is_empty() { nome } else { alt.as_str() };
     let rotulo = if texto.is_empty() {
         "imagem".to_string()
+    } else if cell {
+        format!("imagem: {}", escape::cell(texto))
     } else {
         format!("imagem: {}", escape::inline(texto))
     };
@@ -430,7 +438,7 @@ fn imagem(el: ElementRef<'_>) -> String {
 }
 
 /// Destino de link/imagem: espaços e parênteses viram percent-encoding, para não quebrar a sintaxe.
-fn destino(url: &str) -> String {
+pub(crate) fn destino(url: &str) -> String {
     let mut s = String::with_capacity(url.len());
     for c in url.chars() {
         match c {
@@ -445,65 +453,5 @@ fn destino(url: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{Unlimited, MAX_HTML_BYTES};
-
-    fn md(h: &str) -> String { to_markdown(h, &Unlimited).unwrap() }
-
-    #[test]
-    fn paragrafos_e_enfase() {
-        assert_eq!(md("<p>Olá <b>Ana</b>,</p><p>segue <i>o</i> relatório.</p>"), "Olá **Ana**,\n\nsegue *o* relatório.");
-    }
-    #[test]
-    fn tabela_de_dados_vira_gfm() {
-        assert_eq!(md("<table><tr><td>Sistema</td><td>GB</td></tr><tr><td>CAM</td><td>115,8</td></tr></table>"),
-            "| Sistema | GB |\n| --- | --- |\n| CAM | 115,8 |");
-    }
-    #[test]
-    fn tabela_de_layout_aninhada_vira_paragrafos_e_dados_viram_gfm() {
-        let h = "<table><tr><td><p>Prezados,</p><table><tr><td>a</td><td>b</td></tr><tr><td>1</td><td>2</td></tr></table><p>Abs</p></td></tr></table>";
-        assert_eq!(md(h), "Prezados,\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\nAbs");
-    }
-    #[test]
-    fn colspan_mantem_o_numero_de_colunas() {
-        assert_eq!(md("<table><tr><td colspan=2>x</td></tr><tr><td>a</td><td>b</td></tr></table>"),
-            "| x |  |\n| --- | --- |\n| a | b |");
-    }
-    #[test]
-    fn barra_vertical_na_celula_e_escapada() {
-        assert_eq!(md("<table><tr><td>a|b</td><td>c</td></tr><tr><td>1</td><td>2</td></tr></table>"),
-            "| a\\|b | c |\n| --- | --- |\n| 1 | 2 |");
-    }
-    #[test]
-    fn respostas_encadeadas_aprofundam_a_citacao() {
-        let h = r#"<div><p>Resposta 2</p><hr><div id="divRplyFwdMsg"><b>De:</b> Ana<br><b>Enviado:</b> ontem</div><p>Resposta 1</p><div style="border:none;border-top:solid #E1E1E1 1.0pt"><p><b>From:</b> Bia</p></div><p>Original</p></div>"#;
-        assert_eq!(md(h), "Resposta 2\n\n> **De:** Ana\\\n> **Enviado:** ontem\n>\n> Resposta 1\n>\n> > **From:** Bia\n> >\n> > Original");
-    }
-    #[test]
-    fn imagem_cid_vira_rotulo() {
-        assert_eq!(md(r#"<p><img src="cid:logo.png@01" alt="Logo"></p>"#), "[imagem: Logo]");
-    }
-    #[test]
-    fn estilo_script_e_comentario_condicional_somem() {
-        assert_eq!(md("<style>p{}</style><!--[if mso]>x<![endif]--><p>a</p>"), "a");
-    }
-    #[test]
-    fn texto_com_markdown_e_escapado() {
-        assert_eq!(md("<p># não é título *nem* ênfase</p>"), "\\# não é título \\*nem\\* ênfase");
-    }
-    #[test]
-    fn links_e_listas() {
-        assert_eq!(md("<ul><li>a</li><li><a href=\"https://x.y\">x</a></li></ul>"), "- a\n- [x](https://x.y)");
-    }
-    #[test]
-    fn html_acima_do_teto_e_recusado() {
-        let e = to_markdown(&"a".repeat(MAX_HTML_BYTES + 1), &Unlimited).unwrap_err();
-        assert!(e.contains("grande demais"), "{e}");
-    }
-    #[test]
-    fn aninhamento_profundo_nao_estoura_a_pilha() {
-        let r = md(&("<div>".repeat(5000) + "x"));
-        assert!(r.contains('x'), "{r}");
-    }
-}
+#[path = "html_tests.rs"]
+mod tests;

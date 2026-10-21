@@ -11,6 +11,10 @@ mod escape;
 #[allow(dead_code)]
 mod html;
 #[allow(dead_code)]
+mod html_lista;
+#[allow(dead_code)]
+mod html_resposta;
+#[allow(dead_code)]
 mod html_table;
 #[allow(dead_code)]
 mod lzfu;
