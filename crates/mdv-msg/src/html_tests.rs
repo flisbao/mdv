@@ -151,3 +151,19 @@ fn celula_longa_vira_layout_sem_perder_texto() {
     assert!(r.contains("FIM"), "{r}");
     assert!(!r.contains('…'), "{r}");
 }
+#[test]
+fn imagem_data_uri_nao_vai_para_o_markdown() {
+    let r = md(r#"<p><img src="data:image/png;base64,iVBORw0KGgo=" alt="Logo"></p><p><img src="data:image/gif;base64,R0lGOD"></p>"#);
+    assert_eq!(r, "[imagem: Logo]\n\n[imagem: imagem embutida]");
+    assert!(!r.contains("base64"), "{r}");
+}
+#[test]
+fn bom_no_inicio_do_html_nao_vira_conteudo() {
+    assert_eq!(md("\u{feff}<p># a</p>"), "\\# a");
+}
+#[test]
+fn dois_br_seguidos_viram_paragrafo_e_um_br_quebra_linha() {
+    assert_eq!(md("<p>a<br><br>b</p>"), "a\n\nb");
+    assert_eq!(md("<p>a<br>b</p>"), "a\\\nb");
+    assert_eq!(md("<p>a<br> <br>\n<br>b</p>"), "a\n\nb");
+}

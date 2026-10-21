@@ -199,7 +199,8 @@ fn corpo(m: &Message, budget: &dyn Budget) -> Result<String, String> {
             return Ok(md);
         }
     }
-    if let Some(texto) = m.text.as_deref().filter(|t| !t.trim().is_empty()) {
+    let texto_simples = m.text.as_deref().map(|t| t.strip_prefix('\u{feff}').unwrap_or(t));
+    if let Some(texto) = texto_simples.filter(|t| !t.trim().is_empty()) {
         return texto_puro(texto, budget);
     }
     if let Some(RtfBody::Text(texto)) = &rtf {
@@ -245,8 +246,15 @@ fn decodifica_html(bytes: &[u8], cp_html: u32) -> String {
     if cp_html == CP_UTF8 {
         return codepage::decode(bytes, CP_UTF8);
     }
+    // Sem `<meta charset>`, bytes válidos em UTF-8 com acentos são UTF-8 (o HTML moderno quase sempre é).
     charset_do_meta(bytes)
         .and_then(|rotulo| codepage::decode_label(bytes, &rotulo))
+        .or_else(|| {
+            if bytes.is_ascii() {
+                return None;
+            }
+            std::str::from_utf8(bytes).ok().map(str::to_string)
+        })
         .unwrap_or_else(|| codepage::decode(bytes, cp_html))
 }
 

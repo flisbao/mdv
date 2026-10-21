@@ -246,3 +246,22 @@ fn html_muito_aninhado_cai_no_texto_do_corpo() {
     let saida = md(&bytes);
     assert!(saida.contains("texto do corpo"), "{saida}");
 }
+
+#[test]
+fn html_sem_charset_com_utf8_decodifica_como_utf8() {
+    let bytes = MsgBuilder::new().binary(tags::HTML, "<p>ação</p>".as_bytes()).build();
+    assert!(md(&bytes).contains("ação"));
+}
+
+#[test]
+fn bom_no_html_e_no_texto_puro_nao_vira_conteudo() {
+    let html = b"\xEF\xBB\xBF<html><head><meta charset=\"utf-8\"></head><body><p># a</p></body></html>";
+    let bytes = MsgBuilder::new().binary(tags::HTML, html).build();
+    let saida = md(&bytes);
+    assert!(saida.contains("\n\n\\# a\n"), "{saida}");
+    assert!(!saida.contains('\u{feff}'), "{saida}");
+    let bytes = MsgBuilder::new().string(tags::BODY, "\u{feff}# b").build();
+    let saida = md(&bytes);
+    assert!(saida.ends_with("\\# b\n"), "{saida}");
+    assert!(!saida.contains('\u{feff}'), "{saida}");
+}

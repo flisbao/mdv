@@ -59,6 +59,8 @@ pub(crate) fn to_markdown(html: &str, budget: &dyn Budget) -> Result<String, Str
 }
 
 fn to_markdown_com_teto(html: &str, budget: &dyn Budget, teto: usize) -> Result<String, String> {
+    // BOM (U+FEFF) no início não é conteúdo: sai antes de qualquer análise.
+    let html = html.strip_prefix('\u{feff}').unwrap_or(html);
     if html.len() > MAX_HTML_BYTES {
         return Err(format!(
             "corpo HTML grande demais: {} bytes (máximo {MAX_HTML_BYTES})",
@@ -184,6 +186,8 @@ impl<'a> Flow<'a> {
             return Ok(());
         }
         match nome {
+            // Dois `<br>` seguidos (só espaço entre eles) são um parágrafo, não uma quebra de linha.
+            "br" if self.quebra => self.flush(),
             "br" => self.quebra = true,
             "img" => {
                 let md = imagem(el, self.cell);
@@ -430,8 +434,16 @@ fn imagem(el: ElementRef<'_>, cell: bool) -> String {
     let src = el.attr("src").map(|s| mdv_text::sanitize(s.trim()).into_owned()).unwrap_or_default();
     let alt = colapsa(&mdv_text::sanitize(el.attr("alt").unwrap_or(""))).trim().to_string();
     let cid = src.get(..4).is_some_and(|p| p.eq_ignore_ascii_case("cid:"));
+    // Imagem embutida (`data:`): o conteúdo nunca vai para o Markdown, só o rótulo.
+    let embutida = src.get(..5).is_some_and(|p| p.eq_ignore_ascii_case("data:"));
     let nome = if cid { src[4..].trim() } else { "" };
-    let texto = if alt.is_empty() { nome } else { alt.as_str() };
+    let texto = if !alt.is_empty() {
+        alt.as_str()
+    } else if embutida {
+        "imagem embutida"
+    } else {
+        nome
+    };
     let rotulo = if texto.is_empty() {
         "imagem".to_string()
     } else if cell {
@@ -439,7 +451,7 @@ fn imagem(el: ElementRef<'_>, cell: bool) -> String {
     } else {
         format!("imagem: {}", escape::inline(texto))
     };
-    if cid || src.is_empty() {
+    if cid || embutida || src.is_empty() {
         format!("[{rotulo}]")
     } else {
         format!("[{rotulo}]({})", destino(&src))
