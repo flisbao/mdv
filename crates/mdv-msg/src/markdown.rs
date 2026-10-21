@@ -215,8 +215,10 @@ fn corpo(m: &Message, budget: &dyn Budget) -> Result<String, String> {
     }
 }
 
-/// Um passo do corpo só vale se produziu texto. Erro do passo vai para a lista, mas antes
-/// consulta o orçamento: se ele estourou, o erro de orçamento é propagado e aborta a conversão.
+/// Um passo do corpo só vale se produziu texto. Regra de orçamento: só a falha de `Budget::check`
+/// (memória viva acima do limite) aborta; a recusa de `check_html` (HTML grande demais, nada foi
+/// alocado) é um erro do passo, e o corpo cai no próximo passo (RTF ou texto puro).
+/// Por isso o erro do passo é seguido de `check()?`.
 fn aceita(
     resultado: Result<String, String>,
     erros: &mut Vec<String>,

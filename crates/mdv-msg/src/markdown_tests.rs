@@ -4,7 +4,7 @@ use crate::testutil::{tags, AttachSpec, MsgBuilder};
 use crate::{to_markdown, Budget, Unlimited};
 use std::cell::Cell;
 
-/// Orçamento que estoura depois de `n` chamadas (de `check` ou `check_html`) e continua estourado.
+/// Orçamento que estoura `check` depois de `n` chamadas e continua estourado. `check_html` sempre passa.
 struct Cota(Cell<usize>);
 
 const MSG_COTA: &str = "limite de memória de teste";
@@ -26,7 +26,20 @@ impl Budget for Cota {
     }
 
     fn check_html(&self, _len: usize) -> Result<(), String> {
-        self.gasta()
+        Ok(())
+    }
+}
+
+/// Orçamento que recusa HTML grande (`check_html`) mas tem memória de sobra (`check`).
+struct RecusaHtml;
+
+impl Budget for RecusaHtml {
+    fn check(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn check_html(&self, _len: usize) -> Result<(), String> {
+        Err("corpo HTML grande demais: teste".to_string())
     }
 }
 
@@ -109,6 +122,17 @@ fn data_zero_conta_como_ausente() {
         .string(tags::BODY, "x")
         .build();
     assert!(!md(&bytes).contains("- **Data:**"));
+}
+
+#[test]
+fn check_html_recusado_cai_no_texto() {
+    let bytes = MsgBuilder::new()
+        .binary(tags::HTML, b"<p>de html</p>")
+        .string(tags::BODY, "de texto")
+        .build();
+    let saida = to_markdown(&bytes, &RecusaHtml).expect("conversão");
+    assert!(saida.contains("de texto"));
+    assert!(!saida.contains("de html"));
 }
 
 #[test]
