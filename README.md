@@ -253,13 +253,16 @@ O título casa por igualdade (sem distinguir caixa) ou por trecho único; ambíg
 
 `mdv` abre um `.msg` direto: assunto, remetente, destinatários, anexos e corpo viram Markdown; tabelas do HTML viram tabelas e as respostas citadas viram citações. O seletor de pasta também lista `.msg`.
 
+O repositório inclui `samples/email.msg`, uma mensagem fictícia que demonstra corpo formatado, tabela, resposta citada e anexo. Para experimentá-la:
+
 ```bash
-mdv email.msg                  # lê o e-mail no terminal
-mdv email.msg -o email.md      # grava o Markdown (só para .msg; com --force sobrescreve)
-mdv email.msg -o email.pdf     # também .docx, .odt, .xlsx e .ods
+mdv samples/email.msg                   # lê a amostra no terminal
+mdv samples/email.msg -o email.md       # grava o Markdown (só para .msg; com --force sobrescreve)
+mdv email.msg                           # abre outro e-mail
+mdv email.msg -o email.pdf              # também .docx, .odt, .xlsx e .ods
 ```
 
-A entrada é limitada a 32 MiB. Um `.msg` inválido sai com erro e código 1.
+A entrada é limitada a 32 MiB. Um `.msg` inválido sai com erro e código 1. O teste `sample_commitado_bate_com_o_gerador` do pacote `mdv-msg` verifica se a amostra commitada produz o mesmo Markdown que o gerador.
 
 ## JSON, CSV e TSV
 
