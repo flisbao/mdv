@@ -44,6 +44,7 @@ pub(crate) fn confere(html: &str) -> Result<(), String> {
     while let Some(off) = b[i..].iter().position(|&c| c == b'<') {
         let at = i + off;
         i = match b.get(at + 1) {
+            Some(b'!') if pilha.estrangeiro() && b[at..].starts_with(b"<![CDATA[") => fim_cdata(b, at),
             Some(b'!') if b[at..].starts_with(b"<!--") => fim_comentario(b, at),
             Some(b'!' | b'?') => ate(b, at + 2, b'>'),
             Some(b'/') => match b.get(at + 2) {
@@ -177,6 +178,12 @@ fn fim_comentario(b: &[u8], at: usize) -> usize {
     b.len()
 }
 
+/// CDATA em conteúdo SVG/MathML trata `<` e `>` como texto até `]]>`.
+fn fim_cdata(b: &[u8], at: usize) -> usize {
+    let de = at + b"<![CDATA[".len();
+    b[de..].windows(3).position(|w| w == b"]]>").map_or(b.len(), |p| de + p + 3)
+}
+
 /// Posição logo depois do primeiro `c` a partir de `de`; sem ele, vai ao fim.
 fn ate(b: &[u8], de: usize, c: u8) -> usize {
     b[de..].iter().position(|&x| x == c).map_or(b.len(), |p| de + p + 1)
@@ -300,6 +307,13 @@ mod tests {
     #[test]
     fn style_dentro_de_svg_nao_e_texto_cru() {
         let h = "<svg><style>".to_string() + &"<g>".repeat(6000);
+        assert!(profundidade_real(&h) >= 5000);
+        assert!(confere(&h).is_err());
+    }
+
+    #[test]
+    fn cdata_em_svg_nao_esconde_aninhamento_depois_de_fechamento_falso() {
+        let h = "<svg><![CDATA[></svg>]]><style>".to_string() + &"<g>".repeat(5100);
         assert!(profundidade_real(&h) >= 5000);
         assert!(confere(&h).is_err());
     }
