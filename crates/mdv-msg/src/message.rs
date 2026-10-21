@@ -191,7 +191,14 @@ fn le_anexo(
         let objeto = container::junta(caminho, &container::nome_propriedade(ATTACH_DATA, container::TIPO_OBJETO));
         if cfb.is_storage(&objeto) {
             cfb.embutidas += 1;
-            Some(Box::new(le_mensagem(cfb, &objeto, profundidade + 1, budget)?))
+            match le_mensagem(cfb, &objeto, profundidade + 1, budget) {
+                Ok(embutida) => Some(Box::new(embutida)),
+                Err(_) => {
+                    // Erro de orçamento aborta; erro de conteúdo só tira o corpo da embutida (o anexo segue listado).
+                    budget.check()?;
+                    None
+                }
+            }
         } else {
             None
         }
@@ -408,5 +415,26 @@ mod tests {
         assert!(m.attachments[2].embedded.is_some());
         assert!(m.attachments[3].embedded.is_none());
         assert!(m.attachments[4].embedded.is_none());
+    }
+
+    #[test]
+    fn erro_em_anexo_embutido_nao_aborta_a_leitura() {
+        // Cortes no fim do arquivo quebram o storage da embutida (que é gravado por último) e deixam a raiz legível.
+        let bytes = MsgBuilder::new()
+            .string(tags::SUBJECT, "Raiz")
+            .attachment(AttachSpec {
+                name: "m.msg".into(),
+                embedded: Some(MsgBuilder::new().string(tags::SUBJECT, "Dentro").binary(tags::HTML, &vec![b'x'; 60_000])),
+                ..Default::default()
+            })
+            .build();
+        let degradado = (0..=6000).step_by(16).any(|corte| {
+            let Ok(m) = read(&bytes[..bytes.len() - corte], &Unlimited) else { return false };
+            m.subject.as_deref() == Some("Raiz")
+                && m.attachments.len() == 1
+                && m.attachments[0].name == "m.msg"
+                && m.attachments[0].embedded.is_none()
+        });
+        assert!(degradado, "nenhum corte degradou o anexo embutido sem abortar a leitura");
     }
 }
