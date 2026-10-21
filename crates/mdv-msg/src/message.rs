@@ -68,13 +68,29 @@ pub(crate) fn read_com_limites(
     teto_embutidas: usize,
 ) -> Result<Message, String> {
     let mut cfb = container::abre(bytes, teto_total, teto_embutidas)?;
-    le_mensagem(&mut cfb, "/", 0, budget)
+    le_mensagem(&mut cfb, "/", 0, budget).map_err(ErroLeitura::texto)
+}
+
+/// Keeps budget failures distinguishable while an embedded message is allowed to degrade on content errors.
+enum ErroLeitura {
+    Budget(String),
+    Conteudo(String),
+}
+
+impl From<String> for ErroLeitura {
+    fn from(value: String) -> Self { Self::Conteudo(value) }
+}
+
+impl ErroLeitura {
+    fn texto(self) -> String {
+        match self { Self::Budget(s) | Self::Conteudo(s) => s }
+    }
 }
 
 /// Lê uma mensagem em `dir` (`/` para a raiz). `profundidade` 0 é a raiz; embutidas vão até `MAX_EMBED_DEPTH`.
-fn le_mensagem(cfb: &mut Cfb<'_>, dir: &str, profundidade: usize, budget: &dyn Budget) -> Result<Message, String> {
+fn le_mensagem(cfb: &mut Cfb<'_>, dir: &str, profundidade: usize, budget: &dyn Budget) -> Result<Message, ErroLeitura> {
     let cabecalho = if profundidade == 0 { CABECALHO_RAIZ } else { CABECALHO_EMBUTIDA };
-    budget.check()?;
+    budget.check().map_err(ErroLeitura::Budget)?;
     let mut m = Message::default();
     // As propriedades fixas são consumidas antes da recursão para não manter dois streams grandes vivos.
     let props = Propriedades::ler(cfb, dir, cabecalho)?;
@@ -99,7 +115,7 @@ fn le_mensagem(cfb: &mut Cfb<'_>, dir: &str, profundidade: usize, budget: &dyn B
     m.transport_headers = container::texto(cfb, dir, TRANSPORT_MESSAGE_HEADERS, cp)?;
     m.class = container::texto(cfb, dir, MESSAGE_CLASS, cp)?;
     m.text = container::texto(cfb, dir, BODY, cp)?;
-    budget.check()?;
+    budget.check().map_err(ErroLeitura::Budget)?;
     if let Some((html, ja_utf8)) = corpo_html(cfb, dir)? {
         m.html = Some(html);
         if ja_utf8 {
@@ -107,12 +123,12 @@ fn le_mensagem(cfb: &mut Cfb<'_>, dir: &str, profundidade: usize, budget: &dyn B
         }
     }
     m.rtf = container::binario(cfb, dir, RTF_COMPRESSED, TIPO_BINARIO)?;
-    budget.check()?;
+    budget.check().map_err(ErroLeitura::Budget)?;
 
     let (destinatarios, trunc_dest) = container::filhos_numerados(cfb, dir, PREFIXO_DESTINATARIO, MAX_RECIPIENTS)?;
     m.recipients_truncated = trunc_dest;
     for caminho in &destinatarios {
-        budget.check()?;
+        budget.check().map_err(ErroLeitura::Budget)?;
         let (tipo, destinatario) = le_destinatario(cfb, caminho, cp)?;
         match tipo {
             DEST_CC => m.cc.push(destinatario),
@@ -124,7 +140,7 @@ fn le_mensagem(cfb: &mut Cfb<'_>, dir: &str, profundidade: usize, budget: &dyn B
     let (anexos, trunc_anx) = container::filhos_numerados(cfb, dir, PREFIXO_ANEXO, MAX_ATTACHMENTS)?;
     m.attachments_truncated = trunc_anx;
     for caminho in &anexos {
-        budget.check()?;
+        budget.check().map_err(ErroLeitura::Budget)?;
         m.attachments.push(le_anexo(cfb, caminho, cp, profundidade, budget)?);
     }
     Ok(m)
@@ -175,7 +191,7 @@ fn le_anexo(
     cp: u32,
     profundidade: usize,
     budget: &dyn Budget,
-) -> Result<Attachment, String> {
+) -> Result<Attachment, ErroLeitura> {
     let props = Propriedades::ler(cfb, caminho, CABECALHO_ITEM)?;
     let size = props.inteiro(ATTACH_SIZE).map(|v| v as u32);
     let metodo = props.inteiro(ATTACH_METHOD);
@@ -193,10 +209,13 @@ fn le_anexo(
             cfb.embutidas += 1;
             match le_mensagem(cfb, &objeto, profundidade + 1, budget) {
                 Ok(embutida) => Some(Box::new(embutida)),
-                Err(erro) if erro == container::ERRO_GRANDE => return Err(erro),
+                Err(ErroLeitura::Budget(erro)) => return Err(ErroLeitura::Budget(erro)),
+                Err(ErroLeitura::Conteudo(erro)) if erro == container::ERRO_GRANDE => {
+                    return Err(ErroLeitura::Conteudo(erro));
+                }
                 Err(_) => {
-                    // Erro de orçamento aborta; erro de conteúdo só tira o corpo da embutida (o anexo segue listado).
-                    budget.check()?;
+                    // Erro de conteúdo só tira o corpo da embutida (o anexo segue listado).
+                    budget.check().map_err(ErroLeitura::Budget)?;
                     None
                 }
             }
@@ -214,8 +233,21 @@ mod tests {
     use super::*;
     use crate::testutil::{tags, AttachSpec, MsgBuilder};
     use crate::{Unlimited, MAX_MSG_BYTES};
+    use std::cell::Cell;
 
     const RTF_EXEMPLO: &str = "2d 00 00 00 2b 00 00 00 4c 5a 46 75 f1 c5 c7 a7 03 00 0a 00 72 63 70 67 31 32 35 42 32 0a f3 20 68 65 6c 09 00 20 62 77 05 b0 6c 64 7d 0a 80 0f a0";
+
+    struct FalhaUmaVez { chamadas: Cell<usize>, falhar_em: usize }
+
+    impl Budget for FalhaUmaVez {
+        fn check(&self) -> Result<(), String> {
+            let chamada = self.chamadas.get() + 1;
+            self.chamadas.set(chamada);
+            if chamada == self.falhar_em { Err("limite de memória".into()) } else { Ok(()) }
+        }
+
+        fn check_html(&self, _len: usize) -> Result<(), String> { Ok(()) }
+    }
 
     fn hex(s: &str) -> Vec<u8> {
         s.split_whitespace().map(|b| u8::from_str_radix(b, 16).unwrap()).collect()
@@ -450,5 +482,20 @@ mod tests {
             .build();
         let erro = read_com_limites(&bytes, &Unlimited, 200, MAX_ATTACHMENTS).expect_err("teto deve abortar");
         assert!(erro.contains("grande demais"), "{erro}");
+    }
+
+    #[test]
+    fn erro_de_memoria_transitorio_na_embutida_aborta_a_leitura() {
+        let bytes = MsgBuilder::new()
+            .attachment(AttachSpec {
+                name: "m.msg".into(),
+                embedded: Some(MsgBuilder::new().string(tags::SUBJECT, "Dentro")),
+                ..Default::default()
+            })
+            .build();
+        // 1-3: verificações da raiz; 4: antes do anexo; 5: entrada na mensagem embutida.
+        let budget = FalhaUmaVez { chamadas: Cell::new(0), falhar_em: 5 };
+        let erro = read(&bytes, &budget).expect_err("falha temporária de budget deve abortar");
+        assert!(erro.contains("limite de memória"), "{erro}");
     }
 }
