@@ -2,8 +2,13 @@
 
 use crate::escape;
 use crate::html::{kids, Ctx, Flow};
-use crate::MAX_TABLE_COLS;
+use crate::{MAX_CELL_CHARS, MAX_TABLE_COLS};
 use scraper::ElementRef;
+
+/// Elementos que, dentro de uma célula, indicam conteúdo de texto corrido (layout, não dados).
+const BLOCOS_CELULA: &[&str] = &[
+    "p", "div", "ul", "ol", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "table",
+];
 
 type Grade<'a> = Vec<Vec<(ElementRef<'a>, usize)>>;
 
@@ -45,14 +50,42 @@ fn celulas(tr: ElementRef<'_>) -> Vec<(ElementRef<'_>, usize)> {
         .collect()
 }
 
-/// Tabela de dados: pelo menos duas linhas com duas colunas (contando `colspan`) e nenhuma
-/// célula com outra tabela dentro.
+/// Tabela de dados: pelo menos duas linhas com duas colunas (contando `colspan`), nenhuma célula com
+/// outra tabela dentro, nenhuma com mais de um bloco de texto e nenhuma com texto acima de
+/// `MAX_CELL_CHARS`. Tabela de layout (e-mail do Outlook) não é de dados: vira parágrafos, sem perda.
 fn eh_tabela_de_dados(grade: &Grade<'_>) -> bool {
     let largas = grade.iter().filter(|r| r.iter().map(|(_, s)| s).sum::<usize>() >= 2).count();
     let aninhada = grade.iter().flatten().any(|(c, _)| {
         c.descendants().any(|n| n.value().as_element().is_some_and(|e| e.name() == "table"))
     });
-    largas >= 2 && !aninhada
+    let complexa = grade.iter().flatten().any(|(c, _)| varios_blocos(*c) || texto_longo(*c));
+    largas >= 2 && !aninhada && !complexa
+}
+
+/// Mais de um bloco com texto dentro da célula, em qualquer profundidade (para ao achar o segundo).
+fn varios_blocos(cel: ElementRef<'_>) -> bool {
+    let mut n = 0;
+    for el in cel.descendants().filter_map(ElementRef::wrap) {
+        if BLOCOS_CELULA.contains(&el.value().name()) && el.text().any(|t| !t.trim().is_empty()) {
+            n += 1;
+            if n > 1 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Texto da célula acima de `MAX_CELL_CHARS` caracteres (para ao passar do teto).
+fn texto_longo(cel: ElementRef<'_>) -> bool {
+    let mut n = 0usize;
+    for t in cel.text() {
+        n += t.chars().count();
+        if n > MAX_CELL_CHARS {
+            return true;
+        }
+    }
+    false
 }
 
 /// GFM: a primeira linha é o cabeçalho; `colspan` repete a célula vazia; colunas até `MAX_TABLE_COLS`.

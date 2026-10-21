@@ -135,3 +135,19 @@ fn html_aninhado_demais_e_recusado_rapido() {
 fn html_com_muitas_tags_irmas_nao_e_recusado() {
     assert_eq!(md(&"<p>a</p>".repeat(50_000)), "a\n\n".repeat(49_999) + "a");
 }
+#[test]
+fn celula_com_varios_paragrafos_vira_layout_sem_perder_texto() {
+    let h = "<table><tr><td><p>um</p><p>dois</p><p>tres final</p></td><td>x</td></tr><tr><td>1</td><td>2</td></tr></table>";
+    let r = md(h);
+    assert!(r.contains("tres final"), "{r}");
+    assert!(!r.contains('…'), "{r}");
+    assert!(!r.contains("| --- |"), "{r}");
+}
+#[test]
+fn celula_longa_vira_layout_sem_perder_texto() {
+    let longo = "palavra ".repeat(75);
+    let h = format!("<table><tr><td>{longo}FIM</td><td>x</td></tr><tr><td>1</td><td>2</td></tr></table>");
+    let r = md(&h);
+    assert!(r.contains("FIM"), "{r}");
+    assert!(!r.contains('…'), "{r}");
+}
