@@ -36,15 +36,15 @@ Baixe o pacote da última release, extraia e coloque `mdv` e `mdv-tools` no seu 
 <!-- mdv:install:start -->
 | Plataforma | Download |
 |------------|----------|
-| Linux x86_64 (glibc 2.35+) | [`mdv-v0.5.2-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.5.2/mdv-v0.5.2-linux-x86_64.tar.gz) |
-| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.5.2-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.5.2/mdv-v0.5.2-linux-x86_64-musl.tar.gz) |
-| Linux aarch64 | [`mdv-v0.5.2-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.5.2/mdv-v0.5.2-linux-aarch64.tar.gz) |
-| macOS Apple Silicon | [`mdv-v0.5.2-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.5.2/mdv-v0.5.2-macos-aarch64.tar.gz) |
-| macOS Intel | [`mdv-v0.5.2-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.5.2/mdv-v0.5.2-macos-x86_64.tar.gz) |
-| Windows x86_64 | [`mdv-v0.5.2-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.5.2/mdv-v0.5.2-windows-x86_64.zip) |
-| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.5.2) |
+| Linux x86_64 (glibc 2.35+) | [`mdv-v0.6.0-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.6.0/mdv-v0.6.0-linux-x86_64.tar.gz) |
+| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.6.0-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.6.0/mdv-v0.6.0-linux-x86_64-musl.tar.gz) |
+| Linux aarch64 | [`mdv-v0.6.0-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.6.0/mdv-v0.6.0-linux-aarch64.tar.gz) |
+| macOS Apple Silicon | [`mdv-v0.6.0-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.6.0/mdv-v0.6.0-macos-aarch64.tar.gz) |
+| macOS Intel | [`mdv-v0.6.0-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.6.0/mdv-v0.6.0-macos-x86_64.tar.gz) |
+| Windows x86_64 | [`mdv-v0.6.0-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.6.0/mdv-v0.6.0-windows-x86_64.zip) |
+| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.6.0) |
 
-Versão atual: **v0.5.2**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
+Versão atual: **v0.6.0**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
 <!-- mdv:install:end -->
 
 Instaladores de uma linha (o `mdv --version` roda no fim; os binários de macOS e Windows **não são assinados**):
@@ -322,6 +322,43 @@ O `mdv` usa no máximo **512 MiB**. Se um arquivo precisar de mais, ele para e m
 ## Changelog
 
 <!-- mdv:changelog:start -->
+### v0.6.0
+
+_2026-10-21_
+
+- docs: prepara release 0.6.0 da leitura msg
+- docs(msg): traduz comentario de erro de leitura
+- fix(msg): torna pre-varredura HTML conservadora
+- fix(msg): isola orcamento da tentativa GFM
+- fix(msg): propaga falha de memoria em embutidas
+- fix(msg): conta blocos visiveis dentro de celulas
+- fix(msg): acompanha saida de SVG e MathML
+- fix(msg): propaga teto de bytes em anexos embutidos
+- fix(msg): preserva texto escapado em celulas
+- fix(msg): reconhece CDATA SVG no limite de profundidade
+- fix(msg): pré-varredura de aninhamento conservadora (tokenizador, barreiras, formatação, tabelas)
+- fix(msg): imagem data: só com rótulo, BOM fora, HTML UTF-8 sem charset, <br><br> vira parágrafo
+- fix(msg): erro em anexo embutido só tira o corpo dele, sem abortar a leitura
+- fix(msg): tabela com bloco de texto ou célula longa vira layout, sem cortar texto
+- fix(msg): recusa HTML com aninhamento acima de 5000 antes do parser
+- chore(msg): scraper sem features padrão (sem getopts nem errors)
+- test(msg): amostra com imagem cid, <hr> fora da resposta e datas corretas
+- fix(msg): <hr> no início do cabeçalho de resposta não vira citação
+- test(msg): amostra samples/email.msg e golden
+- fix(msg): acompanhamentos da revisão da Task 6
+- feat(msg): mdv abre .msg e exporta Markdown com -o .md
+- fix(msg): recusa de check_html cai no próximo passo do corpo
+- refactor(msg): testes de markdown.rs em arquivo próprio
+- fix(msg): quebras forçadas, orçamento que aborta e detalhes do cabeçalho
+- feat(msg): montagem do Markdown do e-mail
+- fix(msg): citação do Outlook, teto de saída e escape em tabelas
+- feat(msg): conversão de HTML do Outlook em Markdown
+- fix(msg): HTML em string com UTF-8, teto agregado de leitura e de embutidas
+- feat(msg): leitura do contêiner .msg (MS-CFB/MS-OXMSG)
+- feat(msg): HTML encapsulado em RTF (MS-OXRTFEX) e codepages
+- fix(msg): limita COMPSIZE inferior ao cabeçalho e cobre volta do dicionário
+- feat(msg): crate mdv-msg com descompressão RTF (MS-OXRTFCP)
+
 ### v0.5.2
 
 _2026-10-20_
