@@ -195,6 +195,7 @@ fn exemplos_yaml_validos_saem_sem_erro() {
 }
 
 /// Roda o `mdv` sob `ulimit -v` (o processo morre sozinho se passar do teto, sem travar a máquina).
+#[cfg(target_os = "linux")]
 fn mdv_com_teto(args: &[&str], stdin: &str) -> Output {
     let mut child = Command::new("sh")
         .args(["-c", "ulimit -v 2000000 && exec \"$0\" \"$@\"", env!("CARGO_BIN_EXE_mdv")])
@@ -210,6 +211,7 @@ fn mdv_com_teto(args: &[&str], stdin: &str) -> Output {
 
 /// Bomba de aliases (billion laughs): `l0` tem 10 itens e cada nível seguinte lista 10 vezes o
 /// anterior, então `l9` teria 10^10 nós. A entrada tem poucas centenas de bytes.
+#[cfg(target_os = "linux")]
 fn bomba_de_aliases() -> String {
     let mut t = format!("l0: &l0 [{}]\n", ["x"; 10].join(", "));
     for i in 1..=9 {
@@ -219,6 +221,7 @@ fn bomba_de_aliases() -> String {
     t
 }
 
+#[cfg(target_os = "linux")] // `ulimit -v` não é confiável no macOS nem existe no Windows
 #[test]
 fn yaml_com_aliases_em_excesso_nao_estoura() {
     let bomba = bomba_de_aliases();
