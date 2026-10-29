@@ -116,7 +116,10 @@ impl Builder<'_> {
                         self.charge(n, b)?;
                         v
                     }
-                    None => Value::Null,
+                    None => {
+                        self.charge(1, 0)?;
+                        Value::Null
+                    }
                 };
                 self.place(v);
             }
@@ -538,6 +541,14 @@ mod tests {
         for i in 1..=12 {
             t.push_str(&format!("l{i}: &l{i} [*l{p}, *l{p}]\n", p = i - 1));
         }
+        assert!(matches!(parse(&t, &limits), Err(YamlError::Limit(m)) if m == TOO_BIG));
+    }
+
+    #[test]
+    fn alias_auto_referente_conta_no_teto() {
+        let limits = Limits { max_nodes: 10, ..Limits::default() };
+        // Sem fechar o `]`: o teto tem de cair durante a leitura, não só quando a âncora fecha.
+        let t = format!("x: &a [{}", "*a, ".repeat(20));
         assert!(matches!(parse(&t, &limits), Err(YamlError::Limit(m)) if m == TOO_BIG));
     }
 
