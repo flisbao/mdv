@@ -130,7 +130,7 @@ fn json_por_extensao_do_arquivo() {
 fn json_invalido_mostra_erro_na_saida() {
     let out = mdv(&["json", "-p", "-"], "{");
     let text = String::from_utf8_lossy(&out.stdout);
-    assert!(text.contains("JSON inválido"), "{text}");
+    assert!(text.contains("✗ linha 1, coluna 1") && text.contains("fim inesperado"), "{text}");
 }
 
 #[test]

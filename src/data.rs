@@ -5,30 +5,20 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use serde_json::Value;
 
+use crate::json_syntax;
 use crate::mem;
 use crate::render::{error_rendered, memory_error, render_code_only, render_table_only, Rendered, DIM};
 
 use std::collections::{HashMap, HashSet};
 
 use crate::cli::JsonView;
+use crate::syntax_error::render_with_error;
 
 pub const MAX_DATA_BYTES: usize = 5 * 1024 * 1024;
 
+/// Lê JSON ou JSONL; o erro vira uma linha só com a posição (quem mostra o texto usa `json_syntax::parse`).
 pub fn parse_json(text: &str) -> Result<Value, String> {
-    match serde_json::from_str::<Value>(text) {
-        Ok(v) => Ok(v),
-        Err(e) => {
-            // JSONL: várias linhas, cada uma um valor.
-            let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-            if lines.len() > 1 {
-                let items: Result<Vec<Value>, _> = lines.iter().map(|l| serde_json::from_str(l)).collect();
-                if let Ok(items) = items {
-                    return Ok(Value::Array(items));
-                }
-            }
-            Err(format!("JSON inválido: {e} (linha {}, coluna {})", e.line(), e.column()))
-        }
-    }
+    json_syntax::parse(text).map_err(|e| format!("JSON inválido: {} (linha {}, coluna {})", e.message, e.line, e.col))
 }
 
 pub fn select<'a>(v: &'a Value, path: &str) -> Result<&'a Value, String> {
@@ -405,9 +395,10 @@ pub fn render_json(text: &str, o: &JsonOpts, width: usize) -> Rendered {
     if let Err(e) = mem::check_json(text.len()) {
         return error_rendered(&e.to_string());
     }
-    let root = match parse_json(text.trim_start_matches('\u{feff}')) {
+    let text = text.trim_start_matches('\u{feff}');
+    let root = match json_syntax::parse(text) {
         Ok(v) => v,
-        Err(e) => return error_rendered(&e),
+        Err(e) => return render_with_error(text, "json", width, &e),
     };
     if let Some(err) = memory_error() {
         return err;
@@ -579,7 +570,7 @@ mod tests {
     #[test]
     fn json_invalido_informa_linha_e_coluna() {
         let e = parse_json("{\n  \"a\": ,\n}").unwrap_err();
-        assert!(e.contains("linha 2"), "{e}");
+        assert!(e.contains("linha 2") && e.contains("coluna 8"), "{e}");
     }
 
     #[test]
@@ -604,10 +595,26 @@ mod tests {
     }
 
     #[test]
-    fn render_json_erro_vira_linha_de_erro() {
+    fn render_json_erro_mostra_o_texto_com_a_mensagem() {
         let r = render_json("{", &jopts(JsonView::Text), 60);
-        assert_eq!(r.lines.len(), 1);
-        assert!(text(&r).contains("JSON"));
+        let t = text(&r);
+        assert!(t.contains("✗ linha 1, coluna 1"), "{t}");
+        assert!(t.contains("fim inesperado"), "{t}");
+    }
+
+    #[test]
+    fn json_invalido_mostra_o_texto_com_a_linha_do_erro() {
+        let r = render_json("{\n\"a\": 1,\n}\n", &jopts(JsonView::Text), 60);
+        let t = text(&r);
+        assert!(t.contains('{') && t.contains("\"a\": 1,"), "{t}");
+        assert!(t.contains("✗ linha 3"), "{t}");
+        assert!(r.focus.is_some());
+    }
+
+    #[test]
+    fn json_invalido_com_bom_nao_desloca_o_erro() {
+        let t = text(&render_json("\u{feff}{\n\"a\": 1,\n}\n", &jopts(JsonView::Text), 60));
+        assert!(t.contains("✗ linha 3"), "{t}");
     }
 
     #[test]

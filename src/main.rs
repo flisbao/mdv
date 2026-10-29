@@ -13,6 +13,7 @@ mod imgview;
 mod imgzoom;
 mod load;
 mod image;
+mod json_syntax;
 mod mem;
 mod msg;
 mod mermaid_native;

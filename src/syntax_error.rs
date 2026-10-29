@@ -1,8 +1,6 @@
 //! Erro de sintaxe de dados estruturados (YAML/JSON) desenhado sobre o texto original: a linha
 //! do erro com fundo vermelho e a mensagem logo abaixo.
 
-#![allow(dead_code)] // consumido pelos leitores de dados nas próximas tarefas
-
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthChar;
@@ -90,7 +88,9 @@ fn paint(mut line: Line<'static>) -> Line<'static> {
 /// (as continuações levam dois espaços de recuo).
 fn message_lines(err: &SyntaxError, width: usize) -> Vec<Line<'static>> {
     let st = Style::default().fg(Color::Rgb(248, 81, 73)).add_modifier(Modifier::BOLD);
-    let full = format!("✗ linha {}, coluna {}: {}", err.line, err.col, err.message);
+    // Quebra de linha ou tabulação na mensagem (vinda do parser) não pode vazar para a tela.
+    let message = err.message.split_whitespace().collect::<Vec<_>>().join(" ");
+    let full = format!("✗ linha {}, coluna {}: {}", err.line, err.col, message);
     let avail = width.max(8);
     let mut lines = Vec::new();
     let mut cur = String::new();
@@ -172,6 +172,15 @@ mod tests {
         let i = r.lines.iter().position(|l| has_err_bg(l)).unwrap();
         let n = r.focus.expect("focus");
         assert!(n >= i.saturating_sub(3) && n <= i, "focus {n}, erro em {i}");
+    }
+
+    #[test]
+    fn mensagem_nao_leva_quebra_de_linha_nem_tabulacao() {
+        let r = render_with_error("a: 1\n", "yaml", 60, &err(1, 1, "ruim\n\tmesmo\r\ndepois"));
+        let i = r.lines.iter().position(|l| text(l).contains('✗')).unwrap();
+        let t = text(&r.lines[i]);
+        assert!(t.contains("✗ linha 1, coluna 1: ruim mesmo depois"), "{t}");
+        assert!(r.lines.iter().all(|l| !text(l).contains(['\n', '\t', '\r'])));
     }
 
     #[test]

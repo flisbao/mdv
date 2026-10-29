@@ -926,7 +926,7 @@ fn table_alem_do_que_existe_avisa_e_nao_abre() {
 #[test]
 fn arquivos_de_producao_dentro_do_teto() {
     let arquivos: &[(&str, &str, usize)] = &[
-        ("main.rs", include_str!("../main.rs"), 122),
+        ("main.rs", include_str!("../main.rs"), 123),
         ("load.rs", include_str!("../load.rs"), 500),
         ("plain.rs", include_str!("../plain.rs"), 500),
         ("doc.rs", include_str!("../doc.rs"), 500),
@@ -994,4 +994,49 @@ fn rerender_mantem_o_scroll_de_quem_ja_rolou() {
     app.scroll_to(40);
     app.rerender(80);
     assert_eq!(app.view.scroll, 40);
+}
+
+/// JSON de 200 linhas com uma `}` sobrando (vírgula antes dela) na linha 150.
+fn json_longo_com_erro() -> String {
+    let mut s = String::from("{\n");
+    for n in 1..149 {
+        s.push_str(&format!("  \"k{n}\": {n},\n"));
+    }
+    s.push_str("  }\n");
+    for n in 150..200 {
+        s.push_str(&format!("  \"k{n}\": {n},\n"));
+    }
+    s
+}
+
+fn app_json_com_erro() -> App {
+    let mut app = test_app(Source::Stdin, &json_longo_com_erro());
+    app.doc.opts.doc = cli::Doc::Json { json_path: None, view: cli::JsonView::Auto };
+    app.doc.dirty = true;
+    app.view.height = 20;
+    app
+}
+
+fn linha_da_mensagem(app: &App) -> usize {
+    let texto = |l: &Line| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>();
+    app.doc.rendered.lines.iter().position(|l| texto(l).contains("✗ linha 150")).expect("mensagem de erro")
+}
+
+#[test]
+fn json_com_erro_abre_rolado_ate_a_linha_do_erro() {
+    let mut app = app_json_com_erro();
+    app.rerender(60);
+    let msg = linha_da_mensagem(&app);
+    assert!(app.view.scroll > 100, "scroll {}", app.view.scroll);
+    assert!(app.window().contains(&msg), "a mensagem ({msg}) precisa estar na tela {:?}", app.window());
+    assert!(app.window().contains(&(msg - 1)), "a linha do erro precisa estar na tela");
+}
+
+#[test]
+fn json_com_erro_nao_puxa_de_volta_quem_ja_rolou() {
+    let mut app = app_json_com_erro();
+    app.rerender(60);
+    app.scroll_to(30);
+    app.rerender(60);
+    assert_eq!(app.view.scroll, 30);
 }
