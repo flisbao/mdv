@@ -286,7 +286,7 @@ O formato também é deduzido da extensão (`.json`, `.jsonl`, `.yaml`, `.yml`, 
 
 **Erros de sintaxe (JSON e YAML).** Arquivo inválido não vira uma tela de erro vazia: o `mdv` mostra o texto original com a **linha do erro em fundo vermelho** e logo abaixo `✗ linha N, coluna M: mensagem` em português (por exemplo, `vírgula sobrando antes de fechar` no JSON ou `esperava uma chave nesta linha (verifique a indentação)` no YAML). Na TUI o documento abre já rolado até o erro, com algumas linhas de contexto acima; `m` mostra a fonte crua. Só erros de sintaxe são apontados, nunca estilo. Experimente `mdv samples/quebrado.yaml` e `mdv samples/quebrado.json`.
 
-Para não estourar a máquina com entrada hostil, a leitura do YAML tem tetos: 200 000 nós (contando cada cópia criada por um alias, o que barra a "bomba de aliases"), 128 níveis de aninhamento e 32 MiB de texto. Passou de um teto, as vistas de tabela e de esquema avisam `estrutura grande demais: use a vista de texto` e a vista de texto continua mostrando o original.
+Para não estourar a máquina com entrada hostil, a leitura do YAML tem tetos: 2 milhões de nós vindos do próprio texto (folga para os 5 MiB de entrada), 1 milhão de nós criados por cópia (cada alias e cada âncora guardada, o que barra a "bomba de aliases"), 128 níveis de aninhamento e 32 MiB de texto. Passou de um teto, as vistas de tabela e de esquema avisam `estrutura grande demais: use a vista de texto` e a vista de texto continua mostrando o original.
 
 ## Exportar
 

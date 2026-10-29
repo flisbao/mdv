@@ -13,17 +13,24 @@ use crate::syntax_error::SyntaxError;
 /// Tamanho máximo, em caracteres, do texto de uma chave composta (mapa ou lista como chave).
 pub const MAX_KEY_CHARS: usize = 200;
 
-/// Tetos da conversão: nós (inclusive os clonados por alias), coleções aninhadas e bytes de texto.
+/// Tetos da conversão. Cada nó criado conta em um dos dois tetos de nós: `max_nodes` para os que
+/// vêm do próprio texto e `max_alias_nodes` para as cópias (valor guardado de uma âncora e clone de
+/// cada alias), o que barra a bomba de aliases sem barrar documento comum grande. Também há teto de
+/// coleções aninhadas e de bytes de texto (originais e cópias somados).
 #[derive(Debug, Clone)]
 pub struct Limits {
     pub max_nodes: usize,
+    pub max_alias_nodes: usize,
     pub max_depth: usize,
     pub max_string_bytes: usize,
 }
 
 impl Default for Limits {
     fn default() -> Self {
-        Limits { max_nodes: 200_000, max_depth: 128, max_string_bytes: 32 << 20 }
+        // Medido no pico do processo: 80 a 115 B por nó. 2 milhões de nós do texto (~230 MB) cobrem
+        // os 5 MiB de entrada (`data::MAX_DATA_BYTES`) de registros comuns; 1 milhão de cópias,
+        // ~115 MB. Abaixo disso, `mem::exceeded()` a cada evento vale para `--memory-buffer` pequeno.
+        Limits { max_nodes: 2_000_000, max_alias_nodes: 1_000_000, max_depth: 128, max_string_bytes: 32 << 20 }
     }
 }
 
@@ -47,7 +54,7 @@ fn limit(msg: &str) -> YamlError {
 /// Lê `text` (um ou mais documentos YAML) como `Value`: um documento vira o próprio valor, vários
 /// viram uma lista. Os eventos são puxados um a um e a leitura para no primeiro teto estourado.
 pub fn parse(text: &str, limits: &Limits) -> Result<Value, YamlError> {
-    let mut b = Builder { limits, nodes: 0, bytes: 0, stack: Vec::new(), anchors: HashMap::new(), docs: Vec::new() };
+    let mut b = Builder { limits, nodes: 0, copies: 0, bytes: 0, stack: Vec::new(), anchors: HashMap::new(), docs: Vec::new() };
     for ev in Parser::new_from_str(text) {
         if mem::exceeded() {
             return Err(limit(TOO_BIG));
@@ -79,7 +86,9 @@ enum Frame {
 
 struct Builder<'l> {
     limits: &'l Limits,
+    /// Nós vindos do texto e nós criados por cópia (âncora guardada, alias).
     nodes: usize,
+    copies: usize,
     bytes: usize,
     stack: Vec<Frame>,
     /// Valor já montado de cada âncora do documento atual; o alias clona.
@@ -112,11 +121,11 @@ impl Builder<'_> {
                     Some(v) => {
                         let (n, b) = size(v, self.room())?;
                         let v = v.clone();
-                        self.charge(n, b)?;
+                        self.charge_copy(n, b)?;
                         v
                     }
                     None => {
-                        self.charge(1, 0)?;
+                        self.charge_copy(1, 0)?;
                         Value::Null
                     }
                 };
@@ -137,18 +146,29 @@ impl Builder<'_> {
         Ok(())
     }
 
-    /// Nós e bytes que ainda cabem nos tetos.
+    /// Nós de cópia e bytes que ainda cabem nos tetos (medidos antes de clonar).
     fn room(&self) -> (usize, usize) {
         (
-            self.limits.max_nodes.saturating_sub(self.nodes),
+            self.limits.max_alias_nodes.saturating_sub(self.copies),
             self.limits.max_string_bytes.saturating_sub(self.bytes),
         )
     }
 
+    /// Nós e bytes vindos do próprio texto.
     fn charge(&mut self, nodes: usize, bytes: usize) -> Result<(), YamlError> {
         self.nodes += nodes;
         self.bytes += bytes;
         if self.nodes > self.limits.max_nodes || self.bytes > self.limits.max_string_bytes {
+            return Err(limit(TOO_BIG));
+        }
+        Ok(())
+    }
+
+    /// Nós e bytes criados por cópia (âncora guardada, alias).
+    fn charge_copy(&mut self, nodes: usize, bytes: usize) -> Result<(), YamlError> {
+        self.copies += nodes;
+        self.bytes += bytes;
+        if self.copies > self.limits.max_alias_nodes || self.bytes > self.limits.max_string_bytes {
             return Err(limit(TOO_BIG));
         }
         Ok(())
@@ -164,11 +184,11 @@ impl Builder<'_> {
         Ok(())
     }
 
-    /// Valor completo: guarda a cópia da âncora (que também conta nos tetos) e o põe no pai.
+    /// Valor completo: guarda a cópia da âncora (que conta no teto de cópias) e o põe no pai.
     fn finish(&mut self, v: Value, anchor: usize) -> Result<(), YamlError> {
         if anchor != 0 {
             let (n, b) = size(&v, self.room())?;
-            self.charge(n, b)?;
+            self.charge_copy(n, b)?;
             self.anchors.insert(anchor, v.clone());
         }
         self.place(v);
@@ -535,7 +555,7 @@ mod tests {
 
     #[test]
     fn bomba_de_aliases_estoura_o_limite_pequeno() {
-        let limits = Limits { max_nodes: 1000, max_depth: 128, max_string_bytes: 1 << 20 };
+        let limits = Limits { max_alias_nodes: 1000, max_string_bytes: 1 << 20, ..Limits::default() };
         let mut t = String::from("l0: &l0 [x, x]\n");
         for i in 1..=12 {
             t.push_str(&format!("l{i}: &l{i} [*l{p}, *l{p}]\n", p = i - 1));
@@ -544,8 +564,29 @@ mod tests {
     }
 
     #[test]
+    fn teto_de_copias_separado_do_teto_do_documento() {
+        let limits = Limits { max_nodes: 1000, max_alias_nodes: 50, ..Limits::default() };
+        // Documento comum, sem alias, com mais nós que o teto de cópias: passa.
+        let comum: String = (0..200).map(|i| format!("- {{n: {i}}}\n")).collect();
+        assert_eq!(parse(&comum, &limits).expect("documento comum").as_array().map(Vec::len), Some(200));
+        // Acima do teto do próprio documento: para.
+        let grande: String = (0..600).map(|i| format!("- {{n: {i}}}\n")).collect();
+        assert!(matches!(parse(&grande, &limits), Err(YamlError::Limit(m)) if m == TOO_BIG));
+        // A bomba de aliases cria poucos nós no texto, mas estoura o teto de cópias.
+        let mut bomba = String::from("l0: &l0 [x, x, x, x]\n");
+        for i in 1..=6 {
+            bomba.push_str(&format!("l{i}: &l{i} [*l{p}, *l{p}, *l{p}, *l{p}]\n", p = i - 1));
+        }
+        assert!(matches!(parse(&bomba, &limits), Err(YamlError::Limit(m)) if m == TOO_BIG));
+        // Cópia de âncora conta no teto de cópias, não no do documento.
+        let ancoras: String = (0..60).map(|i| format!("a{i}: &a{i} 1\n")).collect();
+        assert!(matches!(parse(&ancoras, &limits), Err(YamlError::Limit(_))));
+        assert!(parse(&ancoras, &Limits { max_nodes: 125, max_alias_nodes: 60, ..Limits::default() }).is_ok());
+    }
+
+    #[test]
     fn alias_auto_referente_conta_no_teto() {
-        let limits = Limits { max_nodes: 10, ..Limits::default() };
+        let limits = Limits { max_alias_nodes: 10, ..Limits::default() };
         // Sem fechar o `]`: o teto tem de cair durante a leitura, não só quando a âncora fecha.
         let t = format!("x: &a [{}", "*a, ".repeat(20));
         assert!(matches!(parse(&t, &limits), Err(YamlError::Limit(m)) if m == TOO_BIG));

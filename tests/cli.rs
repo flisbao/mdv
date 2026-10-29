@@ -226,7 +226,9 @@ fn bomba_de_aliases() -> String {
 fn yaml_com_aliases_em_excesso_nao_estoura() {
     let bomba = bomba_de_aliases();
     assert!(bomba.len() <= 64 << 10, "a entrada passa de 64 KiB");
-    // Vista de tabela e de esquema: o teto de nós barra a conversão.
+    // Vista de tabela e de esquema: o teto de cópias (1 milhão de nós clonados por alias) barra a
+    // conversão. Pior caso: ~1 milhão de nós vivos (~100 B cada, ~100 MB; medido: pico de 98 MB),
+    // longe do `ulimit -v` de ~2 GB e do limite padrão de 512 MiB.
     for vista in ["table", "schema"] {
         let out = mdv_com_teto(&["yaml", "-p", "-", "--as", vista], &bomba);
         let (so, se) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
