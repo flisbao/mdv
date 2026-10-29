@@ -251,7 +251,8 @@ impl App {
         self.queue_graphics();
     }
 
-    /// Documento com erro de sintaxe abre rolado até ele; quem já rolou não é puxado de volta.
+    /// Documento que indica uma linha de interesse (`Rendered.focus`, hoje o erro de sintaxe) abre
+    /// rolado até ela; quem já rolou não é puxado de volta.
     pub(crate) fn follow_focus(&mut self) {
         if let (0, Some(l)) = (self.view.scroll, self.doc.rendered.focus) {
             self.scroll_to(l);

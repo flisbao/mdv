@@ -6,9 +6,9 @@
 │     "markdown",                       
 │     "yaml",                           
 │   ],                                  
-✗ linha 7, coluna 3: vírgula sobrando an
-  tes de fechar (remova a última vírgula
-  )
+✗ linha 7, coluna 3: vírgula sobrando
+  antes de fechar (remova a última
+  vírgula)
 │   "ativo": true                       
 │ }                                     
 ╰─

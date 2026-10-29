@@ -17,6 +17,9 @@ pub fn render_yaml(text: &str, o: &JsonOpts, width: usize) -> Rendered {
 
 /// A vista que `Auto` escolheria para este texto (usada pela tecla `v`). `Text` se não parsear.
 pub fn auto_view_of_text(text: &str, path: Option<&str>) -> JsonView {
+    if text.len() > data::MAX_DATA_BYTES {
+        return JsonView::Text;
+    }
     let Ok(root) = yamldoc::parse(text, &Limits::default()) else {
         return JsonView::Text;
     };
@@ -44,11 +47,8 @@ fn render_yaml_with(text: &str, o: &JsonOpts, width: usize, limits: &Limits) -> 
         Err(YamlError::Limit(m)) if text_view && !has_path(o) => {
             return memory_error().unwrap_or_else(|| text_with_notice(text, &m, width));
         }
-        Err(YamlError::Limit(m)) => {
-            let hint = "use a vista de texto";
-            let msg = if m.contains(hint) { m } else { format!("{m} ({hint}: tecla v ou --as text)") };
-            return memory_error().unwrap_or_else(|| error_rendered(&msg));
-        }
+        // As mensagens de limite já dizem para usar a vista de texto.
+        Err(YamlError::Limit(m)) => return memory_error().unwrap_or_else(|| error_rendered(&m)),
     };
     if let Some(err) = memory_error() {
         return err;
@@ -144,7 +144,7 @@ mod tests {
         let r = render_yaml(src, &opts(None, JsonView::Auto), 80);
         let t = text(&r);
         assert!(t.contains("nome"), "{t}");
-        assert!(t.contains("│ 1") || t.contains("1 │"), "{t}");
+        assert!(t.contains("│ id │ nome │") && t.contains("│  2 │ b    │"), "{t}");
         assert_eq!(auto_view_of_text(src, None), JsonView::Table);
         assert_eq!(auto_view_of_text("a: 1\n", None), JsonView::Text);
         assert_eq!(auto_view_of_text("a: [", None), JsonView::Text);
@@ -217,6 +217,29 @@ mod tests {
             let t = text(&render_yaml_with("a:\n  b: 1\nc: 3\n", &opts(Some(".a"), v), 80, &tiny()));
             assert!(t.contains("estrutura grande demais") && !t.contains("c: 3"), "{v:?}\n{t}");
         }
+    }
+
+    #[test]
+    fn path_vazio_ou_ponto_vale_a_raiz() {
+        for p in ["", ".", " . "] {
+            let t = text(&render_yaml("a: 1\n# nota\n", &opts(Some(p), JsonView::Text), 80));
+            assert!(t.contains("# nota"), "{p:?}\n{t}");
+        }
+    }
+
+    #[test]
+    fn varios_documentos_mostram_o_arquivo_inteiro_e_viram_tabela() {
+        let src = "id: 1\n# um\n---\nid: 2\n# dois\n";
+        let t = text(&render_yaml(src, &opts(None, JsonView::Text), 80));
+        assert!(t.contains("# um") && t.contains("# dois") && t.contains("---"), "{t}");
+        assert!(t.contains("lista · 2 itens"), "{t}");
+        assert_eq!(auto_view_of_text(src, None), JsonView::Table);
+    }
+
+    #[test]
+    fn auto_view_de_texto_gigante_nao_le_o_yaml() {
+        let big = "a".repeat(data::MAX_DATA_BYTES + 1);
+        assert_eq!(auto_view_of_text(&big, None), JsonView::Text);
     }
 
     #[test]

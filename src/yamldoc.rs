@@ -54,7 +54,7 @@ fn limit(msg: &str) -> YamlError {
 /// Lê `text` (um ou mais documentos YAML) como `Value`: um documento vira o próprio valor, vários
 /// viram uma lista. Os eventos são puxados um a um e a leitura para no primeiro teto estourado.
 pub fn parse(text: &str, limits: &Limits) -> Result<Value, YamlError> {
-    let mut b = Builder { limits, nodes: 0, copies: 0, bytes: 0, stack: Vec::new(), anchors: HashMap::new(), docs: Vec::new() };
+    let mut b = Builder { limits, nodes: 0, copies: 0, bytes: 0, stack: Vec::new(), anchors: HashMap::new(), docs: Vec::new(), empty: Vec::new() };
     for ev in Parser::new_from_str(text) {
         if mem::exceeded() {
             return Err(limit(TOO_BIG));
@@ -65,6 +65,12 @@ pub fn parse(text: &str, limits: &Limits) -> Result<Value, YamlError> {
         }
     }
     let mut docs = b.docs;
+    // `---` sobrando (no fim, ou duplicado) não é um documento: só vale se não restar outro.
+    if b.empty.len() < docs.len() {
+        for &i in b.empty.iter().rev() {
+            docs.remove(i);
+        }
+    }
     match docs.len() {
         0 => Err(YamlError::Empty),
         1 => Ok(docs.swap_remove(0)),
@@ -94,6 +100,8 @@ struct Builder<'l> {
     /// Valor já montado de cada âncora do documento atual; o alias clona.
     anchors: HashMap<usize, Value>,
     docs: Vec<Value>,
+    /// Índices em `docs` dos documentos sem conteúdo (`---` seguido de `---` ou do fim).
+    empty: Vec<usize>,
 }
 
 impl Builder<'_> {
@@ -105,13 +113,16 @@ impl Builder<'_> {
             }
             Event::Scalar(s, style, anchor, tag) => {
                 let plain = matches!(style, ScalarStyle::Plain);
-                if plain && tag.is_none() && s == "<<" {
+                if plain && tag.is_none() && anchor == 0 && s == "<<" {
                     if let Some(Frame::Map { key: k @ None, .. }) = self.stack.last_mut() {
                         *k = Some(Key::Merge);
                         return Ok(());
                     }
                 }
                 self.charge(1, s.len())?;
+                if plain && s.is_empty() && tag.is_none() && anchor == 0 && self.stack.is_empty() {
+                    self.empty.push(self.docs.len());
+                }
                 let v = scalar(&s, plain, tag.as_deref());
                 self.finish(v, anchor)?;
             }
@@ -374,7 +385,10 @@ fn position(text: &str, line: usize, col: usize) -> (usize, usize) {
     if col > 0 || line == 1 {
         return (line, col + 1);
     }
-    let blank = |l: &str| l.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}').is_empty();
+    let blank = |l: &str| {
+        let l = l.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+        l.is_empty() || l.starts_with('#')
+    };
     let mut last = None;
     for (i, l) in text.split('\n').enumerate() {
         if i + 1 < line {
@@ -400,8 +414,12 @@ fn message_pt(info: &str) -> String {
         "valor de mapa fora de lugar (verifique a indentação)"
     } else if info.contains("did not find expected key") {
         "esperava uma chave nesta linha (verifique a indentação)"
-    } else if info.contains("cannot start any token") || info.contains("tabs") {
-        "caractere inválido aqui (tabulação não vale como indentação)"
+    } else if info.contains("tabs") || info.contains("a tab") || info.contains("tab cannot") {
+        "tabulação não vale como indentação (use espaços)"
+    } else if info.contains("cannot start any token") {
+        "caractere que não pode começar um valor aqui (ponha o texto entre aspas)"
+    } else if info.contains("unprintable") {
+        "caractere de controle no texto"
     } else if info.contains("expected ',' or ']'") {
         "falta `,` ou `]`"
     } else if info.contains("expected ',' or '}'") {
@@ -449,6 +467,35 @@ mod tests {
     fn escalares_do_esquema_core() {
         let v = ok("- 0x1F\n- 0o17\n- -3\n- +4\n- 1e3\n- .inf\n- .nan\n- NULL\n- \n- TRUE\n- False\n- 1.2.3\n- '~'\n");
         assert_eq!(v, json!([31, 15, -3, 4, 1000.0, ".inf", ".nan", null, null, true, false, "1.2.3", "~"]));
+    }
+
+    #[test]
+    fn separador_sobrando_nao_e_documento() {
+        assert_eq!(ok("a: 1\n---\n"), json!({"a": 1}));
+        assert_eq!(ok("---\na: 1\n---\n---\nb: 2\n---\n"), json!([{"a": 1}, {"b": 2}]));
+        assert_eq!(ok("---\n"), Value::Null);
+        assert_eq!(ok("a: 1\n---\n~\n"), json!([{"a": 1}, null]), "null explícito continua documento");
+    }
+
+    #[test]
+    fn ancora_na_chave_de_merge_nao_a_descarta() {
+        // `&x <<` é uma chave comum chamada `<<`; o alias para ela acha a âncora.
+        let v = ok("a: {&x <<: 1}\nb: *x\n");
+        assert_eq!(v["a"], json!({"<<": 1}));
+        assert_eq!(v["b"], json!("<<"));
+    }
+
+    #[test]
+    fn fim_do_arquivo_depois_de_comentario_aponta_o_ultimo_conteudo() {
+        let e = erro("a: [1, 2\n# fim\n");
+        assert_eq!(e.line, 1, "{e:?}");
+    }
+
+    #[test]
+    fn mensagens_de_tabulacao_e_de_caractere_sao_distintas() {
+        assert!(message_pt("tabs disallowed within this context (block indentation)").contains("tabulação"));
+        assert!(!message_pt("found character that cannot start any token").contains("tabulação"));
+        assert!(message_pt("found unprintable character").contains("controle"));
     }
 
     #[test]
@@ -625,6 +672,8 @@ mod tests {
         let config = ok(include_str!("../samples/config.yaml"));
         // Tabulação dentro de string (não na indentação) e chave repetida (a última vence).
         assert!(config.to_string().contains("\\t"), "{config}");
+        assert_eq!(config["banco"]["porta"], json!(5433), "a última vence");
+        assert_eq!(config["banco"]["pool"]["maximo"], json!(20));
         let k8s = ok(include_str!("../samples/k8s.yaml"));
         assert_eq!(k8s.as_array().map(Vec::len), Some(2), "Deployment + Service");
         let cf = ok(include_str!("../samples/cloudformation.yaml"));

@@ -40,7 +40,7 @@ pub struct Common {
     pub graphics: Graphics,
     pub remote: bool,
     pub follow: bool,
-    /// `--table N`: abre o zoom da N-ésima tabela (vale para Markdown, JSON e CSV/TSV).
+    /// `--table N`: abre o zoom da N-ésima tabela (vale para Markdown, JSON, YAML e CSV/TSV).
     pub table: Option<usize>,
 }
 

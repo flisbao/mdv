@@ -30,8 +30,8 @@ fn parse_jsonl(text: &str) -> Option<Result<Vec<Value>, SyntaxError>> {
     rows.clone().next()?;
     let mut items = Vec::new();
     for (i, l) in text.lines().enumerate().filter(|(_, l)| !l.trim().is_empty()) {
-        if mem::exceeded() {
-            return None;
+        if let Err(e) = mem::check() {
+            return Some(Err(SyntaxError { line: i + 1, col: 1, message: e.to_string() }));
         }
         match serde_json::from_str::<Value>(l) {
             Ok(v) => items.push(v),
@@ -47,6 +47,9 @@ fn parse_jsonl(text: &str) -> Option<Result<Vec<Value>, SyntaxError>> {
 /// Erro do documento inteiro com a posição ajustada: coluna em caracteres (o `serde_json` conta
 /// bytes) e, quando o parser para logo após uma quebra (coluna 0), o fim da linha anterior.
 fn located(text: &str, e: &serde_json::Error) -> SyntaxError {
+    if text.trim().is_empty() {
+        return SyntaxError { line: 1, col: 1, message: "documento vazio".into() };
+    }
     let mut line = e.line().max(1);
     let mut col = e.column();
     if col == 0 && line > 1 {
@@ -86,6 +89,13 @@ fn message_pt(e: &serde_json::Error, jsonl: bool) -> String {
         "key must be a string" => "a chave precisa estar entre aspas",
         "trailing characters" => "texto sobrando depois do fim do valor",
         "invalid escape" => "escape inválido dentro de um texto",
+        "expected ident" => "valor inválido (esperado true, false ou null)",
+        "invalid number" => "número inválido",
+        "number out of range" => "número grande demais",
+        "invalid unicode code point" => "código Unicode inválido depois de \\u",
+        "unexpected end of hex escape" => "escape \\u incompleto (são 4 dígitos hexadecimais)",
+        s if s.contains("surrogate") => "escape \\u inválido (par substituto incompleto)",
+        "recursion limit exceeded" => "estrutura aninhada demais",
         s if s.starts_with("control character") => "quebra de linha ou caractere de controle dentro de um texto (use \\n)",
         s => return format!("sintaxe inválida: {}", s.split_whitespace().collect::<Vec<_>>().join(" ")),
     };
@@ -161,5 +171,30 @@ mod tests {
     fn texto_vazio_e_erro_na_linha_um() {
         let e = erro("");
         assert_eq!((e.line, e.col), (1, 1));
+        assert_eq!(e.message, "documento vazio");
+        assert_eq!(erro(" \n\t\n").message, "documento vazio");
+    }
+
+    #[test]
+    fn mensagens_conhecidas_saem_em_portugues() {
+        for (texto, trecho) in [
+            ("[tru]", "esperado true"),
+            ("[1.]", "número inválido"),
+            ("[\"\\ud800\"]", "escape \\u"),
+            ("[\"\\u12\"]", "escape inválido"),
+            ("[\"\\x\"]", "escape inválido"),
+        ] {
+            let e = erro(texto);
+            assert!(e.message.contains(trecho), "{texto}: {}", e.message);
+            assert!(!e.message.starts_with("sintaxe inválida"), "{texto}: {}", e.message);
+        }
+    }
+
+    #[test]
+    fn jsonl_com_multibyte_crlf_e_sem_quebra_final() {
+        let e = erro("{\"é\":1}\r\n{\"é\": x}");
+        assert_eq!((e.line, e.col), (2, 7));
+        let v = parse("{\"é\":1}\r\n{\"é\":2}").unwrap();
+        assert_eq!(v, serde_json::json!([{"é": 1}, {"é": 2}]));
     }
 }

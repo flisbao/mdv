@@ -19,6 +19,11 @@ impl DocOpts {
     }
 }
 
+/// Opções das vistas de dados estruturados (JSON e YAML), que só diferem no formato de entrada.
+fn json_opts(path: &Option<String>, view: cli::JsonView) -> data::JsonOpts {
+    data::JsonOpts { path: path.clone(), view, head: cli::DEFAULT_HEAD, cols: Vec::new() }
+}
+
 /// Único ponto que decide como o texto da entrada vira linhas, conforme o modo (TUI e `--plain`).
 pub(crate) fn render_doc(doc: &DocOpts, text: &str, width: usize, images: &image::ImageStore) -> render::Rendered {
     match &doc.doc {
@@ -28,24 +33,8 @@ pub(crate) fn render_doc(doc: &DocOpts, text: &str, width: usize, images: &image
                 &render::RenderOpts { width, images: Some(images), code_scroll: doc.code_scroll },
             )
         }
-        cli::Doc::Json { json_path, view } => {
-            let opts = data::JsonOpts {
-                path: json_path.clone(),
-                view: *view,
-                head: cli::DEFAULT_HEAD,
-                cols: Vec::new(),
-            };
-            data::render_json(text, &opts, width)
-        }
-        cli::Doc::Yaml { yaml_path, view } => {
-            let opts = data::JsonOpts {
-                path: yaml_path.clone(),
-                view: *view,
-                head: cli::DEFAULT_HEAD,
-                cols: Vec::new(),
-            };
-            yaml_view::render_yaml(text, &opts, width)
-        }
+        cli::Doc::Json { json_path, view } => data::render_json(text, &json_opts(json_path, *view), width),
+        cli::Doc::Yaml { yaml_path, view } => yaml_view::render_yaml(text, &json_opts(yaml_path, *view), width),
         cli::Doc::Table { delimiter, head, cols, no_header } => {
             let opts = data::TableOpts {
                 delimiter: *delimiter,

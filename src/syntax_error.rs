@@ -31,20 +31,17 @@ pub fn render_with_error(text: &str, lang: &str, width: usize, err: &SyntaxError
         return Rendered { lines: msg_lines, ..Rendered::default() };
     }
     // Posição em bytes onde começa a linha do erro (`start`) e a seguinte (`end`).
-    let (mut start, mut end, mut found) = (0, text.len(), false);
+    let (mut start, mut end) = (0, text.len());
     let mut at = 0;
     for (i, piece) in text.split_inclusive('\n').enumerate() {
-        if mem::exceeded() {
-            return error_rendered("limite de memória excedido");
+        if let Err(e) = mem::check() {
+            return error_rendered(&e.to_string());
         }
-        (start, end, found) = (at, at + piece.len(), true);
+        (start, end) = (at, at + piece.len());
         if i + 1 >= err.line.max(1) {
             break;
         }
         at += piece.len();
-    }
-    if !found {
-        return Rendered { lines: msg_lines, ..Rendered::default() };
     }
 
     // Cada `render_code_only` tem o próprio orçamento de realce: acima dele, só a linha do erro sai
@@ -106,15 +103,30 @@ fn message_lines(err: &SyntaxError, width: usize) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let mut cur = String::new();
     let mut w = 0;
-    for ch in sanitize(&full).chars() {
-        let cw = ch.width().unwrap_or(0);
-        if w + cw > avail && !cur.is_empty() {
-            lines.push(Line::from(Span::styled(std::mem::take(&mut cur), st)));
-            cur.push_str("  ");
-            w = 2;
+    let mut flush = |cur: &mut String, w: &mut usize| {
+        lines.push(Line::from(Span::styled(std::mem::take(cur), st)));
+        cur.push_str("  ");
+        *w = 2;
+    };
+    for word in sanitize(&full).split(' ') {
+        let ww: usize = word.chars().map(|c| c.width().unwrap_or(0)).sum();
+        let vazia = cur.trim().is_empty();
+        let sep = usize::from(!vazia);
+        if w + sep + ww > avail && !vazia {
+            flush(&mut cur, &mut w);
+        } else if sep == 1 {
+            cur.push(' ');
+            w += 1;
         }
-        cur.push(ch);
-        w += cw;
+        // Palavra maior que a linha (um caminho, por exemplo): só então quebra no meio dela.
+        for ch in word.chars() {
+            let cw = ch.width().unwrap_or(0);
+            if w + cw > avail && !cur.trim().is_empty() {
+                flush(&mut cur, &mut w);
+            }
+            cur.push(ch);
+            w += cw;
+        }
     }
     lines.push(Line::from(Span::styled(cur, st)));
     lines
@@ -270,6 +282,33 @@ mod tests {
         let t = text(&r.lines[i]);
         assert!(t.contains("✗ linha 1, coluna 1: ruim mesmo depois"), "{t}");
         assert!(r.lines.iter().all(|l| !text(l).contains(['\n', '\t', '\r'])));
+    }
+
+    #[test]
+    fn mensagem_longa_quebra_entre_palavras() {
+        let msg = "esperado vírgula ou chave depois do valor anterior";
+        let r = render_with_error("a: 1\n", "yaml", 24, &err(1, 1, msg));
+        let ms: Vec<String> = r.lines.iter().map(text).filter(|t| t.contains('✗') || t.starts_with("  ")).collect();
+        assert!(ms.len() > 1, "{ms:?}");
+        assert!(ms.iter().all(|t| t.chars().count() <= 24), "{ms:?}");
+        let junto = ms.iter().map(|t| t.trim()).collect::<Vec<_>>().join(" ");
+        assert_eq!(junto, format!("✗ linha 1, coluna 1: {msg}"));
+    }
+
+    #[test]
+    fn palavra_maior_que_a_linha_quebra_no_meio() {
+        let r = render_with_error("a: 1\n", "yaml", 10, &err(1, 1, &"z".repeat(30)));
+        let n = r.lines.iter().filter(|l| text(l).contains('z')).count();
+        assert!(n >= 3);
+    }
+
+    #[test]
+    fn linha_um_sem_quebra_final_e_linha_zero() {
+        let r = render_with_error("a: [", "yaml", 60, &err(1, 4, "ruim"));
+        assert!(r.lines.iter().any(|l| has_err_bg(l) && text(l).contains("a: [")));
+        let r = render_with_error("a: 1\r\nb: 2\r\n", "yaml", 60, &err(0, 1, "ruim"));
+        let i = r.lines.iter().position(|l| has_err_bg(l)).unwrap();
+        assert!(text(&r.lines[i]).contains("a: 1"));
     }
 
     #[test]
