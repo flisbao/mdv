@@ -1,0 +1,31 @@
+objeto · 4 chaves
+╭─ yaml
+│ name: CI                                                                      
+│                                                                               
+│ on:                                                                           
+│   push:                                                                       
+│     branches: [main]                                                          
+│   pull_request:                                                               
+│                                                                               
+│ env:                                                                          
+│   CARGO_TERM_COLOR: always                                                    
+│   # Repetida de propósito: vale a última, não é erro de sintaxe.              
+│   CARGO_TERM_COLOR: auto                                                      
+│                                                                               
+│ jobs:                                                                         
+│   teste:                                                                      
+│     runs-on: ${{ matrix.os }}                                                 
+│     strategy:                                                                 
+│       matrix:                                                                 
+│         os: [ubuntu-latest, macos-latest]                                     
+│     steps:                                                                    
+│       - uses: actions/checkout@v4                                             
+│       - name: Instalar Rust                                                   
+│         uses: dtolnay/rust-toolchain@stable                                   
+│       - name: Testes                                                          
+│         run: |                                                                
+│           cargo build --release                                               
+│           cargo test --workspace                                              
+│       - name: Clippy                                                          
+│         run: cargo clippy --workspace --all-targets -- -D warnings            
+╰─

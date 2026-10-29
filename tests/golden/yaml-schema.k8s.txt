@@ -1,0 +1,36 @@
+╭─
+│ lista · 2 × objeto                                                            
+│   apiVersion: texto                                                           
+│   kind: texto                                                                 
+│   metadata: objeto                                                            
+│     name: texto                                                               
+│     labels?: objeto                                                           
+│       app: texto                                                              
+│   spec: objeto                                                                
+│     replicas?: número                                                         
+│     selector: objeto                                                          
+│       matchLabels?: objeto                                                    
+│         app: texto                                                            
+│       app?: texto                                                             
+│     template?: objeto                                                         
+│       metadata: objeto                                                        
+│         labels: objeto                                                        
+│           app: texto                                                          
+│       spec: objeto                                                            
+│         containers: lista · 1 × objeto                                        
+│           name: texto                                                         
+│           image: texto                                                        
+│           ports: lista · 1 × objeto                                           
+│             containerPort: número                                             
+│           env: lista · 1 × objeto                                             
+│             name: texto                                                       
+│             value: texto                                                      
+│           resources: objeto                                                   
+│             limits: objeto                                                    
+│               cpu: texto                                                      
+│               memory: texto                                                   
+│     type?: texto                                                              
+│     ports?: lista · 1 × objeto                                                
+│       port: número                                                            
+│       targetPort: número                                                      
+╰─

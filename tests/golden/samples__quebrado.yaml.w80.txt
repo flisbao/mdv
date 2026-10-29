@@ -1,0 +1,9 @@
+╭─ yaml
+│ # Indentação inconsistente: a chave "timeout" ficou com 1 espaço.             
+│ servidor:                                                                     
+│   host: localhost                                                             
+│   porta: 8080                                                                 
+│  timeout: 30                                                                  
+✗ linha 5, coluna 2: esperava uma chave nesta linha (verifique a indentação)
+│   debug: true                                                                 
+╰─

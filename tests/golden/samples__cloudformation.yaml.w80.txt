@@ -1,0 +1,44 @@
+objeto · 5 chaves
+╭─ yaml
+│ AWSTemplateFormatVersion: "2010-09-09"                                        
+│ Description: Bucket de uploads com função de leitura                          
+│                                                                               
+│ Parameters:                                                                   
+│   Ambiente:                                                                   
+│     Type: String                                                              
+│     Default: dev                                                              
+│     AllowedValues: [dev, prod]                                                
+│                                                                               
+│ Resources:                                                                    
+│   AppBucket:                                                                  
+│     Type: AWS::S3::Bucket                                                     
+│     Properties:                                                               
+│       BucketName: !Sub "${AWS::StackName}-uploads-${Ambiente}"                
+│       VersioningConfiguration:                                                
+│         Status: Enabled                                                       
+│                                                                               
+│   LeituraRole:                                                                
+│     Type: AWS::IAM::Role                                                      
+│     Properties:                                                               
+│       AssumeRolePolicyDocument:                                               
+│         Version: "2012-10-17"                                                 
+│         Statement:                                                            
+│           - Effect: Allow                                                     
+│             Principal:                                                        
+│               Service: lambda.amazonaws.com                                   
+│             Action: sts:AssumeRole                                            
+│       Policies:                                                               
+│         - PolicyName: ler-bucket                                              
+│           PolicyDocument:                                                     
+│             Version: "2012-10-17"                                             
+│             Statement:                                                        
+│               - Effect: Allow                                                 
+│                 Action: s3:GetObject                                          
+│                 Resource: !Sub "${AppBucket.Arn}/*"                           
+│                                                                               
+│ Outputs:                                                                      
+│   NomeDoBucket:                                                               
+│     Value: !Ref AppBucket                                                     
+│   ArnDoBucket:                                                                
+│     Value: !GetAtt AppBucket.Arn                                              
+╰─

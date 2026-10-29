@@ -164,6 +164,80 @@ fn yaml_via_stdin_com_subcomando() {
     assert!(text.contains("b: [1, 2]"), "{text}");
 }
 
+fn sample(nome: &str) -> String {
+    format!("{}/samples/{nome}", env!("CARGO_MANIFEST_DIR"))
+}
+
+#[test]
+fn exemplo_yaml_quebrado_mostra_a_linha_do_erro() {
+    let out = mdv(&["-p", &sample("quebrado.yaml")], "");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("✗ linha 5"), "{text}");
+}
+
+#[test]
+fn exemplo_json_quebrado_mostra_a_linha_do_erro() {
+    let out = mdv(&["-p", &sample("quebrado.json")], "");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("✗ linha 7"), "{text}");
+}
+
+#[test]
+fn exemplos_yaml_validos_saem_sem_erro() {
+    for nome in ["k8s.yaml", "config.yaml", "github-actions.yml", "cloudformation.yaml", "ancoras.yaml"] {
+        let out = mdv(&["-p", &sample(nome)], "");
+        assert!(out.status.success(), "{nome}: {}", String::from_utf8_lossy(&out.stderr));
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(!text.contains('✗'), "{nome}: {text}");
+    }
+}
+
+/// Roda o `mdv` sob `ulimit -v` (o processo morre sozinho se passar do teto, sem travar a máquina).
+fn mdv_com_teto(args: &[&str], stdin: &str) -> Output {
+    let mut child = Command::new("sh")
+        .args(["-c", "ulimit -v 2000000 && exec \"$0\" \"$@\"", env!("CARGO_BIN_EXE_mdv")])
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("sh deve iniciar");
+    let _ = child.stdin.take().expect("stdin").write_all(stdin.as_bytes());
+    child.wait_with_output().expect("mdv deve terminar")
+}
+
+/// Bomba de aliases (billion laughs): `l0` tem 10 itens e cada nível seguinte lista 10 vezes o
+/// anterior, então `l9` teria 10^10 nós. A entrada tem poucas centenas de bytes.
+fn bomba_de_aliases() -> String {
+    let mut t = format!("l0: &l0 [{}]\n", ["x"; 10].join(", "));
+    for i in 1..=9 {
+        let alias = format!("*l{}", i - 1);
+        t.push_str(&format!("l{i}: &l{i} [{}]\n", vec![alias; 10].join(", ")));
+    }
+    t
+}
+
+#[test]
+fn yaml_com_aliases_em_excesso_nao_estoura() {
+    let bomba = bomba_de_aliases();
+    assert!(bomba.len() <= 64 << 10, "a entrada passa de 64 KiB");
+    // Vista de tabela e de esquema: o teto de nós barra a conversão.
+    for vista in ["table", "schema"] {
+        let out = mdv_com_teto(&["yaml", "-p", "-", "--as", vista], &bomba);
+        let (so, se) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        assert!(!se.contains("panicked") && !so.contains("panicked"), "{vista}: {se}");
+        assert!(out.status.success(), "{vista}: {se}");
+        assert!(so.contains("estrutura grande demais"), "{vista}: {so}");
+    }
+    // Vista de texto: mostra o original, sem expandir os aliases.
+    let out = mdv_com_teto(&["yaml", "-p", "-", "--as", "text"], &bomba);
+    let (so, se) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(out.status.success() && !se.contains("panicked"), "{se}");
+    assert!(so.contains("l9: &l9 [*l8, *l8"), "{so}");
+}
+
 #[test]
 fn csv_subcomando_mostra_tabela_com_rodape() {
     let out = mdv(&["csv", "-p", "-"], "id,nome,nota\n1,Ana,9.5\n2,Bia,10\n");

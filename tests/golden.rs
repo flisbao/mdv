@@ -24,6 +24,13 @@ const FILES: &[&str] = &[
     "samples/itens.json",
     "samples/eventos.jsonl",
     "samples/email.msg",
+    "samples/config.yaml",
+    "samples/k8s.yaml",
+    "samples/github-actions.yml",
+    "samples/cloudformation.yaml",
+    "samples/ancoras.yaml",
+    "samples/quebrado.yaml",
+    "samples/quebrado.json",
 ];
 
 const WIDTHS: [usize; 2] = [40, 80];
@@ -36,6 +43,9 @@ const EXTRAS: &[(&str, &[&str])] = &[
     ("stats.gfm", &["--stats", "tests/fixtures/gfm.md"]),
     ("json-schema.itens", &["json", "-p", "-w", "80", "samples/itens.json", "--as", "schema"]),
     ("json-table.itens", &["json", "-p", "-w", "80", "samples/itens.json", "--as", "table"]),
+    ("yaml-table.config", &["yaml", "-p", "-w", "80", "samples/config.yaml", "--as", "table"]),
+    ("yaml-schema.config", &["yaml", "-p", "-w", "80", "samples/config.yaml", "--as", "schema"]),
+    ("yaml-schema.k8s", &["yaml", "-p", "-w", "80", "samples/k8s.yaml", "--as", "schema"]),
 ];
 
 fn root() -> PathBuf {

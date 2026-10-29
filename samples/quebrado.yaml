@@ -1,0 +1,6 @@
+# Indentação inconsistente: a chave "timeout" ficou com 1 espaço.
+servidor:
+  host: localhost
+  porta: 8080
+ timeout: 30
+  debug: true

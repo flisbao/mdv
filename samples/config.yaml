@@ -1,0 +1,41 @@
+# Configuração de uma aplicação web (estilo docker-compose / app.yaml)
+app:
+  nome: loja-virtual
+  versao: 2.4.1
+  ambiente: producao
+  debug: false
+  porta: 8080
+  timeout: 30.5
+  desconto: null
+  ativo: yes
+
+banco:
+  host: db.interno.example
+  porta: 5432
+  pool: { minimo: 2, maximo: 20 }
+  # Chave repetida de propósito: vale a última, não é erro de sintaxe.
+  porta: 5433
+
+cache:
+  ttl: 300
+  # Há uma tabulação (não indentação) dentro do texto abaixo.
+  separador: "coluna1	coluna2"
+
+origens_permitidas:
+  - https://loja.example.com
+  - https://admin.example.com
+  - "http://localhost:3000"
+
+limites:
+  - nome: login
+    tentativas: 5
+  - nome: busca
+    tentativas: 60
+
+mensagem_boas_vindas: |
+  Olá, bem-vindo à loja!
+  Aqui você encontra de tudo.
+
+resumo: >
+  Texto longo que o YAML dobra em
+  uma única linha lógica.

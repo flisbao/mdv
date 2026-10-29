@@ -1,0 +1,27 @@
+╭─
+│ objeto                                                                        
+│   app: objeto                                                                 
+│     nome: texto                                                               
+│     versao: texto                                                             
+│     ambiente: texto                                                           
+│     debug: booleano                                                           
+│     porta: número                                                             
+│     timeout: número                                                           
+│     desconto: nulo                                                            
+│     ativo: texto                                                              
+│   banco: objeto                                                               
+│     host: texto                                                               
+│     porta: número                                                             
+│     pool: objeto                                                              
+│       minimo: número                                                          
+│       maximo: número                                                          
+│   cache: objeto                                                               
+│     ttl: número                                                               
+│     separador: texto                                                          
+│   origens_permitidas: lista · 3 × texto                                       
+│   limites: lista · 2 × objeto                                                 
+│     nome: texto                                                               
+│     tentativas: número                                                        
+│   mensagem_boas_vindas: texto                                                 
+│   resumo: texto                                                               
+╰─

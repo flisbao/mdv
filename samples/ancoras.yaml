@@ -1,0 +1,22 @@
+# Âncoras (&), aliases (*) e merge keys (<<) reaproveitam blocos.
+padrao: &padrao
+  imagem: nginx:1.27
+  replicas: 2
+  recursos: &recursos
+    cpu: 250m
+    memoria: 256Mi
+
+portas: &portas [80, 443]
+
+servicos:
+  web:
+    <<: *padrao
+    porta: 80
+  api:
+    <<: *padrao
+    replicas: 4
+    recursos:
+      <<: *recursos
+      cpu: 500m
+
+expostas: *portas

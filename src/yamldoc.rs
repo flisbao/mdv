@@ -561,6 +561,53 @@ mod tests {
         assert!(parse(&"[".repeat(64), &limits).is_err_and(|e| matches!(e, YamlError::Syntax(_))));
     }
 
+    /// Exemplos válidos de `samples/`: nome e texto, todos aceitos com os tetos padrão.
+    const EXEMPLOS: &[(&str, &str)] = &[
+        ("config.yaml", include_str!("../samples/config.yaml")),
+        ("k8s.yaml", include_str!("../samples/k8s.yaml")),
+        ("github-actions.yml", include_str!("../samples/github-actions.yml")),
+        ("cloudformation.yaml", include_str!("../samples/cloudformation.yaml")),
+        ("ancoras.yaml", include_str!("../samples/ancoras.yaml")),
+    ];
+
+    #[test]
+    fn exemplos_reais_sao_aceitos() {
+        for (nome, texto) in EXEMPLOS {
+            if let Err(e) = parse(texto, &Limits::default()) {
+                panic!("{nome} deveria ser aceito: {e:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn exemplos_com_armadilhas_nao_dao_falso_erro() {
+        let config = ok(include_str!("../samples/config.yaml"));
+        // Tabulação dentro de string (não na indentação) e chave repetida (a última vence).
+        assert!(config.to_string().contains("\\t"), "{config}");
+        let k8s = ok(include_str!("../samples/k8s.yaml"));
+        assert_eq!(k8s.as_array().map(Vec::len), Some(2), "Deployment + Service");
+        let cf = ok(include_str!("../samples/cloudformation.yaml"));
+        let texto = cf.to_string();
+        assert!(texto.contains("AppBucket") && texto.contains("${AWS::StackName}"), "{texto}");
+    }
+
+    #[test]
+    fn ancoras_do_sample_resolvem_merge() {
+        let v = ok(include_str!("../samples/ancoras.yaml"));
+        let s = &v["servicos"];
+        assert_eq!(s["web"]["imagem"], json!("nginx:1.27"));
+        assert_eq!(s["web"]["replicas"], json!(2));
+        assert_eq!(s["api"]["replicas"], json!(4), "a chave explícita vence o merge");
+        assert_eq!(s["api"]["recursos"], json!({"cpu": "500m", "memoria": "256Mi"}));
+        assert_eq!(v["expostas"], v["portas"]);
+    }
+
+    #[test]
+    fn exemplo_quebrado_aponta_a_linha_conhecida() {
+        let e = erro(include_str!("../samples/quebrado.yaml"));
+        assert_eq!(e.line, 5, "{e:?}");
+    }
+
     #[test]
     fn crlf_e_bom() {
         assert_eq!(erro("\u{feff}a: 1\r\nb: [\r\n").line, 2);

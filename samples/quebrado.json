@@ -1,0 +1,9 @@
+{
+  "nome": "mdv",
+  "versao": "1.0.0",
+  "recursos": [
+    "markdown",
+    "yaml",
+  ],
+  "ativo": true
+}

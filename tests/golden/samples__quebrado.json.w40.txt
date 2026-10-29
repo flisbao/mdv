@@ -1,0 +1,14 @@
+╭─ json
+│ {                                     
+│   "nome": "mdv",                      
+│   "versao": "1.0.0",                  
+│   "recursos": [                       
+│     "markdown",                       
+│     "yaml",                           
+│   ],                                  
+✗ linha 7, coluna 3: vírgula sobrando an
+  tes de fechar (remova a última vírgula
+  )
+│   "ativo": true                       
+│ }                                     
+╰─

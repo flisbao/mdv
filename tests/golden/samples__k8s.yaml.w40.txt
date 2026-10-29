@@ -1,0 +1,19 @@
+┌──────┬──────┬──────┬─────┬─────┬─────┐
+│ apiV │ kind │ meta │ met │ spe │ spe │
+│ ersi │      │ data │ ada │ c.r │ c.s │
+│ on   │      │ .nam │ ta. │ epl │ ele │
+│      │      │ e    │ lab │ ica │ cto │
+│      │      │      │ els │   s │ r.m │
+│      │      │      │ .ap │     │ atc │
+│      │      │      │ p   │     │ hLa │
+│      │      │      │     │     │ be… │
+├──────┼──────┼──────┼─────┼─────┼─────┤
+│ apps │ Depl │ web  │ web │   3 │ web │
+│ /v1  │ oyme │      │     │     │     │
+│      │ nt   │      │     │     │     │
+├──────┼──────┼──────┼─────┼─────┼─────┤
+│ v1   │ Serv │ web  │     │     │     │
+│      │ ice  │      │     │     │     │
+└──────┴──────┴──────┴─────┴─────┴─────┘
+… +5 colunas
+2 de 2 itens · 11 colunas
