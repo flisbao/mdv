@@ -97,7 +97,7 @@ fn ajuda_documenta_subcomandos_e_opcoes() {
     let out = mdv(&["--help"], "");
     let text = String::from_utf8_lossy(&out.stdout);
     for item in [
-        "mdv json", "mdv csv|tsv", "--remote", "--follow", "--toc", "--stats", "--as",
+        "mdv json", "mdv yaml", "mdv csv|tsv", "--remote", "--follow", "--toc", "--stats", "--as",
         "--path", "--head", "--cols", "--no-header", "--delimiter",
     ] {
         assert!(text.contains(item), "a ajuda não menciona {item}:\n{text}");
@@ -131,6 +131,37 @@ fn json_invalido_mostra_erro_na_saida() {
     let out = mdv(&["json", "-p", "-"], "{");
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("✗ linha 1, coluna 1") && text.contains("fim inesperado"), "{text}");
+}
+
+#[test]
+fn yaml_valido_em_modo_plain_mostra_o_texto() {
+    // Com stdout em pipe o `--plain` não usa cores; a coloração do YAML é coberta em `doc.rs`.
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("d.yaml");
+    std::fs::write(&f, "nome: mdv\nlista:\n  - 1\n").unwrap();
+    let out = mdv(&["-p", f.to_str().unwrap()], "");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("nome: mdv") && text.contains("- 1"), "{text}");
+}
+
+#[test]
+fn yaml_invalido_mostra_a_linha_do_erro() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("d.yaml");
+    std::fs::write(&f, "a:\n  b: 1\n c: 2\n").unwrap();
+    let out = mdv(&["-p", f.to_str().unwrap()], "");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("✗ linha 3"), "{text}");
+}
+
+#[test]
+fn yaml_via_stdin_com_subcomando() {
+    let out = mdv(&["yaml", "-p", "-"], "a:\n  b: [1, 2]\n");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("b: [1, 2]"), "{text}");
 }
 
 #[test]

@@ -49,7 +49,25 @@ pub struct Common {
 pub enum Doc {
     Markdown,
     Json { json_path: Option<String>, view: JsonView },
+    Yaml { yaml_path: Option<String>, view: JsonView },
     Table { delimiter: u8, head: usize, cols: Vec<String>, no_header: bool },
+}
+
+impl Doc {
+    /// Caminho e vista de um documento de dados (JSON ou YAML); `None` nos demais formatos.
+    pub fn data_view(&self) -> Option<(&Option<String>, JsonView)> {
+        match self {
+            Doc::Json { json_path: path, view } | Doc::Yaml { yaml_path: path, view } => Some((path, *view)),
+            _ => None,
+        }
+    }
+
+    pub fn data_view_mut(&mut self) -> Option<(&mut Option<String>, &mut JsonView)> {
+        match self {
+            Doc::Json { json_path: path, view } | Doc::Yaml { yaml_path: path, view } => Some((path, view)),
+            _ => None,
+        }
+    }
 }
 
 /// O que fazer com a entrada. `Toc` e `Stats` valem só para Markdown.
@@ -104,6 +122,7 @@ const BOOL_FLAGS: &[&str] =
 enum Format {
     Markdown,
     Json,
+    Yaml,
     Table(u8),
 }
 
@@ -111,9 +130,23 @@ fn format_from_extension(path: &str) -> Format {
     let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
     match ext.as_str() {
         "json" | "jsonl" | "ndjson" => Format::Json,
+        "yaml" | "yml" => Format::Yaml,
         "csv" => Format::Table(b','),
         "tsv" => Format::Table(b'\t'),
         _ => Format::Markdown,
+    }
+}
+
+/// O `Doc` com as opções padrão do formato deduzido da extensão de `path`.
+#[allow(dead_code)] // consumido pelo seletor de pasta (Task 7)
+pub fn doc_for_path(path: &str) -> Doc {
+    match format_from_extension(path) {
+        Format::Markdown => Doc::Markdown,
+        Format::Json => Doc::Json { json_path: None, view: JsonView::Auto },
+        Format::Yaml => Doc::Yaml { yaml_path: None, view: JsonView::Auto },
+        Format::Table(delimiter) => {
+            Doc::Table { delimiter, head: DEFAULT_HEAD, cols: Vec::new(), no_header: false }
+        }
     }
 }
 
@@ -138,6 +171,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
     let mut args = args.into_iter().peekable();
     let subcommand = match args.peek().map(String::as_str) {
         Some("json") => Some(Format::Json),
+        Some("yaml") => Some(Format::Yaml),
         Some("csv") => Some(Format::Table(b',')),
         Some("tsv") => Some(Format::Table(b'\t')),
         _ => None,
@@ -197,7 +231,8 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
     };
     let cli = match format {
         Format::Markdown => parse_markdown(common, &flags),
-        Format::Json => parse_json(common, &flags),
+        Format::Json => parse_data(common, &flags, false),
+        Format::Yaml => parse_data(common, &flags, true),
         Format::Table(delimiter) => parse_table(common, &flags, delimiter),
     }?;
     match output {
@@ -248,6 +283,7 @@ fn into_export(
     }
     match &doc {
         Doc::Json { .. } => return Err("JSON ainda não exporta (use .md, .csv ou .tsv)".to_string()),
+        Doc::Yaml { .. } => return Err("YAML ainda não exporta (use .md, .csv ou .tsv)".to_string()),
         Doc::Table { .. } => {
             if let Some(f) = ["--head", "--cols"].into_iter().find(|f| had.iter().any(|h| h == f)) {
                 return Err(format!("a opção {f} não vale com -o (a exportação leva todas as linhas e colunas)"));
@@ -303,7 +339,7 @@ fn take_common(common: &mut Common, f: &Flag) -> Result<bool, String> {
 /// Flag não reconhecida pelo formato: "só vale para X" se existe em outro formato.
 fn wrong_format(flag: &str) -> String {
     match flag {
-        "--path" | "--as" => format!("a opção {flag} só vale para JSON"),
+        "--path" | "--as" => format!("a opção {flag} só vale para JSON e YAML"),
         "--head" | "--cols" | "--no-header" | "--delimiter" => {
             format!("a opção {flag} só vale para CSV/TSV")
         }
@@ -342,14 +378,15 @@ fn parse_markdown(mut common: Common, flags: &[Flag]) -> Result<Cli, String> {
     Ok(Cli { common, command })
 }
 
-fn parse_json(mut common: Common, flags: &[Flag]) -> Result<Cli, String> {
-    let (mut json_path, mut view) = (None, JsonView::Auto);
+/// JSON e YAML aceitam as mesmas opções (`--path`, `--as`); `yaml` escolhe a variante de `Doc`.
+fn parse_data(mut common: Common, flags: &[Flag], yaml: bool) -> Result<Cli, String> {
+    let (mut path, mut view) = (None, JsonView::Auto);
     for f in flags {
         if take_common(&mut common, f)? {
             continue;
         }
         match f.name.as_str() {
-            "--path" => json_path = Some(f.value().to_string()),
+            "--path" => path = Some(f.value().to_string()),
             "--as" => {
                 view = match f.value() {
                     "auto" => JsonView::Auto,
@@ -362,7 +399,8 @@ fn parse_json(mut common: Common, flags: &[Flag]) -> Result<Cli, String> {
             n => return Err(wrong_format(n)),
         }
     }
-    Ok(Cli { common, command: Command::View(Doc::Json { json_path, view }) })
+    let doc = if yaml { Doc::Yaml { yaml_path: path, view } } else { Doc::Json { json_path: path, view } };
+    Ok(Cli { common, command: Command::View(doc) })
 }
 
 fn parse_table(mut common: Common, flags: &[Flag], mut delimiter: u8) -> Result<Cli, String> {
@@ -643,9 +681,9 @@ mod tests {
             (&["a.md", "--cols", "x"], "a opção --cols só vale para CSV/TSV"),
             (&["a.md", "--no-header"], "a opção --no-header só vale para CSV/TSV"),
             (&["a.json", "--head", "5"], "a opção --head só vale para CSV/TSV"),
-            (&["a.csv", "--path", ".x"], "a opção --path só vale para JSON"),
-            (&["a.md", "--path", ".x"], "a opção --path só vale para JSON"),
-            (&["a.csv", "--as", "text"], "a opção --as só vale para JSON"),
+            (&["a.csv", "--path", ".x"], "a opção --path só vale para JSON e YAML"),
+            (&["a.md", "--path", ".x"], "a opção --path só vale para JSON e YAML"),
+            (&["a.csv", "--as", "text"], "a opção --as só vale para JSON e YAML"),
             (&["a.json", "--toc"], "--toc só vale para Markdown"),
             (&["a.csv", "--toc"], "--toc só vale para Markdown"),
         ];
@@ -738,6 +776,58 @@ mod tests {
             assert!(e.contains(f[0]) && e.contains("-o"), "{e}");
         }
         assert!(run(&["d.csv", "--head", "5"]).is_ok(), "sem -o continua valendo");
+    }
+
+    #[test]
+    fn yaml_deduzido_da_extensao() {
+        for a in ["x.yaml", "x.YML"] {
+            assert_eq!(doc(&[a]), Doc::Yaml { yaml_path: None, view: JsonView::Auto });
+        }
+    }
+
+    #[test]
+    fn subcomando_yaml_com_caminho_e_vista() {
+        assert_eq!(
+            doc(&["yaml", "d.yml", "--path", ".a", "--as", "table"]),
+            Doc::Yaml { yaml_path: Some(".a".into()), view: JsonView::Table }
+        );
+        assert_eq!(doc(&["yaml", "-"]), Doc::Yaml { yaml_path: None, view: JsonView::Auto });
+    }
+
+    #[test]
+    fn opcoes_de_csv_em_yaml_sao_erro() {
+        assert_eq!(run(&["a.yaml", "--head", "5"]).unwrap_err(), "a opção --head só vale para CSV/TSV");
+        assert_eq!(run(&["a.yaml", "--toc"]).unwrap_err(), "--toc só vale para Markdown");
+    }
+
+    #[test]
+    fn yaml_nao_exporta() {
+        assert!(run(&["a.yaml", "-o", "x.xlsx"]).unwrap_err().contains("YAML ainda não exporta"));
+    }
+
+    #[test]
+    fn doc_for_path_devolve_o_padrao_de_cada_formato() {
+        assert_eq!(doc_for_path("a.md"), Doc::Markdown);
+        assert_eq!(doc_for_path("semextensao"), Doc::Markdown);
+        assert_eq!(doc_for_path("a.json"), Doc::Json { json_path: None, view: JsonView::Auto });
+        assert_eq!(doc_for_path("a.YAML"), Doc::Yaml { yaml_path: None, view: JsonView::Auto });
+        assert_eq!(doc_for_path("a.yml"), Doc::Yaml { yaml_path: None, view: JsonView::Auto });
+        assert_eq!(
+            doc_for_path("a.tsv"),
+            Doc::Table { delimiter: b'\t', head: DEFAULT_HEAD, cols: vec![], no_header: false }
+        );
+    }
+
+    #[test]
+    fn data_view_expoe_caminho_e_vista_de_json_e_yaml() {
+        let mut d = doc_for_path("a.yaml");
+        let (path, view) = d.data_view_mut().unwrap();
+        *path = Some(".x".into());
+        *view = JsonView::Schema;
+        assert_eq!(d.data_view(), Some((&Some(".x".to_string()), JsonView::Schema)));
+        assert!(doc_for_path("a.json").data_view().is_some());
+        assert!(doc_for_path("a.md").data_view().is_none());
+        assert!(doc_for_path("a.csv").data_view_mut().is_none());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! O documento aberto: texto, opções de leitura e como o texto vira linhas.
 
-use crate::{cli, data, image, render};
+use crate::{cli, data, image, render, yaml_view};
 
 /// Como a entrada é interpretada: o formato (com as opções que só ele aceita) e a rolagem de código.
 #[derive(Clone)]
@@ -37,6 +37,15 @@ pub(crate) fn render_doc(doc: &DocOpts, text: &str, width: usize, images: &image
             };
             data::render_json(text, &opts, width)
         }
+        cli::Doc::Yaml { yaml_path, view } => {
+            let opts = data::JsonOpts {
+                path: yaml_path.clone(),
+                view: *view,
+                head: cli::DEFAULT_HEAD,
+                cols: Vec::new(),
+            };
+            yaml_view::render_yaml(text, &opts, width)
+        }
         cli::Doc::Table { delimiter, head, cols, no_header } => {
             let opts = data::TableOpts {
                 delimiter: *delimiter,
@@ -54,6 +63,7 @@ pub(crate) fn raw_lang(doc: &cli::Doc) -> &'static str {
     match doc {
         cli::Doc::Markdown => "md",
         cli::Doc::Json { .. } => "json",
+        cli::Doc::Yaml { .. } => "yaml",
         cli::Doc::Table { .. } => "text",
     }
 }
@@ -108,6 +118,22 @@ mod tests {
 
     fn opts() -> DocOpts {
         DocOpts::from_cli(&crate::cli::parse(["x.md".to_string()]).expect("cli de teste"))
+    }
+
+    #[test]
+    fn raw_lang_do_yaml() {
+        assert_eq!(raw_lang(&cli::doc_for_path("a.yaml")), "yaml");
+    }
+
+    #[test]
+    fn render_doc_yaml_colore() {
+        let store = image::ImageStore::new(None);
+        let doc = DocOpts { doc: cli::doc_for_path("a.yaml"), code_scroll: None };
+        let r = render_doc(&doc, "nome: mdv\nlista:\n  - 1\n", 60, &store);
+        let texto: String = r.lines.iter().flat_map(|l| l.spans.iter().map(|s| s.content.as_ref())).collect();
+        assert!(texto.contains("nome"), "{texto}");
+        let colorido = r.lines.iter().flat_map(|l| &l.spans).any(|s| s.style.fg.is_some());
+        assert!(colorido, "o YAML deveria sair com cores");
     }
 
     #[test]

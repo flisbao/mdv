@@ -18,12 +18,13 @@ USO:
     mdv [opções] <arquivo.md>
     cat arquivo.md | mdv
     mdv json [opções] <arquivo|->
+    mdv yaml [opções] <arquivo|->
     mdv csv|tsv [opções] <arquivo|->
     mdv [opções] <arquivo.md> -o <saída.pdf|docx|odt|xlsx|ods>
     mdv [opções] <email.msg> [-o <saída.md|pdf|docx|odt>]
     mdv csv|tsv [opções] <arquivo|-> -o <saída.xlsx|ods>
     mdv <pasta>            (seletor: .md e .msg da pasta por data, filtro ao digitar)
-    (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
+    (o formato também é deduzido da extensão: .json, .jsonl, .yaml, .yml, .csv, .tsv)
 
 OPÇÕES:
     -p, --plain        imprime no terminal (sem TUI), como `cat` com cores
@@ -45,7 +46,7 @@ OPÇÕES:
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
-OPÇÕES DE JSON (só valem para este formato):
+OPÇÕES DE JSON E YAML (só valem para estes formatos):
         --path <p>     mostra só um trecho, ex.: .itens[0].nome
         --as <vista>   auto (padrão), text, table ou schema
 
@@ -67,7 +68,7 @@ TECLAS (modo interativo):
     Backspace / H      volta ao documento anterior (pilha de até 100)
     m                  alterna entre renderizado e fonte crua
     w                  código sem quebra: h/l (ou ←/→) rolam 8 colunas, 0/$ início/fim; w de novo volta a quebrar
-    v                  (JSON) alterna tabela / esquema / texto
+    v                  (JSON/YAML) alterna tabela / esquema / texto
     t                  zoom da tabela mais visível na tela (h/l colunas, n/p troca de tabela, Esc volta)
     i                  zoom do diagrama Mermaid mais visível na tela: n/p troca de diagrama, +/- zoom, h/j/k/l movem, espaço/b página, g/G topo/fim, 0 ajusta, Esc volta
     y / Y              copia o bloco de código da tela / o Markdown da seção (OSC 52, até 64 KiB)

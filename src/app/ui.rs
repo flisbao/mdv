@@ -124,10 +124,10 @@ impl App {
             .saturating_mul(100)
             .checked_div(self.view.max_scroll(total))
             .unwrap_or(100);
-        let view = match &self.doc.opts.doc {
-            cli::Doc::Json { view: cli::JsonView::Text, .. } => "  [texto]",
-            cli::Doc::Json { view: cli::JsonView::Table, .. } => "  [tabela]",
-            cli::Doc::Json { view: cli::JsonView::Schema, .. } => "  [esquema]",
+        let view = match self.doc.opts.doc.data_view() {
+            Some((_, cli::JsonView::Text)) => "  [texto]",
+            Some((_, cli::JsonView::Table)) => "  [tabela]",
+            Some((_, cli::JsonView::Schema)) => "  [esquema]",
             _ => "",
         };
         let mut s = format!(

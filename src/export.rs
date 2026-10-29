@@ -167,6 +167,7 @@ pub(crate) fn run_export(cli: &cli::Cli, e: &cli::Export, mem_warning: Option<&s
             Select::default(),
         ),
         cli::Doc::Json { .. } => return Err(Failure::Usage("JSON ainda não exporta".to_string())),
+        cli::Doc::Yaml { .. } => return Err(Failure::Usage("YAML ainda não exporta".to_string())),
     };
     let warnings = export_to_file(&input, &select, Path::new(&e.output), e.force, &store).map_err(Failure::Runtime)?;
     for w in warnings {

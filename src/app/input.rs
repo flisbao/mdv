@@ -140,17 +140,18 @@ impl App {
             Action::SearchNext => self.step_match(true),
             Action::SearchPrev => self.step_match(false),
             Action::Reload => self.reload(),
-            Action::CycleJsonView if matches!(self.doc.opts.doc, cli::Doc::Json { .. }) => {
-                let cli::Doc::Json { json_path, view } = &mut self.doc.opts.doc else { unreachable!() };
-                let current = if *view == cli::JsonView::Auto {
-                    data::auto_view_of_text(&self.doc.md, json_path.as_deref())
-                } else {
-                    *view
-                };
-                *view = data::next_view(current);
-                self.doc.dirty = true;
+            Action::CycleJsonView => {
+                let yaml = matches!(self.doc.opts.doc, cli::Doc::Yaml { .. });
+                if let Some((path, view)) = self.doc.opts.doc.data_view_mut() {
+                    let current = match *view {
+                        cli::JsonView::Auto if yaml => crate::yaml_view::auto_view_of_text(&self.doc.md, path.as_deref()),
+                        cli::JsonView::Auto => data::auto_view_of_text(&self.doc.md, path.as_deref()),
+                        v => v,
+                    };
+                    *view = data::next_view(current);
+                    self.doc.dirty = true;
+                }
             }
-            Action::CycleJsonView => {}
             Action::OpenTableZoom => self.open_visible_table(),
             Action::OpenImageZoom => self.open_visible_mermaid(),
             Action::CopyCode => self.copy_code(),

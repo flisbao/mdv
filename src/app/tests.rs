@@ -514,6 +514,35 @@ fn barra_mostra_a_vista_do_json_quando_escolhida() {
 }
 
 #[test]
+fn tecla_v_alterna_vistas_do_yaml() {
+    let mut app = test_app(Source::Stdin, "- a: 1\n- a: 2\n");
+    app.doc.opts.doc = cli::Doc::Yaml { yaml_path: None, view: cli::JsonView::Auto };
+    tecla(&mut app, 'v'); // Auto já era tabela: o próximo é o esquema
+    assert_eq!(json_view(&app), cli::JsonView::Schema);
+    assert!(app.doc.dirty);
+    tecla(&mut app, 'v');
+    assert_eq!(json_view(&app), cli::JsonView::Text);
+    tecla(&mut app, 'v');
+    assert_eq!(json_view(&app), cli::JsonView::Table);
+}
+
+#[test]
+fn tecla_v_em_yaml_que_nao_e_lista_comeca_pela_tabela() {
+    let mut app = test_app(Source::Stdin, "a: 1\n");
+    app.doc.opts.doc = cli::Doc::Yaml { yaml_path: None, view: cli::JsonView::Auto };
+    tecla(&mut app, 'v');
+    assert_eq!(json_view(&app), cli::JsonView::Table);
+}
+
+#[test]
+fn barra_de_status_mostra_a_vista_do_yaml() {
+    let mut app = test_app(Source::Stdin, "- a: 1\n- a: 2\n");
+    app.doc.opts.doc = cli::Doc::Yaml { yaml_path: None, view: cli::JsonView::Auto };
+    tecla(&mut app, 'v');
+    assert!(app.status_left().contains("[esquema]"), "{}", app.status_left());
+}
+
+#[test]
 fn w_liga_codigo_sem_quebra_e_hl_rolam() {
     let longa = "x".repeat(200);
     let mut app = test_app(Source::Stdin, &format!("```\n{longa}\n```"));
@@ -946,10 +975,7 @@ fn arquivos_de_producao_dentro_do_teto() {
 }
 
 fn json_view(app: &App) -> cli::JsonView {
-    match &app.doc.opts.doc {
-        cli::Doc::Json { view, .. } => *view,
-        _ => cli::JsonView::Auto,
-    }
+    app.doc.opts.doc.data_view().map_or(cli::JsonView::Auto, |(_, view)| view)
 }
 
 /// `App` com 200 linhas já renderizadas e `focus` na linha 150, como um documento com erro de sintaxe.

@@ -1,6 +1,5 @@
 //! Vistas do YAML (texto, tabela, esquema) sobre o `Value` lido por `yamldoc`, reaproveitando as
 //! vistas de JSON de `data`. O texto mostra o YAML original (comentários e ordem preservados).
-#![allow(dead_code)] // consumido pelo carregamento de documentos (Task 6 remove)
 
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
