@@ -44,6 +44,7 @@ mod model;
 mod outline;
 
 pub(crate) use self::theme::DIM;
+pub(crate) use self::highlight::MAX_HIGHLIGHT_BYTES;
 use self::theme::*;
 pub use self::model::*;
 pub use self::outline::*;

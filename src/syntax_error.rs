@@ -6,7 +6,9 @@ use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthChar;
 
 use crate::mem;
-use crate::render::{code_row_at, error_rendered, memory_error, render_code_only, sanitize, CodeSpan, Rendered};
+use crate::render::{
+    code_row_at, error_rendered, memory_error, render_code_only, sanitize, CodeSpan, Rendered, MAX_HIGHLIGHT_BYTES,
+};
 
 /// Fundo da linha com o erro.
 pub const ERR_BG: Color = Color::Rgb(90, 30, 30);
@@ -45,9 +47,12 @@ pub fn render_with_error(text: &str, lang: &str, width: usize, err: &SyntaxError
         return Rendered { lines: msg_lines, ..Rendered::default() };
     }
 
-    let before = render_code_only(&text[..start], lang, width);
+    // Cada `render_code_only` tem o próprio orçamento de realce: acima dele, só a linha do erro sai
+    // colorida, para o texto grande não custar três orçamentos a cada re-render.
+    let rest = if text.len() > MAX_HIGHLIGHT_BYTES { "" } else { lang };
+    let before = render_code_only(&text[..start], rest, width);
     let mid = render_code_only(&text[start..end], lang, width);
-    let after = render_code_only(&text[end..], lang, width);
+    let after = render_code_only(&text[end..], rest, width);
     if let Some(e) = memory_error() {
         return e;
     }
@@ -204,6 +209,49 @@ mod tests {
         let r = render_with_error(&src, "yaml", 40, &err(2, 5000, "ruim"));
         let m = r.lines.iter().position(|l| text(l).contains('✗')).unwrap();
         assert!(has_err_bg(&r.lines[m - 1]) && !has_err_bg(&r.lines[m + 1]));
+    }
+
+    /// Cores distintas do conteúdo (sem a moldura `│ ` nem o preenchimento) das linhas `linhas`.
+    fn cores(r: &Rendered, linhas: std::ops::Range<usize>) -> std::collections::HashSet<String> {
+        r.lines[linhas]
+            .iter()
+            .flat_map(|l| l.spans.iter().skip(1))
+            .filter(|s| !s.content.trim().is_empty())
+            .filter_map(|s| s.style.fg.map(|c| format!("{c:?}")))
+            .collect()
+    }
+
+    /// `n` linhas `chave: valor` com uma linha quebrada no meio; devolve o texto e a linha do erro.
+    fn yaml_com_erro_no_meio(n: usize) -> (String, usize) {
+        let mut t: String = (0..n / 2).map(|i| format!("k{i}: \"v\" # n\n")).collect();
+        t.push_str("b: [\n");
+        t.extend((0..n / 2).map(|i| format!("j{i}: true # n\n")));
+        (t, n / 2 + 1)
+    }
+
+    #[test]
+    fn texto_grande_so_colore_a_linha_do_erro() {
+        // Acima do orçamento de realce (256 KiB): ~280 KiB, umas 20 mil linhas curtas.
+        let (src, linha) = yaml_com_erro_no_meio(20_000);
+        assert!(src.len() > MAX_HIGHLIGHT_BYTES && src.len() < 2 * MAX_HIGHLIGHT_BYTES, "{}", src.len());
+        let t0 = std::time::Instant::now();
+        let r = render_with_error(&src, "yaml", 60, &err(linha, 4, "ruim"));
+        let gasto = t0.elapsed();
+        let i = r.lines.iter().position(|l| has_err_bg(l)).expect("linha do erro");
+        assert!(text(&r.lines[i]).contains("b: ["));
+        assert_eq!(cores(&r, 1..i).len(), 1, "antes do erro sem realce");
+        assert_eq!(cores(&r, i + 2..r.lines.len() - 1).len(), 1, "depois do erro sem realce");
+        assert!(cores(&r, i..i + 1).len() > 1, "a linha do erro continua colorida");
+        // Em debug: ~0,3 s com o conserto, ~6 s antes; a folga cobre a carga dos testes em paralelo.
+        assert!(gasto.as_secs_f64() < 2.0, "levou {gasto:?}");
+    }
+
+    #[test]
+    fn texto_pequeno_colore_antes_e_depois_do_erro() {
+        let (src, linha) = yaml_com_erro_no_meio(20);
+        let r = render_with_error(&src, "yaml", 60, &err(linha, 4, "ruim"));
+        let i = r.lines.iter().position(|l| has_err_bg(l)).unwrap();
+        assert!(cores(&r, 1..i).len() > 1 && cores(&r, i + 2..r.lines.len() - 1).len() > 1);
     }
 
     #[test]

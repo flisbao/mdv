@@ -4,7 +4,7 @@ use super::*;
 
 /// Orçamento de realce por documento: o realce custa ~3 s/MiB e roda a cada re-render,
 /// então blocos que estourem o que resta do orçamento (ou o teto de um único bloco) saem sem cor.
-pub(super) const MAX_HIGHLIGHT_BYTES: usize = 256 * 1024;
+pub(crate) const MAX_HIGHLIGHT_BYTES: usize = 256 * 1024;
 
 /// Blocos ```diff e ```patch recebem cores de diff em vez do realce de sintaxe.
 pub(super) fn is_diff_lang(lang: &str) -> bool {
