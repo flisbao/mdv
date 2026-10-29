@@ -1,6 +1,5 @@
 //! Leitura de YAML para `serde_json::Value` sobre o iterador de eventos do `saphyr-parser`, com
 //! tetos de nós, profundidade e texto, e erro de sintaxe localizado com mensagem em português.
-#![allow(dead_code)] // consumido pela vista de YAML (etapa seguinte)
 
 use std::collections::HashMap;
 use std::io::{self, Write};

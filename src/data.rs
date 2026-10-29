@@ -251,7 +251,7 @@ fn records_to_rows(items: &[Value], head: usize) -> (Vec<Vec<String>>, usize) {
     (rows, omitted.len())
 }
 
-fn render_json_table(sel: &Value, o: &JsonOpts, width: usize) -> Rendered {
+pub(crate) fn render_json_table(sel: &Value, o: &JsonOpts, width: usize) -> Rendered {
     let (rows, total, omitted) = match (shape(sel), sel) {
         (Shape::Records, Value::Array(items)) => {
             let (rows, omitted) = records_to_rows(items, o.head);
@@ -278,7 +278,7 @@ fn render_json_table(sel: &Value, o: &JsonOpts, width: usize) -> Rendered {
     finish_table(rows, true, total, omitted, &o.cols, width, "itens")
 }
 
-fn render_json_text(sel: &Value, width: usize) -> Rendered {
+pub(crate) fn render_json_text(sel: &Value, width: usize) -> Rendered {
     let Some(pretty) = pretty_bounded(sel) else {
         return error_rendered("JSON grande demais depois de indentado (limite de 8 MiB de saída)");
     };
@@ -384,7 +384,7 @@ pub fn schema_text(v: &Value) -> String {
     lines.join("\n")
 }
 
-fn render_json_schema(sel: &Value, width: usize) -> Rendered {
+pub(crate) fn render_json_schema(sel: &Value, width: usize) -> Rendered {
     render_code_only(&schema_text(sel), "", width)
 }
 

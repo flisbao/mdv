@@ -24,6 +24,7 @@ mod plain;
 mod stats;
 mod stream;
 mod syntax_error;
+mod yaml_view;
 mod yamldoc;
 mod render;
 use std::io::{self, IsTerminal};
