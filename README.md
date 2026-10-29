@@ -37,15 +37,15 @@ Baixe o pacote da última release, extraia e coloque `mdv` e `mdv-tools` no seu 
 <!-- mdv:install:start -->
 | Plataforma | Download |
 |------------|----------|
-| Linux x86_64 (glibc 2.35+) | [`mdv-v0.6.0-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.6.0/mdv-v0.6.0-linux-x86_64.tar.gz) |
-| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.6.0-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.6.0/mdv-v0.6.0-linux-x86_64-musl.tar.gz) |
-| Linux aarch64 | [`mdv-v0.6.0-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.6.0/mdv-v0.6.0-linux-aarch64.tar.gz) |
-| macOS Apple Silicon | [`mdv-v0.6.0-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.6.0/mdv-v0.6.0-macos-aarch64.tar.gz) |
-| macOS Intel | [`mdv-v0.6.0-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.6.0/mdv-v0.6.0-macos-x86_64.tar.gz) |
-| Windows x86_64 | [`mdv-v0.6.0-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.6.0/mdv-v0.6.0-windows-x86_64.zip) |
-| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.6.0) |
+| Linux x86_64 (glibc 2.35+) | [`mdv-v0.7.0-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.7.0/mdv-v0.7.0-linux-x86_64.tar.gz) |
+| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.7.0-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.7.0/mdv-v0.7.0-linux-x86_64-musl.tar.gz) |
+| Linux aarch64 | [`mdv-v0.7.0-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.7.0/mdv-v0.7.0-linux-aarch64.tar.gz) |
+| macOS Apple Silicon | [`mdv-v0.7.0-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.7.0/mdv-v0.7.0-macos-aarch64.tar.gz) |
+| macOS Intel | [`mdv-v0.7.0-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.7.0/mdv-v0.7.0-macos-x86_64.tar.gz) |
+| Windows x86_64 | [`mdv-v0.7.0-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.7.0/mdv-v0.7.0-windows-x86_64.zip) |
+| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.7.0) |
 
-Versão atual: **v0.6.0**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
+Versão atual: **v0.7.0**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
 <!-- mdv:install:end -->
 
 Instaladores de uma linha (o `mdv --version` roda no fim; os binários de macOS e Windows **não são assinados**):
@@ -333,6 +333,27 @@ O `mdv` usa no máximo **512 MiB**. Se um arquivo precisar de mais, ele para e m
 ## Changelog
 
 <!-- mdv:changelog:start -->
+### v0.7.0
+
+_2026-10-29_
+
+- chore(release): prepara a versão 0.7.0
+- fix(yaml,erro): polimento dos itens menores adiados
+- fix(erro): texto grande com erro de sintaxe só colore a linha do erro
+- fix(yaml): teto estourado com --path é erro e a vista de texto avisa
+- fix(yaml): teto de cópias separado do teto de nós do documento
+- fix(erro): mensagem logo depois da parte da linha que tem a coluna do erro
+- fix(testes): teste da bomba de aliases só roda no Linux
+- docs(yaml): exemplos, goldens e documentação
+- feat(seletor): lista arquivos YAML
+- feat(yaml): variante Doc::Yaml na CLI, na TUI e no --plain
+- feat(yaml): vistas de texto, tabela e esquema
+- fix(yaml): conta no teto o alias para âncora ainda aberta
+- feat(yaml): lê YAML para Value com limites e erro com posição
+- feat(json): mostra o texto com a linha do erro de sintaxe
+- feat(tui): rola até o erro de sintaxe ao abrir
+- feat(erro): desenha erro de sintaxe sobre o texto original
+
 ### v0.6.0
 
 _2026-10-21_
