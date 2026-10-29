@@ -22,6 +22,7 @@ mod picker;
 mod plain;
 mod stats;
 mod stream;
+mod syntax_error;
 mod render;
 use std::io::{self, IsTerminal};
 use std::path::Path;

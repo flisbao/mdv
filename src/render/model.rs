@@ -32,6 +32,9 @@ pub struct Rendered {
     pub graphics: Vec<GraphicRef>,
     /// Diagramas Mermaid desenhados como imagem, em ordem (alvo do zoom de imagem).
     pub mermaids: Vec<MermaidSpan>,
+    /// Linha (em `lines`) que a TUI deve trazer à tela ao abrir, p. ex. um erro de sintaxe.
+    /// `None`: nada a destacar.
+    pub focus: Option<usize>,
 }
 
 /// Diagrama Mermaid desenhado como imagem: linhas renderizadas `[start, end)` e a chave do PNG
