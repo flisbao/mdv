@@ -106,6 +106,34 @@ pub fn render_code_only(code: &str, lang: &str, width: usize) -> Rendered {
     render_code_only_at(code, lang, width, None)
 }
 
+/// Parte (0 = a primeira) em que a coluna `col` (1 = o primeiro caractere) de `line` cai quando
+/// `render_code_only` quebra a linha em `width` colunas; coluna além do fim vale a última parte.
+/// Repete as contas do bloco de código: tabulação vira 4 espaços, caractere de controle vira `�`
+/// e a quebra é por caractere, sem alocar.
+pub fn code_row_at(line: &str, col: usize, width: usize) -> usize {
+    let avail = clamp_width(width).saturating_sub(2).max(MIN_BODY_WIDTH);
+    let line = line.strip_suffix('\n').map_or(line, |l| l.strip_suffix('\r').unwrap_or(l));
+    let (mut row, mut w) = (0usize, 0usize);
+    for (i, ch) in line.chars().enumerate() {
+        let (cw, n) = match ch {
+            '\t' => (1, 4),
+            c if c.is_control() => (1, 1),
+            c => (c.width().unwrap_or(0).min(avail), 1),
+        };
+        for _ in 0..n {
+            if w + cw > avail && w > 0 {
+                row += 1;
+                w = 0;
+            }
+            w += cw;
+        }
+        if i + 1 >= col {
+            break;
+        }
+    }
+    row
+}
+
 /// Como `render_code_only`; com `scroll` o código não quebra e começa na coluna `scroll`.
 pub fn render_code_only_at(code: &str, lang: &str, width: usize, scroll: Option<usize>) -> Rendered {
     let mut r = Renderer::new(width, None);

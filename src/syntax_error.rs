@@ -6,7 +6,7 @@ use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthChar;
 
 use crate::mem;
-use crate::render::{error_rendered, memory_error, render_code_only, sanitize, CodeSpan, Rendered};
+use crate::render::{code_row_at, error_rendered, memory_error, render_code_only, sanitize, CodeSpan, Rendered};
 
 /// Fundo da linha com o erro.
 pub const ERR_BG: Color = Color::Rgb(90, 30, 30);
@@ -60,13 +60,19 @@ pub fn render_with_error(text: &str, lang: &str, width: usize, err: &SyntaxError
     let mut head = before.lines;
     head.pop();
     out.lines = head;
-    let first_err = out.lines.len();
+    // A linha toda fica pintada, mas a mensagem vem logo depois da parte quebrada que tem a
+    // coluna do erro: numa linha minificada longa, o fim dela pode estar milhares de linhas abaixo.
     let mut body = mid.lines;
     body.pop();
-    out.lines.extend(body.into_iter().skip(1).map(paint));
+    let parts = body.len().saturating_sub(1);
+    let row = code_row_at(&text[start..end], err.col, width).min(parts.saturating_sub(1));
+    let err_line = out.lines.len() + row;
+    let mut body = body.into_iter().skip(1).map(paint);
+    out.lines.extend(body.by_ref().take(row + 1));
     out.lines.extend(msg_lines);
+    out.lines.extend(body);
     out.lines.extend(after.lines.into_iter().skip(1));
-    out.focus = Some(first_err.saturating_sub(FOCUS_CONTEXT));
+    out.focus = Some(err_line.saturating_sub(FOCUS_CONTEXT));
     out.code_blocks.push(CodeSpan {
         start: 0,
         end: out.lines.len(),
@@ -154,7 +160,8 @@ mod tests {
     fn linha_larga_destaca_todas_as_partes() {
         let larga = "x".repeat(200);
         let src = format!("a: 1\n{larga}\nc: 3\n");
-        let r = render_with_error(&src, "yaml", 40, &err(2, 1, "ruim"));
+        // Coluna 200 é o último caractere: cai na última parte, e a mensagem vem depois dela.
+        let r = render_with_error(&src, "yaml", 40, &err(2, 200, "ruim"));
         let partes: Vec<usize> =
             r.lines.iter().enumerate().filter(|(_, l)| text(l).contains('x')).map(|(n, _)| n).collect();
         assert!(partes.len() > 1);
@@ -162,7 +169,41 @@ mod tests {
         let marcadas = r.lines.iter().filter(|l| has_err_bg(l)).count();
         assert_eq!(marcadas, partes.len());
         let ultima = *partes.last().unwrap();
-        assert!(text(&r.lines[ultima + 1]).contains("✗ linha 2, coluna 1: ruim"));
+        assert!(text(&r.lines[ultima + 1]).contains("✗ linha 2, coluna 200: ruim"));
+    }
+
+    /// Linha longa (minificada) com o erro numa coluna alta: a mensagem vem logo depois da parte
+    /// quebrada que tem a coluna, e o `focus` fica a até `FOCUS_CONTEXT` linhas acima dela.
+    fn mensagem_segue_a_parte_da_coluna(prefixo: &str) {
+        let col = prefixo.chars().count() + 1;
+        let longa = format!("{prefixo}Y{}", "x".repeat(1000));
+        let src = format!("a: 1\n{longa}\nc: 3\n");
+        let r = render_with_error(&src, "yaml", 40, &err(2, col, "ruim"));
+        let m = r.lines.iter().position(|l| text(l).contains('✗')).expect("mensagem");
+        assert!(text(&r.lines[m]).contains(&format!("✗ linha 2, coluna {col}: ruim")));
+        assert!(text(&r.lines[m - 1]).contains('Y'), "a parte antes da mensagem: {}", text(&r.lines[m - 1]));
+        assert!(has_err_bg(&r.lines[m - 1]) && has_err_bg(&r.lines[m + 1]), "a linha toda segue pintada");
+        let n = r.focus.expect("focus");
+        assert!(n >= (m - 1).saturating_sub(FOCUS_CONTEXT) && n < m, "focus {n}, mensagem em {m}");
+    }
+
+    #[test]
+    fn linha_longa_poe_a_mensagem_na_parte_do_erro() {
+        mensagem_segue_a_parte_da_coluna(&"x".repeat(2999));
+    }
+
+    #[test]
+    fn linha_longa_com_tabulacao_e_caractere_largo() {
+        // Tabulação vira 4 colunas e `界` ocupa 2, como no desenho do bloco de código.
+        mensagem_segue_a_parte_da_coluna(&format!("\t{}\t{}", "界".repeat(700), "x".repeat(601)));
+    }
+
+    #[test]
+    fn coluna_alem_da_linha_usa_a_ultima_parte() {
+        let src = format!("a: 1\n{}\nc: 3\n", "x".repeat(200));
+        let r = render_with_error(&src, "yaml", 40, &err(2, 5000, "ruim"));
+        let m = r.lines.iter().position(|l| text(l).contains('✗')).unwrap();
+        assert!(has_err_bg(&r.lines[m - 1]) && !has_err_bg(&r.lines[m + 1]));
     }
 
     #[test]
