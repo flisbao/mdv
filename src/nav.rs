@@ -146,6 +146,14 @@ mod tests {
     }
 
     #[test]
+    fn link_para_yaml_nao_e_seguido() {
+        let base = Path::new("/d");
+        for dest in ["config.yaml", "sub/config.yml#x", "dados.json", "t.csv"] {
+            assert!(matches!(resolve(dest, Some(base)), Target::Unsupported(_)), "{dest}");
+        }
+    }
+
+    #[test]
     fn ancora_com_repetidos() {
         let t = ["Intro", "Uso", "Uso"];
         assert_eq!(heading_for_anchor(&t, "uso"), Some(1));

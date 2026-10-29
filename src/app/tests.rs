@@ -289,6 +289,37 @@ fn seletor_abre_arquivo_e_backspace_volta_a_ele() {
 }
 
 #[test]
+fn enter_no_seletor_abre_yaml_como_yaml() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("x.yaml"), "a: 1\n").unwrap();
+    let mut app = test_app(Source::Stdin, "");
+    app.modal = Modal::Picker(picker::Picker::scan(dir.path()).unwrap());
+    key(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none());
+    assert_eq!(app.name, "x.yaml");
+    assert_eq!(app.doc.opts.doc, cli::doc_for_path("x.yaml"));
+    assert!(matches!(app.doc.opts.doc, cli::Doc::Yaml { .. }));
+    app.rerender(60);
+    let texto: String = app.doc.rendered.lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+    assert!(texto.contains("a: 1"), "{texto}");
+    // Backspace volta ao seletor.
+    key(&mut app, KeyCode::Backspace);
+    assert!(app.picker().is_some());
+}
+
+#[test]
+fn enter_no_seletor_abre_md_como_markdown() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("x.md"), "# Um\n").unwrap();
+    let mut app = test_app(Source::Stdin, "");
+    app.doc.opts.doc = cli::doc_for_path("outro.yaml");
+    app.modal = Modal::Picker(picker::Picker::scan(dir.path()).unwrap());
+    key(&mut app, KeyCode::Enter);
+    assert_eq!(app.name, "x.md");
+    assert_eq!(app.doc.opts.doc, cli::Doc::Markdown);
+}
+
+#[test]
 fn seletor_continua_na_tela_se_o_segundo_arquivo_falha() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("um.md"), "# Um\n").unwrap();

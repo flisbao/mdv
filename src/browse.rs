@@ -228,7 +228,8 @@ impl App {
                     let keep = Box::new(p.clone());
                     self.modal = Modal::None;
                     // Só empilha se o arquivo abriu (senão o seletor continua na tela).
-                    if self.open_file(path, None, false, crate::cli::Doc::Markdown) {
+                    let doc = crate::cli::doc_for_path(&path.to_string_lossy());
+                    if self.open_file(path, None, false, doc) {
                         self.back.push(Back::Picker(keep));
                     } else {
                         self.modal = Modal::Picker(*keep);

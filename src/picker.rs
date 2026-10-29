@@ -1,4 +1,4 @@
-//! Seletor de arquivos (`mdv <pasta>`): lista os `.md` da pasta por mtime, com filtro fuzzy.
+//! Seletor de arquivos (`mdv <pasta>`): lista os `.md`, `.msg` e `.yaml`/`.yml` da pasta por mtime, com filtro fuzzy.
 
 use std::fs;
 use std::io;
@@ -27,10 +27,14 @@ pub struct Picker {
     pub truncated: bool,
 }
 
-/// Arquivos listados no seletor: Markdown e e-mails `.msg`.
+/// Arquivos listados no seletor: Markdown, e-mails `.msg` e YAML (JSON e CSV/TSV ficam de fora).
 fn is_listed(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
-    n.ends_with(".md") || n.ends_with(".markdown") || n.ends_with(".msg")
+    n.ends_with(".md")
+        || n.ends_with(".markdown")
+        || n.ends_with(".msg")
+        || n.ends_with(".yaml")
+        || n.ends_with(".yml")
 }
 
 impl Picker {
@@ -173,6 +177,18 @@ mod tests {
         let p = Picker::scan(d.path()).unwrap();
         let names: Vec<_> = p.entries.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, ["novo.md", "c.msg", "velho.md"]);
+    }
+
+    #[test]
+    fn lista_yaml_e_yml_mas_nao_json_nem_csv() {
+        let d = tempfile::tempdir().unwrap();
+        for n in ["a.md", "b.yaml", "c.YML", "d.json", "e.csv", "f.txt", "g.tsv"] {
+            fs::write(d.path().join(n), "a").unwrap();
+        }
+        let p = Picker::scan(d.path()).unwrap();
+        let mut names: Vec<_> = p.entries.iter().map(|e| e.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["a.md", "b.yaml", "c.YML"]);
     }
 
     #[cfg(unix)]

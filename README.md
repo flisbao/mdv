@@ -157,7 +157,7 @@ USO:
     mdv [opções] <arquivo.md> -o <saída.pdf|docx|odt|xlsx|ods>
     mdv [opções] <email.msg> [-o <saída.md|pdf|docx|odt>]
     mdv csv|tsv [opções] <arquivo|-> -o <saída.xlsx|ods>
-    mdv <pasta>            (seletor: .md e .msg da pasta por data, filtro ao digitar)
+    mdv <pasta>            (seletor: .md, .msg e .yaml/.yml da pasta por data, filtro ao digitar)
     (o formato também é deduzido da extensão: .json, .jsonl, .csv, .tsv)
 
 OPÇÕES:

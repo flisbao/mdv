@@ -138,7 +138,6 @@ fn format_from_extension(path: &str) -> Format {
 }
 
 /// O `Doc` com as opções padrão do formato deduzido da extensão de `path`.
-#[allow(dead_code)] // consumido pelo seletor de pasta (Task 7)
 pub fn doc_for_path(path: &str) -> Doc {
     match format_from_extension(path) {
         Format::Markdown => Doc::Markdown,
