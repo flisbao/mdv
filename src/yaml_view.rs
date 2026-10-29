@@ -40,14 +40,14 @@ fn render_yaml_with(text: &str, o: &JsonOpts, width: usize, limits: &Limits) -> 
         Ok(v) => v,
         Err(YamlError::Syntax(e)) => return render_with_error(text, "yaml", width, &e),
         Err(YamlError::Empty) => return error_rendered("arquivo vazio"),
-        // Sem o `Value` não há tabela nem esquema; o texto continua legível.
-        Err(YamlError::Limit(_)) if text_view => {
-            return memory_error().unwrap_or_else(|| render_code_only(text, "yaml", width));
+        // Sem o `Value` não há tabela, esquema nem `--path`; o texto continua legível, com aviso.
+        Err(YamlError::Limit(m)) if text_view && !has_path(o) => {
+            return memory_error().unwrap_or_else(|| text_with_notice(text, &m, width));
         }
         Err(YamlError::Limit(m)) => {
             let hint = "use a vista de texto";
             let msg = if m.contains(hint) { m } else { format!("{m} ({hint}: tecla v ou --as text)") };
-            return error_rendered(&msg);
+            return memory_error().unwrap_or_else(|| error_rendered(&msg));
         }
     };
     if let Some(err) = memory_error() {
@@ -74,11 +74,19 @@ fn has_path(o: &JsonOpts) -> bool {
 
 /// O YAML original colorido, com o resumo do documento em itálico cinza na primeira linha.
 fn text_with_summary(text: &str, root: &serde_json::Value, width: usize) -> Rendered {
+    text_with_head(text, data::describe(root), width)
+}
+
+/// Teto estourado: o YAML original com o motivo (`m` até o `:`) no lugar do resumo, para explicar
+/// por que a tecla `v` leva a um erro.
+fn text_with_notice(text: &str, m: &str, width: usize) -> Rendered {
+    let motivo = m.split(':').next().unwrap_or(m);
+    text_with_head(text, format!("{motivo} para tabela/esquema: só a vista de texto"), width)
+}
+
+fn text_with_head(text: &str, head: String, width: usize) -> Rendered {
     let mut r = render_code_only(text, "yaml", width);
-    let head = Line::from(Span::styled(
-        data::describe(root),
-        Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-    ));
+    let head = Line::from(Span::styled(head, Style::default().fg(DIM).add_modifier(Modifier::ITALIC)));
     r.lines.insert(0, head);
     r
 }
@@ -190,6 +198,24 @@ mod tests {
         for v in [JsonView::Table, JsonView::Schema] {
             let t = text(&render_yaml_with(src, &opts(None, v), 80, &tiny()));
             assert_eq!(t.matches("use a vista de texto").count(), 1, "{v:?}\n{t}");
+        }
+    }
+
+    #[test]
+    fn limite_estourado_avisa_na_primeira_linha_da_vista_de_texto() {
+        let r = render_yaml_with("a: 1\nb: 2\nc: 3\n", &opts(None, JsonView::Auto), 80, &tiny());
+        let aviso = &r.lines[0];
+        assert!(line_text(aviso).contains("estrutura grande demais para tabela/esquema: só a vista de texto"), "{}", text(&r));
+        assert!(aviso.spans.iter().all(|s| s.style.fg == Some(DIM) && s.style.add_modifier.contains(Modifier::ITALIC)));
+        let t = text(&r);
+        assert!(t.contains("a: 1") && t.contains("c: 3"), "{t}");
+    }
+
+    #[test]
+    fn limite_estourado_com_path_e_erro() {
+        for v in [JsonView::Text, JsonView::Auto] {
+            let t = text(&render_yaml_with("a:\n  b: 1\nc: 3\n", &opts(Some(".a"), v), 80, &tiny()));
+            assert!(t.contains("estrutura grande demais") && !t.contains("c: 3"), "{v:?}\n{t}");
         }
     }
 
