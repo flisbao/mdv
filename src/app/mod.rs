@@ -240,6 +240,7 @@ impl App {
             .view
             .scroll
             .min(self.view.max_scroll(self.total_lines()));
+        self.follow_focus();
         let n = self.doc.rendered.tables.len();
         if self.zoom().is_some_and(|z| z.table >= n) {
             self.modal = Modal::None;
@@ -248,6 +249,13 @@ impl App {
         }
         self.sync_img_zoom();
         self.queue_graphics();
+    }
+
+    /// Documento com erro de sintaxe abre rolado até ele; quem já rolou não é puxado de volta.
+    pub(crate) fn follow_focus(&mut self) {
+        if let (0, Some(l)) = (self.view.scroll, self.doc.rendered.focus) {
+            self.scroll_to(l);
+        }
     }
 
     /// Trabalho de fundo a cada tique: um download de imagem terminou, então redesenha com ela.

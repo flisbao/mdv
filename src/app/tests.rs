@@ -951,3 +951,47 @@ fn json_view(app: &App) -> cli::JsonView {
         _ => cli::JsonView::Auto,
     }
 }
+
+/// `App` com 200 linhas já renderizadas e `focus` na linha 150, como um documento com erro de sintaxe.
+fn app_com_foco(focus: Option<usize>) -> App {
+    let mut app = test_app(Source::Stdin, "");
+    app.view.height = 20;
+    app.doc.rendered.lines = (0..200).map(|i| Line::from(format!("linha {i}"))).collect();
+    app.doc.rendered.focus = focus;
+    app
+}
+
+#[test]
+fn abre_rolado_ate_o_erro_de_sintaxe() {
+    let mut app = app_com_foco(Some(150));
+    app.follow_focus();
+    assert!(app.view.scroll > 100, "scroll {}", app.view.scroll);
+    assert!(app.view.scroll <= 150, "scroll {} passou do erro", app.view.scroll);
+    assert!(app.window().contains(&150), "o foco precisa estar na tela");
+}
+
+#[test]
+fn nao_puxa_de_volta_quem_ja_rolou() {
+    let mut app = app_com_foco(Some(150));
+    app.follow_focus();
+    app.scroll_to(30);
+    app.follow_focus();
+    assert_eq!(app.view.scroll, 30, "quem já rolou fica onde está");
+}
+
+#[test]
+fn sem_foco_nao_rola() {
+    let mut app = app_com_foco(None);
+    app.follow_focus();
+    assert_eq!(app.view.scroll, 0);
+}
+
+#[test]
+fn rerender_mantem_o_scroll_de_quem_ja_rolou() {
+    let mut app = test_app(Source::Stdin, &"texto\n\n".repeat(100));
+    app.view.height = 20;
+    app.rerender(80);
+    app.scroll_to(40);
+    app.rerender(80);
+    assert_eq!(app.view.scroll, 40);
+}
