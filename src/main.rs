@@ -24,6 +24,7 @@ mod plain;
 mod stats;
 mod stream;
 mod syntax_error;
+mod yamldoc;
 mod render;
 use std::io::{self, IsTerminal};
 use std::path::Path;
