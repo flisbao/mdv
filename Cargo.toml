@@ -68,6 +68,7 @@ assets = [
 ]
 
 [package.metadata.deb]
+maintainer = "Lisbao <flisbao@gmail.com>"
 assets = [
     ["target/dist/mdv", "usr/bin/", "755"],
     ["target/dist/mdv-tools", "usr/bin/", "755"],
