@@ -5,6 +5,7 @@
 
 mod estilos;
 mod le;
+mod numeracao;
 mod pacote;
 mod partes;
 mod relacoes;
