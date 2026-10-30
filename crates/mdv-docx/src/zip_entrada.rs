@@ -21,7 +21,14 @@ pub(crate) fn extrair(bytes: &[u8], e: &Entrada) -> Result<Vec<u8>, String> {
     }
     let dados = dados_da_entrada(bytes, e)?;
     let saida = match e.metodo {
-        0 => dados.to_vec(),
+        0 => {
+            // Confere antes de copiar: o tamanho declarado já passou do teto, mas os bytes
+            // guardados vêm do arquivo e podem ser bem maiores que ele.
+            if dados.len() != e.tam_original as usize {
+                return Err(format!("ZIP inválido: tamanho inconsistente em {}", e.nome));
+            }
+            dados.to_vec()
+        }
         8 => {
             let mut saida = Vec::with_capacity(e.tam_original as usize);
             DeflateDecoder::new(dados)
@@ -99,6 +106,15 @@ mod tests {
         let bytes = zip(&[("x", zeros.as_slice())], true);
         let mut e = primeira(&bytes);
         e.tam_original = 100;
+        let erro = extrair(&bytes, &e).unwrap_err();
+        assert!(erro.contains("tamanho inconsistente"), "{erro}");
+    }
+
+    #[test]
+    fn armazenada_com_tamanho_diferente_e_recusada_sem_copiar() {
+        let bytes = zip(&[("x", b"0123456789")], false);
+        let mut e = primeira(&bytes);
+        e.tam_original = 4;
         let erro = extrair(&bytes, &e).unwrap_err();
         assert!(erro.contains("tamanho inconsistente"), "{erro}");
     }

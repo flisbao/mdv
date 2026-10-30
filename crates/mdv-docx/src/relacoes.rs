@@ -22,6 +22,9 @@ pub(crate) struct Relacoes {
     indice: HashMap<String, usize>,
 }
 
+/// Teto de relações guardadas, para um `.rels` hostil não encher a memória com milhões de itens.
+const MAX_RELACOES: usize = 20_000;
+
 impl Relacoes {
     /// Conjunto sem relações, usado quando a parte não tem arquivo `.rels`.
     pub(crate) fn vazias() -> Self {
@@ -34,6 +37,9 @@ impl Relacoes {
         let mut itens = Vec::new();
         let mut indice = HashMap::new();
         while let Some(tag) = leitor.ate("Relationship")? {
+            if itens.len() >= MAX_RELACOES {
+                return Err("arquivo .docx com relações demais".into());
+            }
             let (Some(id), Some(tipo), Some(alvo)) = (tag.attr("Id"), tag.attr("Type"), tag.attr("Target"))
             else {
                 continue;
@@ -86,7 +92,7 @@ pub(crate) fn resolver(base: &str, alvo: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolver, Relacoes};
+    use super::{resolver, Relacoes, MAX_RELACOES};
     use crate::Unlimited;
 
     const REL: &str = r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://a.org" TargetMode="External"/></Relationships>"#;
@@ -100,6 +106,19 @@ mod tests {
         assert_eq!(rels.por_tipo("styles").expect("styles").alvo, "styles.xml");
         assert!(!rels.por_id("rId1").expect("rId1").externo);
         assert!(rels.por_id("rId9").is_none());
+    }
+
+    #[test]
+    fn relacoes_acima_do_teto_sao_recusadas() {
+        // 20 001 relações curtas somam cerca de 1,5 MiB de XML.
+        let itens: String = (0..=MAX_RELACOES)
+            .map(|i| format!(r#"<Relationship Id="r{i}" Type="x/hyperlink" Target="a"/>"#))
+            .collect();
+        let xml = format!("<Relationships>{itens}</Relationships>");
+        let erro = Relacoes::ler(xml.as_bytes(), &Unlimited).err().expect("erro");
+        assert!(erro.contains("relações demais"), "{erro}");
+        let xml = format!("<Relationships>{}</Relationships>", &itens[..itens.rfind("<Relationship ").unwrap()]);
+        assert!(Relacoes::ler(xml.as_bytes(), &Unlimited).is_ok());
     }
 
     #[test]
