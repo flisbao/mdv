@@ -4,7 +4,9 @@
 #![allow(dead_code)]
 
 mod le;
+mod pacote;
 mod zip_diretorio;
+mod zip_entrada;
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
 

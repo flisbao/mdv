@@ -39,6 +39,8 @@ pub(crate) fn listar(bytes: &[u8]) -> Result<Vec<Entrada>, String> {
     let eocd = achar_eocd(bytes).ok_or(INVALIDO)?;
     let total = u16_em(bytes, eocd + 10)?;
     let inicio = u32_em(bytes, eocd + 16)?;
+    // 0xFFFF e 0xFFFFFFFF são sentinelas do ZIP64, cujo diretório fica em outro registro;
+    // sem suporte a ZIP64, recusa-se o arquivo em vez de ler campos errados.
     if total == 0xFFFF || inicio == 0xFFFF_FFFF {
         return Err("ZIP64 não suportado".into());
     }
@@ -52,9 +54,11 @@ pub(crate) fn listar(bytes: &[u8]) -> Result<Vec<Entrada>, String> {
     for _ in 0..total {
         let (entrada, proximo) = ler_entrada(bytes, pos)?;
         pos = proximo;
+        // Pasta não tem conteúdo; só os arquivos interessam.
         if entrada.nome.ends_with('/') {
             continue;
         }
+        // O Word trata "A.xml" e "a.XML" como o mesmo arquivo; duplicata sem diferenciar caixa é ambígua.
         if !nomes.insert(entrada.nome.to_lowercase()) {
             return Err(format!("ZIP com entrada duplicada: {}", entrada.nome));
         }
@@ -160,6 +164,22 @@ mod tests {
         let bytes = zip(&[("a", b"1"), ("a", b"2")], false);
         let erro = listar(&bytes).unwrap_err();
         assert!(erro.contains("duplicad"), "{erro}");
+    }
+
+    #[test]
+    fn nome_duplicado_sem_diferenciar_caixa_e_recusado() {
+        let bytes = zip(&[("A.xml", b"1"), ("a.XML", b"2")], false);
+        let erro = listar(&bytes).unwrap_err();
+        assert!(erro.contains("duplicad"), "{erro}");
+    }
+
+    #[test]
+    fn zip64_e_recusado() {
+        let mut bytes = zip(&[("a", b"x")], false);
+        let eocd = ultima(&bytes, b"PK\x05\x06");
+        bytes[eocd + 10..eocd + 12].copy_from_slice(&0xFFFFu16.to_le_bytes());
+        let erro = listar(&bytes).unwrap_err();
+        assert!(erro.contains("ZIP64"), "{erro}");
     }
 
     #[test]
