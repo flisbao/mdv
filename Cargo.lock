@@ -945,6 +945,7 @@ dependencies = [
  "csv",
  "encoding_rs",
  "image",
+ "mdv-docx",
  "mdv-export",
  "mdv-html",
  "mdv-msg",

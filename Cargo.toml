@@ -28,6 +28,7 @@ pulldown-cmark.workspace = true
 mdv-text.workspace = true
 mdv-export.workspace = true
 mdv-msg.workspace = true
+mdv-docx.workspace = true
 mdv-html.workspace = true
 encoding_rs = "0.8"
 tempfile.workspace = true
@@ -53,6 +54,7 @@ remote = ["images", "dep:ureq", "dep:url"]
 [dev-dependencies]
 tempfile.workspace = true
 mdv-msg = { workspace = true, features = ["testutil"] }
+mdv-docx = { workspace = true, features = ["testutil"] }
 unicode-width = "0.2"
 
 [profile.release]
