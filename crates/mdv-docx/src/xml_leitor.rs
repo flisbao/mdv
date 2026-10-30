@@ -6,6 +6,9 @@ use quick_xml::Reader;
 
 use crate::{Budget, MAX_PROFUNDIDADE_XML};
 
+/// Teto de atributos por elemento; o Word usa poucas dezenas (o raiz, com `xmlns:*`, é o maior).
+const MAX_ATRIBUTOS: usize = 256;
+
 /// Um evento do documento: abre elemento, fecha elemento ou texto já sem entidades.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Evento {
@@ -133,6 +136,12 @@ impl<'a> Leitor<'a> {
         let nome = self.nome(s.local_name().as_ref())?;
         let mut atributos = Vec::new();
         for atributo in s.attributes() {
+            // O quick-xml compara cada atributo novo com todos os anteriores (custo quadrático):
+            // o teto vale durante a iteração, antes de coletar o resto.
+            if atributos.len() >= MAX_ATRIBUTOS {
+                return Err(self.erro("atributos demais"));
+            }
+            self.budget.check()?;
             let atributo = atributo.map_err(|e| self.erro(e))?;
             let chave = self.nome(atributo.key.local_name().as_ref())?;
             let valor = atributo.unescape_value().map_err(|e| self.erro(e))?;
@@ -306,6 +315,23 @@ mod tests {
         for v in ["1", "true", "on"] {
             assert!(primeira_tag(&format!(r#"<w:b w:val="{v}"/>"#)).ligado(), "{v}");
         }
+    }
+
+    fn com_atributos(n: usize) -> String {
+        let attrs: String = (0..n).map(|i| format!(" a{i}=\"\"")).collect();
+        format!("<a{attrs}/>")
+    }
+
+    #[test]
+    fn atributos_acima_do_teto_dao_erro() {
+        let e = todos(&com_atributos(MAX_ATRIBUTOS + 1)).unwrap_err();
+        assert!(e.contains("XML inválido") && e.contains("atributos demais"), "{e}");
+    }
+
+    #[test]
+    fn atributos_no_teto_passam() {
+        let t = primeira_tag(&com_atributos(MAX_ATRIBUTOS));
+        assert_eq!(t.atributos.len(), MAX_ATRIBUTOS);
     }
 
     struct Esgotado;
