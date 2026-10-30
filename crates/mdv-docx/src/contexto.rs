@@ -28,7 +28,7 @@ impl<'a> Contexto<'a> {
 }
 
 /// Monta um contexto de teste a partir de filhos XML de `styles` e `numbering` (vazio = sem nada)
-/// e entrega ao `f`. Relações fixas: `rId5` é um link `https`, `rId6` um link `javascript:`.
+/// e entrega ao `f`. Relações fixas: `rId5` é um link `https`, `rId6` um link `javascript:` (ambos externos) e `rId7` uma imagem interna.
 #[cfg(test)]
 pub(crate) fn com_contexto<T>(
     estilos: &str,
@@ -56,6 +56,7 @@ pub(crate) fn com_contexto<T>(
     let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
         <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://exemplo.org" TargetMode="External"/>
         <Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="javascript:alert(1)" TargetMode="External"/>
+        <Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/a.png"/>
     </Relationships>"#;
     let relacoes = Relacoes::ler(rels.as_bytes(), &Unlimited).expect("relações de teste");
     let mut ctx = Contexto::novo(&estilos, &numeracao, &relacoes, &Unlimited);

@@ -10,8 +10,8 @@ use crate::xml_leitor::{Evento, Leitor};
 
 /// Lê um `w:p` (chamada logo depois do `Abre("p")`), consome até o `Fecha` dele e o classifica.
 /// Quase todo elemento é transparente (`ins`, `sdt`, `smartTag`, `Choice`, `bookmarkStart`...):
-/// não se faz nada e o laço desce até os runs dentro dele. Só são pulados o que não é texto
-/// aceito: `del` e `moveFrom` (texto apagado), `Fallback` (cópia do `Choice`), `drawing`/`pict`
+/// não se faz nada e o laço desce até os runs dentro dele. Só são pulados os elementos que não
+/// são texto aceito: `del` e `moveFrom` (texto apagado), `Fallback` (cópia do `Choice`), `drawing`/`pict`
 /// e `txbxContent` (caixa de texto, fora do escopo) e `rPr` solto.
 pub(crate) fn ler_paragrafo(l: &mut Leitor, ctx: &mut Contexto) -> Result<Option<Bloco>, String> {
     let mut props = Propriedades::default();

@@ -4,7 +4,7 @@ use crate::contexto::com_contexto;
 use crate::modelo::{Bloco, Marcas, Trecho};
 use crate::paragrafo::ler_xml;
 
-fn blocos(corpo: &str) -> Option<Bloco> {
+fn bloco(corpo: &str) -> Option<Bloco> {
     com_contexto("", "", |ctx| ler_xml(ctx, corpo))
 }
 
@@ -17,7 +17,7 @@ fn com_link(s: &str, url: &str) -> Trecho {
 }
 
 fn paragrafo(corpo: &str) -> Vec<Trecho> {
-    match blocos(corpo) {
+    match bloco(corpo) {
         Some(Bloco::Paragrafo(t)) => t,
         outro => panic!("esperava parágrafo, veio {outro:?}"),
     }
@@ -42,8 +42,15 @@ fn hyperlink_so_com_anchor_nao_vira_link() {
 }
 
 #[test]
-fn hyperlink_com_relacao_inexistente_ou_interna_nao_vira_link() {
+fn hyperlink_com_relacao_inexistente_nao_vira_link() {
     let t = paragrafo(r#"<w:hyperlink r:id="rId99"><w:r><w:t>x</w:t></w:r></w:hyperlink>"#);
+    assert_eq!(t, vec![texto("x")]);
+}
+
+#[test]
+fn hyperlink_com_relacao_interna_nao_vira_link() {
+    // `rId7` aponta para `media/a.png`, sem `TargetMode="External"`: o alvo não pode virar URL.
+    let t = paragrafo(r#"<w:hyperlink r:id="rId7"><w:r><w:t>x</w:t></w:r></w:hyperlink>"#);
     assert_eq!(t, vec![texto("x")]);
 }
 
