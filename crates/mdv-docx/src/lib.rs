@@ -5,6 +5,7 @@
 
 mod le;
 mod pacote;
+mod xml_leitor;
 mod zip_diretorio;
 mod zip_entrada;
 #[cfg(any(test, feature = "testutil"))]
