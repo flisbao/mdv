@@ -158,8 +158,9 @@ USO:
     mdv csv|tsv [opções] <arquivo|->
     mdv [opções] <arquivo.md> -o <saída.pdf|docx|odt|xlsx|ods>
     mdv [opções] <email.msg> [-o <saída.md|pdf|docx|odt>]
+    mdv [opções] <documento.docx> [-o <saída.md|pdf|docx|odt>]
     mdv csv|tsv [opções] <arquivo|-> -o <saída.xlsx|ods>
-    mdv <pasta>            (seletor: .md, .msg, .yaml/.yml e .html/.htm da pasta por data, filtro ao digitar)
+    mdv <pasta>            (seletor: .md, .msg, .docx, .yaml/.yml e .html/.htm da pasta por data, filtro ao digitar)
     (o formato também é deduzido da extensão: .json, .jsonl, .yaml, .yml, .csv, .tsv, .html, .htm)
     HTML (.html, .htm): páginas com cores do CSS, sem JavaScript; é uma aproximação, não um navegador
 
@@ -176,7 +177,7 @@ OPÇÕES:
     -o, --output <A>   converte e sai (sem TUI); o formato vem da extensão de A:
                          .md  → .pdf .docx .odt (documento) ou .xlsx .ods (só as tabelas)
                          .csv/.tsv → .xlsx .ods
-                         .msg → .md .pdf .docx .odt .xlsx .ods
+                         .msg, .docx → .md .pdf .docx .odt .xlsx .ods
         --force        com -o: sobrescreve o arquivo de destino se ele já existir
         --section <T>  com -o e Markdown → planilha: só as tabelas da seção de título T
                        (com --table N: só a N-ésima tabela do documento)
@@ -267,6 +268,35 @@ mdv email.msg -o email.pdf              # também .docx, .odt, .xlsx e .ods
 
 A entrada é limitada a 32 MiB. Um `.msg` inválido sai com erro e código 1. O teste `sample_commitado_bate_com_o_gerador` do pacote `mdv-msg` verifica se a amostra commitada produz o mesmo Markdown que o gerador.
 
+## Documentos `.docx` do Word
+
+`mdv` abre um `.docx` direto e o converte em Markdown, então a TUI, o `--plain` e o `-o x.md` (útil para alimentar uma LLM) tratam o resultado como qualquer outro documento. O seletor de pasta também lista `.docx`.
+
+| No Word | No Markdown |
+|---|---|
+| Título (`Heading N`, `Title` ou nível de estrutura de tópicos) | `#` a `######` |
+| Negrito, itálico, tachado, fonte monoespaçada | `**`, `*`, `~~`, `` ` `` |
+| Link externo `http`, `https` ou `mailto` | `[texto](url)`; outros esquemas (`javascript:`, `file:`, `data:`) ficam só com o texto |
+| Lista com marcadores ou numerada, com recuo | `- ` ou `N. `, quatro espaços por nível |
+| Tabela (inclusive células mescladas) | tabela GFM; a primeira linha é o cabeçalho |
+| Estilo de citação, estilo de código | `>` e bloco com cerca |
+| Nota de rodapé ou de fim | `[^N]` e a definição no fim |
+| Imagem | `*[imagem: texto alternativo]*` |
+
+Com o controle de alterações, o texto inserido entra e o apagado some (o resultado é o documento com tudo aceito).
+
+```bash
+mdv samples/relatorio.docx                 # lê a amostra no terminal
+mdv relatorio.docx -o relatorio.md         # grava o Markdown (com --force sobrescreve)
+mdv relatorio.docx -o relatorio.pdf        # também .docx, .odt, .xlsx e .ods
+```
+
+`samples/relatorio.docx` foi gerada pelo próprio exportador do `mdv`; por isso os marcadores de lista dela são texto literal (`• `), e não uma lista do Word.
+
+**Limites:** arquivo de até 32 MiB, ZIP com no máximo 5000 entradas, XML com até 100 níveis de profundidade e Markdown de até 16 MiB. Um arquivo inválido sai com erro e código 1.
+
+**Fora do escopo:** `.doc` antigo e `.docx` criptografado (só um erro claro), imagens (só o texto alternativo), cabeçalho e rodapé de página, comentários, caixas de texto, campos como o sumário, equações, `.docm`/`.dotx`, leitura pelo stdin, numeração automática de títulos e a continuação de numeração entre listas diferentes que compartilham o mesmo modelo.
+
 ## JSON, YAML, CSV e TSV
 
 ```bash
@@ -313,7 +343,7 @@ mdv docs/                             # seletor de pasta: lista também .html e 
 
 ```bash
 mdv relatorio.md -o relatorio.pdf                    # também .docx e .odt
-mdv email.msg -o email.md                            # .msg → Markdown (só .msg aceita -o .md)
+mdv email.msg -o email.md                            # .msg ou .docx → Markdown (só eles aceitam -o .md)
 mdv dados.csv -o dados.xlsx                          # também .ods; tsv igual
 mdv relatorio.md -o tabelas.ods --section Vendas     # só as tabelas da seção "Vendas"
 mdv relatorio.md -o tabela2.xlsx --table 2           # só a 2ª tabela do documento
