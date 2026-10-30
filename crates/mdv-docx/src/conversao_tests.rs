@@ -177,6 +177,17 @@ fn link_com_url_acima_do_teto_vira_so_texto() {
 }
 
 #[test]
+fn notas_acima_do_teto_sao_recusadas() {
+    // 100 001 notas de um caractere somam cerca de 8 MiB de XML, abaixo do teto da parte.
+    let notas: String = (1..=100_001)
+        .map(|i| format!(r#"<w:footnote w:id="{i}"><w:p><w:r><w:t>a</w:t></w:r></w:p></w:footnote>"#))
+        .collect();
+    let bytes = DocxBuilder::novo().corpo("<w:p><w:r><w:t>x</w:t></w:r></w:p>").notas(&notas).construir();
+    let erro = to_markdown(&bytes, &Unlimited).expect_err("erro");
+    assert!(erro.contains("notas demais"), "{erro}");
+}
+
+#[test]
 fn documento_vazio_avisa() {
     assert_eq!(md(""), "*(documento sem texto)*\n");
 }

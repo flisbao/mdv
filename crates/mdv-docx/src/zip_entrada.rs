@@ -19,7 +19,7 @@ pub(crate) fn extrair(bytes: &[u8], e: &Entrada) -> Result<Vec<u8>, String> {
     if e.tam_original as usize > MAX_PARTE_BYTES {
         return Err(format!("parte do .docx grande demais: {}", e.nome));
     }
-    let dados = dados_da_entrada(bytes, e)?;
+    let dados = localizar(bytes, e)?;
     let saida = match e.metodo {
         0 => {
             // Confere antes de copiar: o tamanho declarado já passou do teto, mas os bytes
@@ -46,7 +46,7 @@ pub(crate) fn extrair(bytes: &[u8], e: &Entrada) -> Result<Vec<u8>, String> {
 }
 
 /// Localiza os bytes comprimidos da entrada a partir do cabeçalho local, com somas verificadas.
-fn dados_da_entrada<'a>(bytes: &'a [u8], e: &Entrada) -> Result<&'a [u8], String> {
+fn localizar<'a>(bytes: &'a [u8], e: &Entrada) -> Result<&'a [u8], String> {
     let fora = || "ZIP inválido: entrada fora do arquivo".to_string();
     let pos = e.posicao as usize;
     let fim_cab = pos.checked_add(LOCAL_TAM).ok_or_else(fora)?;

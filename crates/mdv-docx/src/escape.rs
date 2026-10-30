@@ -32,6 +32,17 @@ pub(crate) fn inicio_de_linha(s: &str) -> String {
     s.to_string()
 }
 
+/// Maior sequência seguida de crases do texto; a cerca de código precisa ser mais longa que ela.
+pub(crate) fn maior_crases(s: &str) -> usize {
+    let mut maior = 0;
+    let mut atual = 0;
+    for c in s.chars() {
+        atual = if c == '`' { atual + 1 } else { 0 };
+        maior = maior.max(atual);
+    }
+    maior
+}
+
 /// Escapa texto de célula de tabela: inline, mais `|`; quebras e tabs viram espaço.
 pub(crate) fn celula(s: &str) -> String {
     let plano: String = s
@@ -73,6 +84,12 @@ mod tests {
     #[test]
     fn escapa_crase() {
         assert_eq!(inline("a`b"), "a\\`b");
+    }
+
+    #[test]
+    fn maior_sequencia_de_crases() {
+        assert_eq!(maior_crases("a`b``c```d`"), 3);
+        assert_eq!(maior_crases("sem"), 0);
     }
 
     #[test]

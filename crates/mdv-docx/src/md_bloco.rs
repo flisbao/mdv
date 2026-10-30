@@ -99,13 +99,7 @@ fn codigo(blocos: &[Bloco]) -> String {
 /// Cerca com ao menos 3 crases e uma a mais que a maior sequência de crases do conteúdo,
 /// para que o conteúdo nunca feche a cerca antes da hora.
 fn cerca(conteudo: &str) -> String {
-    let mut maior = 0;
-    let mut atual = 0;
-    for c in conteudo.chars() {
-        atual = if c == '`' { atual + 1 } else { 0 };
-        maior = maior.max(atual);
-    }
-    "`".repeat((maior + 1).max(3))
+    "`".repeat((escape::maior_crases(conteudo) + 1).max(3))
 }
 
 /// Parágrafos de citação separados por uma linha `>`; cada linha leva o prefixo `> `.

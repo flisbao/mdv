@@ -43,7 +43,7 @@ impl Notas {
     ) -> Result<String, String> {
         let mut linhas: Vec<String> = Vec::with_capacity(self.chaves.len());
         for (i, chave) in self.chaves.iter().enumerate() {
-            let linha = format!("[^{}]: {}", i + 1, texto_da_nota(textos.get(chave)));
+            let linha = format!("[^{}]: {}", i + 1, texto_nota(textos.get(chave)));
             limite.gastar(linha.len() + 1)?;
             linhas.push(linha);
         }
@@ -52,7 +52,7 @@ impl Notas {
 }
 
 /// Texto de uma nota em uma linha; "(nota ausente)" quando não há texto.
-fn texto_da_nota(trechos: Option<&Vec<Trecho>>) -> String {
+fn texto_nota(trechos: Option<&Vec<Trecho>>) -> String {
     let sem_refs: Vec<Trecho> = trechos
         .into_iter()
         .flatten()

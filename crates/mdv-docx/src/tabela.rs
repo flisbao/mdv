@@ -73,7 +73,7 @@ fn ler_conteudo(l: &mut Leitor, ctx: &mut Contexto) -> Result<Celula, String> {
                     let interna = ler_tabela(l, ctx)?;
                     celula.paragrafos.extend(Bloco::Tabela(interna).paragrafos());
                 }
-                "tcPr" => ler_tc_pr(l, &mut celula)?,
+                "tcPr" => ler_tc(l, &mut celula)?,
                 "Fallback" => l.pular()?,
                 _ => {}
             },
@@ -83,7 +83,7 @@ fn ler_conteudo(l: &mut Leitor, ctx: &mut Contexto) -> Result<Celula, String> {
 }
 
 /// Lê o `w:tcPr` (depois do `Abre`): só `gridSpan` e `vMerge` interessam; o resto é pulado.
-fn ler_tc_pr(l: &mut Leitor, celula: &mut Celula) -> Result<(), String> {
+fn ler_tc(l: &mut Leitor, celula: &mut Celula) -> Result<(), String> {
     loop {
         match l.proximo()? {
             None => return Err("fim inesperado do documento".into()),

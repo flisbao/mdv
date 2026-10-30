@@ -38,7 +38,7 @@ pub(crate) fn ler_ppr(l: &mut Leitor) -> Result<Propriedades, String> {
                         .map(|v| (v + 1).min(6));
                     l.pular()?;
                 }
-                "numPr" => props.num = ler_num_pr(l)?,
+                "numPr" => props.num = ler_lista(l)?,
                 _ => l.pular()?,
             },
             Some(_) => {}
@@ -48,7 +48,7 @@ pub(crate) fn ler_ppr(l: &mut Leitor) -> Result<Propriedades, String> {
 }
 
 /// Lê o `numPr` direto: sem `numId` não há lista (fica a do estilo); `ilvl` ausente é o nível 0.
-fn ler_num_pr(l: &mut Leitor) -> Result<Option<(u32, u8)>, String> {
+fn ler_lista(l: &mut Leitor) -> Result<Option<(u32, u8)>, String> {
     let mut num_id = None;
     let mut ilvl = 0u8;
     loop {

@@ -16,7 +16,7 @@ fn indice(nivel: u8) -> usize {
 }
 
 /// Nível de um `w:ilvl` ou `w:lvl`; fora de 0..=`MAX_NIVEL_LISTA` vira `None` e é ignorado.
-fn nivel_do_atributo(tag: &Tag) -> Option<u8> {
+fn ler_nivel(tag: &Tag) -> Option<u8> {
     tag.attr("ilvl").and_then(|v| v.parse::<u8>().ok()).filter(|&n| n <= MAX_NIVEL_LISTA)
 }
 
@@ -112,7 +112,7 @@ fn ler_abstrato(leitor: &mut Leitor, tag: &Tag, numeracao: &mut Numeracao) -> Re
             Some(Evento::Fecha(n)) if n == "abstractNum" => break,
             Some(Evento::Abre(filho)) if filho.nome == "lvl" => {
                 let nivel = ler_lvl(leitor)?;
-                if let Some(n) = nivel_do_atributo(&filho) {
+                if let Some(n) = ler_nivel(&filho) {
                     niveis[usize::from(n)] = nivel;
                 }
             }
@@ -182,7 +182,7 @@ fn ler_num(leitor: &mut Leitor, tag: &Tag, numeracao: &mut Numeracao) -> Result<
 
 /// Lê um `w:lvlOverride`: só o `startOverride` importa; o `lvl` completo que ele pode trazer é pulado.
 fn ler_override(leitor: &mut Leitor, tag: &Tag, num: &mut Num) -> Result<(), String> {
-    let nivel = nivel_do_atributo(tag);
+    let nivel = ler_nivel(tag);
     loop {
         match leitor.proximo()? {
             None => return Err("fim inesperado do documento".into()),

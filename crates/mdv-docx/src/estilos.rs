@@ -3,14 +3,12 @@
 
 use std::collections::HashMap;
 
+use crate::propriedades::ler_ppr;
 use crate::xml_leitor::{Evento, Leitor};
 use crate::Budget;
 
 /// Limite de saltos em `basedOn`; cadeia mais longa, ou ciclo, para aqui.
 const MAX_SALTOS: usize = 16;
-
-/// Título pelo outline e numeração de um `pPr`.
-type Ppr = (Option<u8>, Option<(u32, u8)>);
 
 /// Estilo como aparece no XML, antes de seguir `basedOn`.
 struct Bruto {
@@ -78,7 +76,12 @@ fn ler_estilo(leitor: &mut Leitor, id: String) -> Result<Bruto, String> {
                     base = tag.val().map(str::to_string);
                     leitor.pular()?;
                 }
-                "pPr" => (titulo_outline, numeracao) = ler_ppr(leitor)?,
+                // `numId` 0 quer dizer "sem numeração" e `outlineLvl` 9, texto comum.
+                "pPr" => {
+                    let props = ler_ppr(leitor)?;
+                    titulo_outline = props.nivel;
+                    numeracao = props.num.filter(|&(num_id, _)| num_id != 0);
+                }
                 _ => leitor.pular()?,
             },
             Some(_) => {}
@@ -89,58 +92,6 @@ fn ler_estilo(leitor: &mut Leitor, id: String) -> Result<Bruto, String> {
     proprio.titulo = proprio.titulo.or(titulo_outline);
     proprio.numeracao = numeracao;
     Ok(Bruto { id, base, proprio })
-}
-
-/// Lê o `pPr` de um estilo e devolve (título pelo outline, numeração). Só os filhos diretos contam.
-fn ler_ppr(leitor: &mut Leitor) -> Result<Ppr, String> {
-    let mut titulo = None;
-    let mut numeracao = None;
-    loop {
-        match leitor.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "pPr" => break,
-            Some(Evento::Abre(tag)) => match tag.nome.as_str() {
-                // `outlineLvl` 0..=8 vira título 1..=6; 9 é texto comum e qualquer outro valor é ignorado.
-                "outlineLvl" => {
-                    titulo = tag
-                        .val()
-                        .and_then(|v| v.parse::<u8>().ok())
-                        .filter(|&v| v <= 8)
-                        .map(|v| (v + 1).min(6));
-                    leitor.pular()?;
-                }
-                "numPr" => numeracao = ler_num_pr(leitor)?,
-                _ => leitor.pular()?,
-            },
-            Some(_) => {}
-        }
-    }
-    Ok((titulo, numeracao))
-}
-
-/// Lê `numPr` do estilo; `numId` 0 quer dizer "sem numeração" e `ilvl` ausente é o nível 0.
-fn ler_num_pr(leitor: &mut Leitor) -> Result<Option<(u32, u8)>, String> {
-    let mut num_id = None;
-    let mut ilvl = 0u8;
-    loop {
-        match leitor.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "numPr" => break,
-            Some(Evento::Abre(tag)) => match tag.nome.as_str() {
-                "numId" => {
-                    num_id = tag.val().and_then(|v| v.parse::<u32>().ok());
-                    leitor.pular()?;
-                }
-                "ilvl" => {
-                    ilvl = tag.val().and_then(|v| v.parse::<u8>().ok()).unwrap_or(0);
-                    leitor.pular()?;
-                }
-                _ => leitor.pular()?,
-            },
-            Some(_) => {}
-        }
-    }
-    Ok(num_id.filter(|&n| n != 0).map(|n| (n, ilvl)))
 }
 
 /// Resolve `basedOn` de cada estilo. Campos `Option` vêm do primeiro da cadeia que os define

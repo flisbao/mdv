@@ -9,10 +9,10 @@ use crate::{Budget, MAX_MARKDOWN_BYTES};
 
 /// Escreve o documento como Markdown, terminado por um único `\n`.
 pub(crate) fn escrever(doc: &Documento, budget: &dyn Budget) -> Result<String, String> {
-    escrever_com_teto(doc, budget, MAX_MARKDOWN_BYTES)
+    escrever_ate(doc, budget, MAX_MARKDOWN_BYTES)
 }
 
-fn escrever_com_teto(doc: &Documento, budget: &dyn Budget, teto: usize) -> Result<String, String> {
+fn escrever_ate(doc: &Documento, budget: &dyn Budget, teto: usize) -> Result<String, String> {
     let mut notas = Notas::novo();
     let mut saida = String::new();
     for g in agrupar(&doc.blocos) {
@@ -66,14 +66,14 @@ mod tests {
     #[test]
     fn teto_reduzido_recusa_o_texto() {
         let doc = documento(vec![paragrafo("um texto bem mais longo que dez bytes")]);
-        let erro = escrever_com_teto(&doc, &Unlimited, 10).expect_err("erro");
+        let erro = escrever_ate(&doc, &Unlimited, 10).expect_err("erro");
         assert!(erro.contains("grande demais"), "{erro}");
     }
 
     #[test]
     fn texto_no_teto_passa() {
         let doc = documento(vec![paragrafo("abc")]);
-        assert_eq!(escrever_com_teto(&doc, &Unlimited, 3).as_deref(), Ok("abc\n"));
+        assert_eq!(escrever_ate(&doc, &Unlimited, 3).as_deref(), Ok("abc\n"));
     }
 
     #[test]

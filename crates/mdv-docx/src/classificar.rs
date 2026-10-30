@@ -34,7 +34,7 @@ pub(crate) fn classificar(props: &Propriedades, trechos: Vec<Trecho>, ctx: &mut 
         let numero = if numerada { contado } else { 0 };
         return Some(Bloco::Item { nivel, numerada, numero, texto: trechos });
     }
-    if estilo.codigo || todo_em_codigo(&trechos) {
+    if estilo.codigo || so_codigo(&trechos) {
         return Some(Bloco::Codigo(juntar_codigo(&trechos)));
     }
     if estilo.citacao {
@@ -53,7 +53,7 @@ fn tem_conteudo(trechos: &[Trecho]) -> bool {
 }
 
 /// Todos os trechos de texto estão em fonte de código (e há pelo menos um).
-fn todo_em_codigo(trechos: &[Trecho]) -> bool {
+fn so_codigo(trechos: &[Trecho]) -> bool {
     let mut textos = trechos.iter().filter_map(|t| match t {
         Trecho::Texto { marcas, .. } => Some(marcas.codigo),
         _ => None,

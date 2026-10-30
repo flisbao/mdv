@@ -206,12 +206,7 @@ fn codigo(texto: &str, modo: Modo) -> String {
 /// fechá-la antes da hora; havendo crase no texto, um espaço de guarda de cada lado impede que
 /// uma crase da borda cole na cerca (o leitor Markdown descarta esse par de espaços).
 fn cerca(texto: &str) -> String {
-    let mut maior = 0;
-    let mut atual = 0;
-    for c in texto.chars() {
-        atual = if c == '`' { atual + 1 } else { 0 };
-        maior = maior.max(atual);
-    }
+    let maior = escape::maior_crases(texto);
     let cerca = "`".repeat(maior + 1);
     let guarda = if maior > 0 { " " } else { "" };
     format!("{cerca}{guarda}{texto}{guarda}{cerca}")
