@@ -88,10 +88,12 @@ pub(crate) fn read_stdin() -> io::Result<String> {
     read_limited(io::stdin().lock(), MAX_INPUT_BYTES)
 }
 
-/// Lê o documento de um caminho: `.msg` vira Markdown pelo `mdv-msg`; HTML vai para `html`; o resto é Markdown puro.
+/// Lê o documento de um caminho: `.msg` vira Markdown pelo `mdv-msg`, `.docx` pelo `mdv-docx`; HTML vai para `html`; o resto é Markdown puro.
 pub(crate) fn read_document(path: &Path) -> io::Result<String> {
     if crate::msg::is_msg(path) {
         crate::msg::read_msg_file(path)
+    } else if crate::docx::is_docx(path) {
+        crate::docx::read_docx_file(path)
     } else if crate::html::is_html(path) {
         crate::html::read_html_file(path)
     } else {
@@ -136,13 +138,17 @@ mod tests {
     use crate::config::Config;
 
     #[test]
-    fn read_document_converte_msg_e_devolve_md_intacto() {
+    fn read_document_converte_docx_msg_e_devolve_md_intacto() {
         let d = tempfile::tempdir().unwrap();
         let msg = d.path().join("oi.msg");
         fs::write(&msg, mdv_msg::testutil::MsgBuilder::new().string(mdv_msg::testutil::tags::SUBJECT, "Oi").build())
             .unwrap();
         let texto = read_document(&msg).unwrap();
         assert!(texto.contains("# Oi"), "{texto}");
+        let docx = d.path().join("oi.docx");
+        let corpo = "<w:p><w:r><w:t>Olá docx</w:t></w:r></w:p>";
+        fs::write(&docx, mdv_docx::testutil::DocxBuilder::novo().corpo(corpo).construir()).unwrap();
+        assert!(read_document(&docx).unwrap().contains("Olá docx"));
         let md = d.path().join("nota.md");
         fs::write(&md, "# Nota\n\ntexto *puro*\n").unwrap();
         assert_eq!(read_document(&md).unwrap(), "# Nota\n\ntexto *puro*\n");

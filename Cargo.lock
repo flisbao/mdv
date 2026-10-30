@@ -940,11 +940,12 @@ dependencies = [
 
 [[package]]
 name = "mdv"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "csv",
  "encoding_rs",
  "image",
+ "mdv-docx",
  "mdv-export",
  "mdv-html",
  "mdv-msg",
@@ -963,8 +964,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mdv-docx"
+version = "0.9.0"
+dependencies = [
+ "flate2",
+ "mdv-text",
+ "quick-xml",
+]
+
+[[package]]
 name = "mdv-export"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "csv",
  "flate2",
@@ -975,7 +985,7 @@ dependencies = [
 
 [[package]]
 name = "mdv-html"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "scraper",
  "unicode-width",
@@ -983,7 +993,7 @@ dependencies = [
 
 [[package]]
 name = "mdv-msg"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "cfb",
  "encoding_rs",
@@ -993,14 +1003,14 @@ dependencies = [
 
 [[package]]
 name = "mdv-text"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "pulldown-cmark",
 ]
 
 [[package]]
 name = "mdv-tools"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "mdv-text",
  "pulldown-cmark",
@@ -1334,6 +1344,15 @@ name = "quick-error"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
+
+[[package]]
+name = "quick-xml"
+version = "0.37.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "331e97a1af0bf59823e6eadffe373d7b27f485be8748f71471c662c1f269b7fb"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "quote"

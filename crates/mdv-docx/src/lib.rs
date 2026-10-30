@@ -1,0 +1,113 @@
+//! Conversão de documentos `.docx` do Word em Markdown.
+//! Biblioteca pura: recebe bytes e devolve texto; a leitura do arquivo fica com o chamador.
+//! O limite de trabalho vem por `Budget`; os tetos de tamanho e contagem são as constantes abaixo.
+
+mod agrupar;
+mod classificar;
+#[cfg(test)]
+mod classificar_tests;
+mod contexto;
+mod corpo;
+#[cfg(test)]
+mod conversao_tests;
+mod escape;
+mod estilo_run;
+mod estilos;
+mod le;
+mod limite;
+mod leitura;
+mod markdown;
+mod md_bloco;
+#[cfg(test)]
+mod md_bloco_tests;
+mod md_inline;
+#[cfg(test)]
+mod md_inline_tests;
+mod md_link;
+mod md_notas;
+mod md_tabela;
+#[cfg(test)]
+mod md_tabela_tests;
+mod modelo;
+mod notas;
+mod numeracao;
+mod pacote;
+mod paragrafo;
+#[cfg(test)]
+mod paragrafo_tests;
+mod partes;
+mod propriedades;
+mod relacoes;
+mod tabela;
+#[cfg(test)]
+mod tabela_tests;
+mod trecho;
+mod xml_leitor;
+mod zip_diretorio;
+mod zip_entrada;
+#[cfg(any(test, feature = "testutil"))]
+pub mod testutil;
+
+use leitura::ler_documento;
+use markdown::escrever;
+use pacote::Pacote;
+use partes::Partes;
+
+/// Tamanho máximo aceito para um arquivo `.docx` inteiro.
+pub const MAX_DOCX_BYTES: u64 = 32 * 1024 * 1024;
+/// Tamanho máximo de uma parte do pacote já descomprimida.
+pub const MAX_PARTE_BYTES: usize = 16 * 1024 * 1024;
+/// Soma máxima dos bytes de todas as partes lidas.
+pub const MAX_TOTAL_BYTES: usize = 40 * 1024 * 1024;
+/// Número máximo de entradas do diretório do ZIP.
+pub const MAX_ENTRADAS: usize = 5000;
+/// Profundidade máxima da árvore XML analisada.
+pub const MAX_PROFUNDIDADE_XML: usize = 100;
+/// Tamanho máximo do destino de um link; acima disso o texto fica sem link.
+pub const MAX_URL_BYTES: usize = 4096;
+/// Número máximo de colunas de uma tabela convertida.
+pub const MAX_COLUNAS: usize = 200;
+/// Nível máximo de recuo de uma lista.
+pub const MAX_NIVEL_LISTA: u8 = 8;
+/// Tamanho máximo do Markdown produzido.
+pub const MAX_MARKDOWN_BYTES: usize = 16 * 1024 * 1024;
+
+/// Orçamento de trabalho consultado pelos laços de conversão.
+pub trait Budget {
+    /// Confirma que ainda há orçamento; chamado por evento XML, por entrada do ZIP e por bloco.
+    fn check(&self) -> Result<(), String>;
+}
+
+/// Converte o `.docx` (bytes) em Markdown. Erros viram texto em português; nunca entra em pânico.
+pub fn to_markdown(bytes: &[u8], budget: &dyn Budget) -> Result<String, String> {
+    let mut pacote = Pacote::abrir(bytes)?;
+    let partes = Partes::carregar(&mut pacote, budget)?;
+    let documento = ler_documento(&partes, budget)?;
+    escrever(&documento, budget)
+}
+
+/// Orçamento sem limite, para testes e uso interno controlado.
+pub struct Unlimited;
+
+impl Budget for Unlimited {
+    fn check(&self) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn tamanho_dos_arquivos() {
+        let pasta = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
+        for entrada in std::fs::read_dir(pasta).expect("pasta src") {
+            let caminho = entrada.expect("entrada").path();
+            if caminho.extension().is_some_and(|e| e == "rs") {
+                let texto = std::fs::read_to_string(&caminho).expect("leitura");
+                let linhas = texto.lines().count();
+                let arquivo = caminho.display();
+                assert!(linhas <= 500, "{arquivo} tem {linhas} linhas");
+            }
+        }
+    }
+}

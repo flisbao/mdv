@@ -2,7 +2,7 @@
 
 **Leia Markdown no terminal como deveria ser: com cor, estrutura e sem sair do teclado.** E converta para PDF, Word, LibreOffice e planilhas quando precisar.
 
-`mdv` transforma qualquer `.md` numa página bem formatada direto no terminal e abre num leitor interativo com busca, navegação por títulos e recarga com `r`. Também abre **JSON, YAML, CSV, TSV e HTML** (tabelas, esquema ou texto, com o erro de sintaxe apontado na linha), desenha **imagens e diagramas Mermaid**, acompanha a saída de **agentes e LLMs** (`--follow`) e **exporta** para PDF, DOCX, ODT, XLSX e ODS. Dois binários pequenos e independentes (`mdv` e `mdv-tools`), sem runtime, sem navegador.
+`mdv` transforma qualquer `.md` numa página bem formatada direto no terminal e abre num leitor interativo com busca, navegação por títulos e recarga com `r`. Também abre **JSON, YAML, CSV, TSV, HTML e documentos do Word (`.docx`)** (tabelas, esquema ou texto, com o erro de sintaxe apontado na linha), desenha **imagens e diagramas Mermaid**, acompanha a saída de **agentes e LLMs** (`--follow`) e **exporta** para PDF, DOCX, ODT, XLSX e ODS. Dois binários pequenos e independentes (`mdv` e `mdv-tools`), sem runtime, sem navegador.
 
 [![release](https://img.shields.io/github/v/release/flisbao/mdv)](https://github.com/flisbao/mdv/releases/latest)
 [![ci](https://github.com/flisbao/mdv/actions/workflows/ci.yml/badge.svg)](https://github.com/flisbao/mdv/actions/workflows/ci.yml)
@@ -14,6 +14,7 @@ agente | mdv --follow                  # acompanha um texto que ainda está cheg
 mdv csv vendas.csv --cols produto,total
 mdv json dados.json --path .itens[0]
 mdv config.yaml                        # YAML: cor por tipo e erro de sintaxe na linha certa
+mdv relatorio.docx                     # Word vira Markdown (também -o relatorio.md)
 mdv relatorio.md -o relatorio.pdf      # exporta (também .docx e .odt)
 mdv vendas.csv -o vendas.xlsx          # CSV/TSV para planilha (também .ods)
 ```
@@ -158,8 +159,9 @@ USO:
     mdv csv|tsv [opções] <arquivo|->
     mdv [opções] <arquivo.md> -o <saída.pdf|docx|odt|xlsx|ods>
     mdv [opções] <email.msg> [-o <saída.md|pdf|docx|odt>]
+    mdv [opções] <documento.docx> [-o <saída.md|pdf|docx|odt>]
     mdv csv|tsv [opções] <arquivo|-> -o <saída.xlsx|ods>
-    mdv <pasta>            (seletor: .md, .msg, .yaml/.yml e .html/.htm da pasta por data, filtro ao digitar)
+    mdv <pasta>            (seletor: .md, .msg, .docx, .yaml/.yml e .html/.htm da pasta por data, filtro ao digitar)
     (o formato também é deduzido da extensão: .json, .jsonl, .yaml, .yml, .csv, .tsv, .html, .htm)
     HTML (.html, .htm): páginas com cores do CSS, sem JavaScript; é uma aproximação, não um navegador
 
@@ -176,7 +178,7 @@ OPÇÕES:
     -o, --output <A>   converte e sai (sem TUI); o formato vem da extensão de A:
                          .md  → .pdf .docx .odt (documento) ou .xlsx .ods (só as tabelas)
                          .csv/.tsv → .xlsx .ods
-                         .msg → .md .pdf .docx .odt .xlsx .ods
+                         .msg, .docx → .md .pdf .docx .odt .xlsx .ods
         --force        com -o: sobrescreve o arquivo de destino se ele já existir
         --section <T>  com -o e Markdown → planilha: só as tabelas da seção de título T
                        (com --table N: só a N-ésima tabela do documento)
@@ -267,6 +269,35 @@ mdv email.msg -o email.pdf              # também .docx, .odt, .xlsx e .ods
 
 A entrada é limitada a 32 MiB. Um `.msg` inválido sai com erro e código 1. O teste `sample_commitado_bate_com_o_gerador` do pacote `mdv-msg` verifica se a amostra commitada produz o mesmo Markdown que o gerador.
 
+## Documentos `.docx` do Word
+
+`mdv` abre um `.docx` direto e o converte em Markdown, então a TUI, o `--plain` e o `-o x.md` (útil para alimentar uma LLM) tratam o resultado como qualquer outro documento. O seletor de pasta também lista `.docx`.
+
+| No Word | No Markdown |
+|---|---|
+| Título (`Heading N`, `Title` ou nível de estrutura de tópicos) | `#` a `######` |
+| Negrito, itálico, tachado, fonte monoespaçada | `**`, `*`, `~~`, `` ` `` |
+| Link externo `http`, `https` ou `mailto` | `[texto](url)`; outros esquemas (`javascript:`, `file:`, `data:`) ficam só com o texto |
+| Lista com marcadores ou numerada, com recuo | `- ` ou `N. `, quatro espaços por nível |
+| Tabela (inclusive células mescladas) | tabela GFM; a primeira linha é o cabeçalho |
+| Estilo de citação, estilo de código | `>` e bloco com cerca |
+| Nota de rodapé ou de fim | `[^N]` e a definição no fim |
+| Imagem | `*[imagem: texto alternativo]*` |
+
+Com o controle de alterações, o texto inserido entra e o apagado some (o resultado é o documento com tudo aceito).
+
+```bash
+mdv samples/relatorio.docx                 # lê a amostra no terminal
+mdv relatorio.docx -o relatorio.md         # grava o Markdown (com --force sobrescreve)
+mdv relatorio.docx -o relatorio.pdf        # também .docx, .odt, .xlsx e .ods
+```
+
+`samples/relatorio.docx` foi gerada pelo próprio exportador do `mdv`; por isso os marcadores de lista dela são texto literal (`• `), e não uma lista do Word.
+
+**Limites:** arquivo de até 32 MiB, ZIP com no máximo 5000 entradas, XML com até 100 níveis de profundidade e Markdown de até 16 MiB. Um arquivo inválido sai com erro e código 1.
+
+**Fora do escopo:** `.doc` antigo e `.docx` criptografado (só um erro claro), imagens (só o texto alternativo), cabeçalho e rodapé de página, comentários, caixas de texto, campos como o sumário, equações, `.docm`/`.dotx`, leitura pelo stdin, numeração automática de títulos e a continuação de numeração entre listas diferentes que compartilham o mesmo modelo.
+
 ## JSON, YAML, CSV e TSV
 
 ```bash
@@ -283,7 +314,7 @@ mdv csv dados.txt --delimiter ';'
 
 O formato também é deduzido da extensão (`.json`, `.jsonl`, `.yaml`, `.yml`, `.csv`, `.tsv`) e aceita `-` (stdin). JSON em lista de objetos vira tabela (objetos aninhados achatados como `endereco.cidade`); na TUI, `v` alterna tabela, esquema e texto (JSON e YAML). Tabelas mostram até 200 colunas e cortam células com mais de 500 caracteres (use `t` para o zoom ou `--cols`). A entrada é limitada a 5 MiB. `--path` e `--as` valem para JSON e YAML (com `--path`, o trecho do YAML aparece escrito como JSON); as opções de CSV/TSV (`--head`, `--cols`, `--no-header`, `--delimiter`) só para CSV/TSV.
 
-**YAML.** A vista padrão (`auto`) é o texto original, com comentários e ordem preservados e cor por tipo (chaves, textos, números, `true`/`false`/`null`); só uma lista de objetos (como vários documentos `---`) abre como tabela, igual ao JSON, e `v` ou `--as text` mostram o texto. As vistas de tabela e de esquema leem o documento como dados: âncoras (`&`), aliases (`*`) e merge keys (`<<`) são resolvidos, tags como `!Ref` e `!Sub` (CloudFormation) são aceitas, vários documentos separados por `---` viram uma lista (como um manifesto Kubernetes com Deployment e Service) e chave repetida vale a última. O YAML 1.1 (`yes`/`no` como booleano) não é aplicado: só o esquema core do YAML 1.2 (a cor da vista de texto vem do realce de código e ainda pinta `yes`/`no` como booleano, mas a tabela e o esquema os tratam como texto). `mdv samples/` lista `.yaml` e `.yml` no seletor, junto com `.md`, `.msg`, `.html` e `.htm`. YAML ainda não exporta (`-o`).
+**YAML.** A vista padrão (`auto`) é o texto original, com comentários e ordem preservados e cor por tipo (chaves, textos, números, `true`/`false`/`null`); só uma lista de objetos (como vários documentos `---`) abre como tabela, igual ao JSON, e `v` ou `--as text` mostram o texto. As vistas de tabela e de esquema leem o documento como dados: âncoras (`&`), aliases (`*`) e merge keys (`<<`) são resolvidos, tags como `!Ref` e `!Sub` (CloudFormation) são aceitas, vários documentos separados por `---` viram uma lista (como um manifesto Kubernetes com Deployment e Service) e chave repetida vale a última. O YAML 1.1 (`yes`/`no` como booleano) não é aplicado: só o esquema core do YAML 1.2 (a cor da vista de texto vem do realce de código e ainda pinta `yes`/`no` como booleano, mas a tabela e o esquema os tratam como texto). `mdv samples/` lista `.yaml` e `.yml` no seletor, junto com `.md`, `.msg`, `.docx`, `.html` e `.htm`. YAML ainda não exporta (`-o`).
 
 **Erros de sintaxe (JSON e YAML).** Arquivo inválido não vira uma tela de erro vazia: o `mdv` mostra o texto original com a **linha do erro em fundo vermelho** e logo abaixo `✗ linha N, coluna M: mensagem` em português (por exemplo, `vírgula sobrando antes de fechar` no JSON ou `esperava uma chave nesta linha (verifique a indentação)` no YAML). Na TUI o documento abre já rolado até o erro, com algumas linhas de contexto acima; `m` mostra a fonte crua. Só erros de sintaxe são apontados, nunca estilo. Experimente `mdv samples/quebrado.yaml` e `mdv samples/quebrado.json`.
 
@@ -313,7 +344,7 @@ mdv docs/                             # seletor de pasta: lista também .html e 
 
 ```bash
 mdv relatorio.md -o relatorio.pdf                    # também .docx e .odt
-mdv email.msg -o email.md                            # .msg → Markdown (só .msg aceita -o .md)
+mdv email.msg -o email.md                            # .msg ou .docx → Markdown (só eles aceitam -o .md)
 mdv dados.csv -o dados.xlsx                          # também .ods; tsv igual
 mdv relatorio.md -o tabelas.ods --section Vendas     # só as tabelas da seção "Vendas"
 mdv relatorio.md -o tabela2.xlsx --table 2           # só a 2ª tabela do documento

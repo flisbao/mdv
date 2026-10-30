@@ -258,7 +258,7 @@ fn take_bool(flags: &mut Vec<Flag>, name: &str) -> bool {
     found
 }
 
-/// `-o` com extensão `.md`: o texto convertido de um `.msg` gravado como Markdown.
+/// `-o` com extensão `.md`: o texto convertido de um `.msg` ou `.docx` gravado como Markdown.
 pub(crate) fn saida_markdown(output: &str) -> bool {
     Path::new(output).extension().is_some_and(|e| e.eq_ignore_ascii_case("md"))
 }
@@ -282,9 +282,12 @@ fn into_export(
     if common.follow {
         return Err("-o não combina com --follow".to_string());
     }
-    let entrada_msg = common.path.as_deref().is_some_and(|p| crate::msg::is_msg(Path::new(p)));
-    if md_out && !(matches!(doc, Doc::Markdown) && entrada_msg) {
-        return Err("-o .md só vale para .msg".to_string());
+    let entrada_convertida = common.path.as_deref().is_some_and(|p| {
+        let p = Path::new(p);
+        crate::msg::is_msg(p) || crate::docx::is_docx(p)
+    });
+    if md_out && !(matches!(doc, Doc::Markdown) && entrada_convertida) {
+        return Err("-o .md só vale para .msg e .docx".to_string());
     }
     match &doc {
         Doc::Json { .. } => return Err("JSON ainda não exporta (use .md, .csv ou .tsv)".to_string()),
@@ -746,13 +749,15 @@ mod tests {
     }
 
     #[test]
-    fn saida_md_so_com_msg() {
+    fn saida_md_so_com_msg_e_docx() {
         let e = run(&["a.md", "-o", "b.md"]).unwrap_err();
-        assert!(e.contains("só vale para .msg"), "{e}");
+        assert!(e.contains("só vale para .msg e .docx"), "{e}");
         let e = run(&["a.csv", "-o", "b.md"]).unwrap_err();
-        assert!(e.contains("só vale para .msg"), "{e}");
-        assert!(run(&["-", "-o", "b.md"]).unwrap_err().contains("só vale para .msg"));
+        assert!(e.contains("só vale para .msg e .docx"), "{e}");
+        assert!(run(&["-", "-o", "b.md"]).unwrap_err().contains("só vale para .msg e .docx"));
         let c = run(&["a.MSG", "-o", "b.md"]).unwrap();
+        assert!(matches!(c.command, Command::Export(Export { doc: Doc::Markdown, .. })));
+        let c = run(&["a.docx", "-o", "b.md"]).unwrap();
         assert!(matches!(c.command, Command::Export(Export { doc: Doc::Markdown, .. })));
         assert!(run(&["a.msg", "-o", "b.md", "--section", "X"]).unwrap_err().contains("não combina"));
         assert!(run(&["a.msg", "-o", "b.md", "--table", "1"]).unwrap_err().contains("não combina"));

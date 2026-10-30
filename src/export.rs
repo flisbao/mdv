@@ -102,7 +102,7 @@ fn check_destination(out: &Path, force: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// `-o x.md` (só de `.msg`): grava o Markdown já convertido, com as mesmas checagens e a mesma
+/// `-o x.md` (de `.msg` e `.docx`): grava o Markdown já convertido, com as mesmas checagens e a mesma
 /// gravação atômica das demais saídas.
 pub(crate) fn write_markdown(out: &Path, text: &str, force: bool) -> Result<(), String> {
     check_destination(out, force)?;
@@ -151,7 +151,7 @@ pub(crate) fn run_export(cli: &cli::Cli, e: &cli::Export, mem_warning: Option<&s
     }
     let (source, text) = load_source(cli.common.path.as_deref())?;
     if cli::saida_markdown(&e.output) {
-        // A entrada já é o Markdown do `.msg` (`load_source` converte); só falta gravar.
+        // A entrada já é o Markdown do `.msg` ou `.docx` (`load_source` converte); só falta gravar.
         write_markdown(Path::new(&e.output), &text, e.force).map_err(Failure::Runtime)?;
         return write_stdout(&format!("exportado: {}\n", render::sanitize(&e.output)));
     }

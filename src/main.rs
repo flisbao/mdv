@@ -5,6 +5,7 @@ mod clip;
 mod config;
 mod data;
 mod doc;
+mod docx;
 mod export;
 mod graphics;
 mod html;
