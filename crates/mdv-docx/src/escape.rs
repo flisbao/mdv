@@ -1,11 +1,14 @@
 //! Escape de texto do documento para Markdown. Cada função é o ponto único de escape do trecho
 //! emitido: nunca escape duas vezes o mesmo texto.
 
-/// Escapa os caracteres com significado inline (`\ * _ ` [ ] < ~`).
+/// Escapa os caracteres com significado inline (`\ * _ ` [ ] < ~`) e o `&` que abriria uma
+/// entidade (`&amp;`, `&#65;`), que o leitor Markdown mostraria como outro caractere.
 pub(crate) fn inline(s: &str) -> String {
     let mut saida = String::with_capacity(s.len());
-    for c in s.chars() {
-        if matches!(c, '\\' | '*' | '_' | '`' | '[' | ']' | '<' | '~') {
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        let entidade = c == '&' && chars.peek().is_some_and(|p| p.is_ascii_alphanumeric() || *p == '#');
+        if entidade || matches!(c, '\\' | '*' | '_' | '`' | '[' | ']' | '<' | '~') {
             saida.push('\\');
         }
         saida.push(c);
@@ -19,7 +22,7 @@ pub(crate) fn inline(s: &str) -> String {
 /// marcadores de bloco, `|` poderia forjar uma tabela GFM, e `N.`/`N)` viraria lista numerada. Depois do primeiro caractere
 /// o texto já está seguro e não precisa de nova barra.
 pub(crate) fn inicio_de_linha(s: &str) -> String {
-    if s.starts_with(['#', '>', '-', '+', '=', '|']) {
+    if s.starts_with(['#', '>', '-', '+', '=', '|', ':']) {
         return format!("\\{s}");
     }
     let digitos = s.bytes().take_while(u8::is_ascii_digit).count();
@@ -70,6 +73,19 @@ mod tests {
     #[test]
     fn escapa_crase() {
         assert_eq!(inline("a`b"), "a\\`b");
+    }
+
+    #[test]
+    fn e_comercial_de_entidade_e_escapado() {
+        assert_eq!(inline("a &amp; b"), "a \\&amp; b");
+        assert_eq!(inline("&#65;"), "\\&#65;");
+        assert_eq!(inline("R&D"), "R\\&D");
+    }
+
+    #[test]
+    fn dois_pontos_no_comeco_da_linha_sao_escapados() {
+        assert_eq!(inicio_de_linha(":--"), "\\:--");
+        assert_eq!(inicio_de_linha("a:b"), "a:b");
     }
 
     #[test]

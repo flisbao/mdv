@@ -92,6 +92,17 @@ fn texto_de_item_que_parece_bloco_e_escapado() {
 }
 
 #[test]
+fn hash_final_do_titulo_e_escapado() {
+    let b = [Bloco::Titulo { nivel: 2, texto: texto("Tarefas #") }];
+    assert_eq!(md(&b), "## Tarefas \\#");
+}
+
+#[test]
+fn numero_de_item_com_dez_digitos_continua_sendo_lista() {
+    assert_eq!(md(&[numerado(0, 4_000_000_000, "x")]), "999999999. x");
+}
+
+#[test]
 fn item_vazio_ainda_tem_marcador() {
     assert_eq!(md(&[item(0, "")]), "-");
 }

@@ -38,7 +38,12 @@ fn avulso(bloco: &Bloco, notas: &mut Notas, limite: &mut Limite) -> Result<Strin
 /// Título ATX; o nível é limitado a 1..=6.
 fn titulo(nivel: u8, texto: &[Trecho], notas: &mut Notas) -> String {
     let marcas = "#".repeat(nivel.clamp(1, 6) as usize);
-    format!("{marcas} {}", inline(texto, notas, Modo::Titulo)).trim_end().to_string()
+    let mut corpo = inline(texto, notas, Modo::Titulo);
+    // Um `#` final depois de espaço seria a sequência de fecho do título e sumiria.
+    if corpo.ends_with('#') {
+        corpo.insert(corpo.len() - 1, '\\');
+    }
+    format!("{marcas} {corpo}").trim_end().to_string()
 }
 
 fn paragrafo(texto: &[Trecho], notas: &mut Notas) -> String {
@@ -60,7 +65,8 @@ fn lista(itens: &[Bloco], notas: &mut Notas, limite: &mut Limite) -> Result<Stri
     let mut linhas: Vec<String> = Vec::new();
     for bloco in itens {
         let Bloco::Item { nivel, numerada, numero, texto } = bloco else { continue };
-        let marcador = if *numerada { format!("{numero}. ") } else { "- ".to_string() };
+        // Com mais de 9 dígitos o CommonMark não reconhece a lista numerada.
+        let marcador = if *numerada { format!("{}. ", (*numero).min(999_999_999)) } else { "- ".to_string() };
         while abertos.last().is_some_and(|&(n, _)| n >= *nivel) {
             abertos.pop();
         }
