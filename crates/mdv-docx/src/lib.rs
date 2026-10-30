@@ -7,11 +7,13 @@ mod classificar;
 #[cfg(test)]
 mod classificar_tests;
 mod contexto;
+mod escape;
 mod corpo;
 mod estilo_run;
 mod estilos;
 mod le;
 mod leitura;
+mod md_link;
 mod modelo;
 mod notas;
 mod numeracao;
