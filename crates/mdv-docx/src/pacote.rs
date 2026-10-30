@@ -24,6 +24,7 @@ impl<'a> Pacote<'a> {
     }
 
     /// Diz se existe uma parte com este nome (sem diferenciar caixa).
+    #[cfg(test)]
     pub(crate) fn tem(&self, nome: &str) -> bool {
         self.entradas.iter().any(|e| e.nome.eq_ignore_ascii_case(nome))
     }

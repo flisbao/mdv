@@ -1,19 +1,21 @@
 //! Conversão de documentos `.docx` do Word em Markdown.
 //! Biblioteca pura: recebe bytes e devolve texto; a leitura do arquivo fica com o chamador.
 //! O limite de trabalho vem por `Budget`; os tetos de tamanho e contagem são as constantes abaixo.
-#![allow(dead_code)]
 
 mod agrupar;
 mod classificar;
 #[cfg(test)]
 mod classificar_tests;
 mod contexto;
-mod escape;
 mod corpo;
+#[cfg(test)]
+mod conversao_tests;
+mod escape;
 mod estilo_run;
 mod estilos;
 mod le;
 mod leitura;
+mod markdown;
 mod md_bloco;
 #[cfg(test)]
 mod md_bloco_tests;
@@ -45,6 +47,11 @@ mod zip_entrada;
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
 
+use leitura::ler_documento;
+use markdown::escrever;
+use pacote::Pacote;
+use partes::Partes;
+
 /// Tamanho máximo aceito para um arquivo `.docx` inteiro.
 pub const MAX_DOCX_BYTES: u64 = 32 * 1024 * 1024;
 /// Tamanho máximo de uma parte do pacote já descomprimida.
@@ -66,6 +73,14 @@ pub const MAX_MARKDOWN_BYTES: usize = 16 * 1024 * 1024;
 pub trait Budget {
     /// Confirma que ainda há orçamento; chamado por evento XML, por entrada do ZIP e por bloco.
     fn check(&self) -> Result<(), String>;
+}
+
+/// Converte o `.docx` (bytes) em Markdown. Erros viram texto em português; nunca entra em pânico.
+pub fn to_markdown(bytes: &[u8], budget: &dyn Budget) -> Result<String, String> {
+    let mut pacote = Pacote::abrir(bytes)?;
+    let partes = Partes::carregar(&mut pacote, budget)?;
+    let documento = ler_documento(&partes, budget)?;
+    escrever(&documento, budget)
 }
 
 /// Orçamento sem limite, para testes e uso interno controlado.
