@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trocapay API - Referência</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --danger: #f85149;
+  --border: #30363d;
+  --code-bg: #0b0f14;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; line-height: 1.6; }
+.layout { display: flex; min-height: 100vh; }
+nav.side { width: 240px; background: var(--panel); border-right: 1px solid var(--border); padding: 24px 16px; }
+nav.side h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; }
+nav.side ul { list-style: none; padding: 0; margin: 0 0 24px; }
+nav.side li { margin: 4px 0; }
+nav.side a { color: var(--text); text-decoration: none; display: block; padding: 4px 8px; border-radius: 6px; }
+nav.side a.ativo { background: rgba(88,166,255,.15); color: var(--accent); }
+main { flex: 1; padding: 32px 48px; max-width: 880px; }
+h1 { font-size: 32px; margin-top: 0; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+h2 { font-size: 24px; margin-top: 40px; }
+h3 { font-size: 16px; color: var(--accent); margin: 24px 0 8px; }
+table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+th { background: var(--panel); }
+td.num { text-align: right; font-family: ui-monospace, monospace; }
+code { font-family: ui-monospace, monospace; background: rgba(110,118,129,.25); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+.k { color: #ff7b72; }
+.s { color: #a5d6ff; }
+.c { color: #8b949e; font-style: italic; }
+.n { color: #79c0ff; }
+.f { color: #d2a8ff; }
+.note, .warn { border-left: 4px solid var(--accent); background: rgba(88,166,255,.08); padding: 12px 16px; margin: 20px 0; border-radius: 0 6px 6px 0; }
+.note h3, .warn h3 { margin: 0 0 4px; }
+.warn { border-left-color: var(--warn); background: rgba(210,153,34,.1); }
+.warn p { margin: 0; }
+.note p { margin: 0; }
+kbd { font-family: ui-monospace, monospace; background: #21262d; border: 1px solid #484f58; border-bottom-width: 2px; border-radius: 4px; padding: 0 6px; font-size: 12px; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 24px; }
+dt { font-weight: 600; color: var(--ok); }
+dd { margin: 0; color: var(--muted); }
+.badge { display: inline-block; font-size: 12px; padding: 2px 10px; border-radius: 999px; background: rgba(63,185,80,.15); color: var(--ok); margin-right: 6px; }
+.badge.beta { background: rgba(210,153,34,.15); color: var(--warn); }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="side">
+<h2>Documentação</h2>
+<ul>
+<li><a class="ativo" href="#inicio">Início</a></li>
+<li><a href="#autenticacao">Autenticação</a></li>
+<li><a href="#cobrancas">Cobranças</a></li>
+<li><a href="#webhooks">Webhooks</a></li>
+<li><a href="#erros">Erros</a></li>
+</ul>
+<h2>Recursos</h2>
+<ul>
+<li><a href="#limites">Limites</a></li>
+<li><a href="#changelog">Changelog</a></li>
+</ul>
+</nav>
+
+<main>
+<h1 id="inicio" data-esperado="Referência da API Trocapay">Referência da API Trocapay</h1>
+<p data-esperado="Pressione Ctrl + K para buscar na documentação.">Pressione <kbd>Ctrl</kbd> + <kbd>K</kbd> para buscar na documentação.</p>
+<p><span class="badge">Estável</span><span class="badge beta">Beta: pix parcelado</span></p>
+<p>A API Trocapay permite criar cobranças, consultar pagamentos e receber eventos em tempo real. Todas as respostas são JSON e seguem o padrão REST.</p>
+
+<h2 id="autenticacao">Autenticação</h2>
+<p>Cada requisição precisa do cabeçalho <code>Authorization</code> com a chave da sua conta. As chaves de teste começam com <code>sk_test</code>.</p>
+<div class="warn">
+<h3>Atenção</h3>
+<p data-esperado="Nunca exponha a chave secreta no navegador.">Nunca exponha a chave secreta no navegador.</p>
+</div>
+<div class="note">
+<h3>Dica</h3>
+<p>Ambientes de teste usam chaves com o prefixo <code>sk_test</code> e não geram cobranças reais.</p>
+</div>
+
+<h2 id="cobrancas" data-esperado="Criar cobrança">Criar cobrança</h2>
+<p>Uma cobrança é criada com um <code>POST</code> para o endpoint abaixo. O corpo aceita os parâmetros da tabela.</p>
+<pre><code><span class="c"># Cria uma cobrança de R$ 49,90</span>
+<span class="n">curl</span> https://api.trocapay.example/v2/cobrancas \
+  -H <span class="s">"Authorization: Bearer sk_live_xxx"</span> \
+  -d <span class="s">"valor=4990"</span> \
+  -d <span class="s">"descricao=Assinatura mensal"</span></code></pre>
+
+<h3>Parâmetros</h3>
+<table>
+<thead>
+<tr><th>Parâmetro</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr>
+</thead>
+<tbody>
+<tr><td><code>valor</code></td><td>inteiro</td><td>sim</td><td data-esperado="Valor total da cobrança em centavos">Valor total da cobrança em centavos</td></tr>
+<tr><td><code>moeda</code></td><td>texto</td><td>não</td><td>Código ISO 4217. O padrão é BRL.</td></tr>
+<tr><td><code>descricao</code></td><td>texto</td><td>não</td><td>Texto exibido na fatura do cliente.</td></tr>
+<tr><td><code>parcelas</code></td><td>inteiro</td><td>não</td><td>De 1 a 12. O padrão é 1.</td></tr>
+</tbody>
+</table>
+
+<div class="warn">
+<h3>Valores em centavos</h3>
+<p>Nunca envie valores com ponto decimal. Um valor de R$ 49,90 é enviado como <code>4990</code>.</p>
+</div>
+
+<h3>Resposta</h3>
+<pre><code>{
+  <span class="k">"id"</span>: <span class="s">"cob_01HZX"</span>,
+  <span class="k">"status"</span>: <span class="s">"pendente"</span>,
+  <span class="k">"valor"</span>: <span class="n">4990</span>,
+  <span class="k">"pago"</span>: <span class="k">false</span>
+}</code></pre>
+
+<h3>Exemplo com Node.js</h3>
+<pre><code><span class="k">import</span> { Trocapay } <span class="k">from</span> <span class="s">'trocapay'</span>;
+<span class="k">const</span> pay = <span class="k">new</span> <span class="f">Trocapay</span>(process.env.TROCAPAY_KEY);
+<span class="k">await</span> pay.cobrancas.<span class="f">criar</span>({ valor: <span class="n">4990</span> });</code></pre>
+
+<h2 id="webhooks">Webhooks</h2>
+<p>Os eventos são enviados por <code>POST</code> para a URL que você cadastrou no painel.</p>
+<dl>
+<dt>cobranca.pago</dt>
+<dd>Disparado quando o pagamento é confirmado pelo banco.</dd>
+<dt>cobranca.vencida</dt>
+<dd>Disparado quando o prazo de pagamento termina sem quitação.</dd>
+<dt>reembolso.criado</dt>
+<dd>Disparado quando um estorno é solicitado pelo lojista.</dd>
+</dl>
+
+<h2 id="erros">Erros</h2>
+<p>Erros usam os códigos HTTP padrão. O corpo traz um campo <code>codigo</code> legível por máquina.</p>
+<table>
+<thead><tr><th>HTTP</th><th>Código</th><th>Significado</th></tr></thead>
+<tbody>
+<tr><td>400</td><td><code>parametro_invalido</code></td><td>Algum campo não passou na validação.</td></tr>
+<tr><td>401</td><td><code>chave_invalida</code></td><td>A chave não existe ou foi revogada.</td></tr>
+<tr><td>429</td><td><code>limite_excedido</code></td><td>Muitas requisições em pouco tempo.</td></tr>
+</tbody>
+</table>
+
+<h2 id="limites">Limites</h2>
+<p>Cada conta pode fazer até 100 requisições por segundo. Acima disso, a API responde com <code>429</code>.</p>
+<div class="note">
+<h3>Changelog</h3>
+<p>As mudanças de versão estão documentadas na página de changelog do portal.</p>
+</div>
+</main>
+</div>
+</body>
+</html>

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agenda Ritmo - organize sua semana</title>
+<style>
+:root {
+  --roxo: #4b2e83;
+  --verde: #1d7874;
+  --texto: #1e1b2e;
+  --suave: #5c5873;
+  --fundo: #faf9fc;
+  --cartao: #ffffff;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; color: var(--texto); background: var(--fundo); line-height: 1.5; }
+.container { max-width: 1040px; margin: 0 auto; padding: 0 1.25rem; }
+
+.hero {
+  background: linear-gradient(135deg, var(--roxo), var(--verde));
+  color: #fff;
+  text-align: center;
+  padding: 4.5rem 0 5rem;
+}
+.hero h1 { font-size: 2.4rem; line-height: 1.15; margin: 0 0 1rem; }
+.hero p { font-size: 1.1rem; max-width: 36rem; margin: 0 auto 2rem; opacity: .92; }
+
+.btn {
+  display: inline-block;
+  padding: .8rem 1.6rem;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--roxo);
+  font-weight: 700;
+  text-decoration: none;
+}
+.btn:hover { background: #ece6f7; }
+.btn-secundario { background: transparent; color: #fff; border: 2px solid rgba(255,255,255,.7); margin-left: .5rem; }
+
+section { padding: 3.5rem 0; }
+section h2 { text-align: center; font-size: 1.8rem; margin: 0 0 2rem; }
+
+.grade { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+.recurso { background: var(--cartao); border: 1px solid #e4e0ee; border-radius: 12px; padding: 1.5rem; }
+.recurso .icone { font-size: 1.8rem; }
+.recurso h3 { margin: .5rem 0; font-size: 1.15rem; }
+.recurso p { margin: 0; color: var(--suave); }
+
+.planos { display: flex; flex-wrap: wrap; gap: 1.25rem; justify-content: center; }
+.plano {
+  flex: 1 1 260px;
+  max-width: 320px;
+  background: var(--cartao);
+  border: 1px solid #e4e0ee;
+  border-radius: 14px;
+  padding: 1.75rem;
+  display: flex;
+  flex-direction: column;
+}
+.plano.destaque { border: 2px solid var(--verde); box-shadow: 0 10px 30px rgba(29,120,116,.18); }
+.plano h3 { margin: 0 0 .25rem; font-size: 1.25rem; }
+.preco { font-size: 2rem; font-weight: 800; margin: .5rem 0 1rem; }
+.preco small { font-size: .9rem; font-weight: 400; color: var(--suave); }
+.plano ul { padding-left: 1.1rem; margin: 0 0 1.5rem; flex: 1; }
+.plano .btn { background: var(--roxo); color: #fff; text-align: center; }
+.plano .btn:hover { background: #3a2166; }
+
+.faixa { background: #efeaf8; }
+.rodape { background: #1e1b2e; color: #cfc9e2; padding: 3rem 0 2rem; font-size: .95rem; }
+.rodape-colunas { display: flex; flex-wrap: wrap; gap: 2rem; }
+.rodape-colunas > div { flex: 1 1 180px; }
+.rodape h4 { color: #fff; margin: 0 0 .6rem; }
+.rodape ul { list-style: none; padding: 0; margin: 0; }
+.rodape li { margin: .3rem 0; }
+.rodape a { color: #cfc9e2; text-decoration: none; }
+.rodape a:hover { color: #fff; text-decoration: underline; }
+.direitos { margin-top: 2rem; border-top: 1px solid #353049; padding-top: 1rem; font-size: .85rem; opacity: .8; }
+
+@media (min-width: 700px) {
+  .grade { grid-template-columns: repeat(3, 1fr); }
+  .hero h1 { font-size: 3.2rem; }
+}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="container">
+    <p>Agenda Ritmo para equipes pequenas</p>
+    <h1 data-esperado="Organize seu tempo sem complicação">Organize seu tempo sem complicação</h1>
+    <p>Reúna tarefas, reuniões e prazos em um só lugar. Sua semana cabe em uma tela, mesmo quando a agenda está cheia.</p>
+    <a class="btn" href="#planos" data-esperado="Comece grátis hoje">Comece grátis hoje</a>
+    <a class="btn btn-secundario" href="#recursos">Ver recursos</a>
+  </div>
+</header>
+
+<section id="recursos">
+  <div class="container">
+    <h2 data-esperado="Recursos principais">Recursos principais</h2>
+    <div class="grade">
+      <article class="recurso">
+        <div class="icone">&#128197;</div>
+        <h3>Calendário compartilhado</h3>
+        <p>Veja a agenda do time inteiro e encontre horários livres sem trocar dez mensagens.</p>
+      </article>
+      <article class="recurso">
+        <div class="icone">&#9989;</div>
+        <h3>Tarefas com prazo</h3>
+        <p>Cada item tem dono, data e lembrete. Atrasos aparecem em destaque no topo da lista.</p>
+      </article>
+      <article class="recurso">
+        <div class="icone">&#128276;</div>
+        <h3>Lembretes inteligentes</h3>
+        <p>Receba um aviso antes de cada compromisso, por e-mail ou no celular, sem ruído extra.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="planos" class="faixa">
+  <div class="container">
+    <h2>Escolha o seu plano</h2>
+    <div class="planos">
+      <div class="plano">
+        <h3>Plano Essencial</h3>
+        <div class="preco">R$ 0 <small>/ mês</small></div>
+        <ul>
+          <li>Até 3 pessoas na equipe</li>
+          <li>Calendário pessoal</li>
+          <li>Lembretes por e-mail</li>
+        </ul>
+        <a class="btn" href="#">Começar agora</a>
+      </div>
+      <div class="plano destaque">
+        <h3 data-esperado="Plano Profissional">Plano Profissional</h3>
+        <div class="preco">R$ 39 <small>/ mês por pessoa</small></div>
+        <ul>
+          <li>Equipes ilimitadas</li>
+          <li>Tarefas com dependências</li>
+          <li>Relatórios semanais</li>
+          <li>Suporte em horário comercial</li>
+        </ul>
+        <a class="btn" href="#">Testar 14 dias</a>
+      </div>
+      <div class="plano">
+        <h3>Plano Empresarial</h3>
+        <div class="preco">Sob consulta</div>
+        <ul>
+          <li>Single sign-on e auditoria</li>
+          <li>Contrato anual com faturamento</li>
+          <li>Gerente de conta dedicado</li>
+        </ul>
+        <a class="btn" href="#">Falar com vendas</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="rodape">
+  <div class="container">
+    <div class="rodape-colunas">
+      <div>
+        <h4>Produto</h4>
+        <ul>
+          <li><a href="#recursos">Recursos</a></li>
+          <li><a href="#planos">Preços</a></li>
+          <li><a href="#">Novidades</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Empresa</h4>
+        <ul>
+          <li><a href="#">Sobre nós</a></li>
+          <li><a href="#">Carreiras</a></li>
+          <li><a href="#">Imprensa</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Ajuda</h4>
+        <ul>
+          <li><a href="#">Central de ajuda</a></li>
+          <li><a href="#">Status do serviço</a></li>
+          <li><a href="#">Fale conosco</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="#">Privacidade</a></li>
+          <li><a href="#">Termos de uso</a></li>
+          <li><a href="#">Cookies</a></li>
+        </ul>
+      </div>
+    </div>
+    <p class="direitos">© 2026 Agenda Ritmo. Todos os direitos reservados.</p>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll('a[href^="#"]').forEach(function (a) {
+    a.addEventListener('click', function () { console.log('navegação interna'); });
+  });
+</script>
+</body>
+</html>

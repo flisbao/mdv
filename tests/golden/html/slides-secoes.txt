@@ -1,0 +1,221 @@
+────────────────────────────────────────────────────────────────────────────────
+                                                                                
+                                 Curso de Rust                                  
+                                                                                
+                       Módulo 3 - Ownership e empréstimos                       
+                                                                                
+          Turma de outubro de 2026, com exercícios em todas as aulas.           
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────────────
+                                                                                
+        Por que ownership existe                                                
+        ────────────────────────────────────────────────────────────────        
+                                                                                
+        Rust garante segurança de memória sem coletor de lixo. A regra          
+        central é simples:                                                      
+                                                                                
+        ▌                                                                       
+        ▌    Cada valor tem exatamente um dono, e quando o dono sai             
+        ▌    de escopo, o valor é liberado.                                     
+        ▌                                                                       
+        ▌    Livro oficial da linguagem, capítulo 4                             
+        ▌                                                                       
+                                                                                
+        ╭────────────────────────────╮   ╭────────────────────────────╮         
+        │                            │   │                            │         
+        │    Na prática              │   │    Dica                    │         
+        │    • Atribuir um String    │   │    Use clone() quando      │         
+        │      move a posse.         │   │    precisar de uma         │         
+        │    • O original deixa      │   │    cópia independente.     │         
+        │      de ser usável.        │   │                            │         
+        │                            │   │                            │         
+        │                            │   │                            │         
+        ╰────────────────────────────╯   ╰────────────────────────────╯         
+        Slide 2 de 6                                                            
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────────────
+                                                                                
+        Empréstimos imutáveis                                                   
+        ────────────────────────────────────────────────────────────────        
+                                                                                
+        Uma referência &T empresta o valor sem tomar posse dele.                
+                                                                                
+        • Várias referências imutáveis podem coexistir.                         
+        • Nenhuma delas pode modificar o valor.                                 
+        • O dono continua responsável pela liberação.                           
+                                                                                
+                                                                                
+            // várias leituras ao mesmo tempo                                   
+            let a = &texto;                                                     
+            let b = &texto;                                                     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────────────
+                                                                                
+        Empréstimos mutáveis                                                    
+        ────────────────────────────────────────────────────────────────        
+                                                                                
+        Só pode existir um empréstimo mutável por vez. Essa restrição           
+        evita corridas de dados.                                                
+                                                                                
+        ╭────────────────────────────╮   ╭────────────────────────────╮         
+        │                            │   │                            │         
+        │    Permitido               │   │    Recusado                │         
+        │    Um &mut sozinho,        │   │    Um &mut enquanto        │         
+        │    usado e encerrado.      │   │    existe um & ainda       │         
+        │                            │   │    usado.                  │         
+        │                            │   │                            │         
+        │                            │   │                            │         
+        ╰────────────────────────────╯   ╰────────────────────────────╯         
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────────────
+                                                                                
+        Tempo de vida                                                           
+        ────────────────────────────────────────────────────────────────        
+                                                                                
+         Lifetimes descrevem por quanto tempo uma referência é válida.          
+                                                                                
+                                                                                
+            fn maior<'a>(x: &'a str, y: &'a str) -> &'a str {                   
+                if x.len() > y.len() { x } else { y }                           
+            }                                                                   
+                                                                                
+                                                                                
+        O compilador verifica a regra; você apenas a declara quando ela         
+        não é óbvia.                                                            
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────────────
+                                                                                
+        Exercícios da semana                                                    
+        ────────────────────────────────────────────────────────────────        
+                                                                                
+        1. Corrija o programa que move um vetor duas vezes.                     
+        2. Escreva uma função que devolve a maior palavra de uma lista.         
+        3. Explique, com suas palavras, por que o código do exercício 1         
+           falha.                                                               
+                                                                                
+                 Entregas até domingo, no repositório da turma.                 
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                

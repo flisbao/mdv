@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saída de terminal convertida (aha)</title>
+<style>
+  body {
+    margin: 0;
+    padding: 16px;
+    background: #111;
+    color: #ccc;
+    font-family: monospace;
+  }
+  h1 { color: #ddd; font-size: 15px; font-family: system-ui, sans-serif; margin: 0 0 10px; }
+  pre {
+    background: #000;
+    color: #ccc;
+    padding: 12px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.35;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .ico { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>Saída do comando <code>make deploy</code> convertida para HTML</h1>
+
+<pre style="background:#000;color:#ccc"><span style="color:#888">[2026-10-30 08:14:02]</span> <span style="font-weight:bold;color:#fff">==&gt; Iniciando o pipeline de implantação</span>
+<span style="color:#888">[2026-10-30 08:14:02]</span> <span style="color:#0f0">OK</span>   Variáveis de ambiente carregadas (42 chaves)
+<span style="color:#888">[2026-10-30 08:14:03]</span> <span style="color:#0f0">OK</span>   Conexão com o registro de contêineres estabelecida
+<span style="color:#888">[2026-10-30 08:14:03]</span> <span style="color:#ff0">AVISO</span> Cache de dependências expirado, reconstruindo
+<span style="color:#888">[2026-10-30 08:14:05]</span> <span style="color:#0f0">OK</span>   Dependências instaladas em 2m 03s
+<span style="color:#888">[2026-10-30 08:14:08]</span> <span style="color:#0ff">INFO</span>  Compilando o módulo <span style="font-weight:bold">api-gateway</span> (release)
+<span style="color:#888">[2026-10-30 08:14:21]</span> <span style="color:#0f0">OK</span>   Módulo api-gateway compilado sem erros
+<span style="color:#888">[2026-10-30 08:14:22]</span> <span style="color:#0ff">INFO</span>  Compilando o módulo <span style="font-weight:bold">worker-fila</span> (release)
+<span style="color:#888">[2026-10-30 08:14:37]</span> <span style="color:#0f0">OK</span>   Módulo worker-fila compilado sem erros
+<span style="color:#888">[2026-10-30 08:14:38]</span> <span style="color:#f55">ERRO</span>  Teste de integração falhou: <span style="text-decoration:underline" data-esperado="timeout ao consultar o banco de dados">timeout ao consultar o banco de dados</span>
+<span style="color:#888">[2026-10-30 08:14:38]</span> <span style="color:#ff0">AVISO</span> Repetindo o teste (tentativa 2 de 3)
+<span style="color:#888">[2026-10-30 08:14:41]</span> <span style="color:#0f0">OK</span>   <span data-esperado="Teste de integração aprovado na segunda tentativa">Teste de integração aprovado na segunda tentativa</span>
+<span style="color:#888">[2026-10-30 08:14:42]</span> <span style="color:#0ff">INFO</span>  Enviando imagens para o registro
+<span style="color:#888">[2026-10-30 08:14:44]</span>        <span style="color:#888">api-gateway:2026.10.30     sha256:9f3a…c21e  enviada</span>
+<span style="color:#888">[2026-10-30 08:14:47]</span>        <span style="color:#888">worker-fila:2026.10.30     sha256:b71d…07aa  enviada</span>
+<span style="color:#888">[2026-10-30 08:14:47]</span> <span style="color:#0f0">OK</span>   Imagens publicadas
+
+<span style="font-weight:bold;color:#fff" data-esperado="Progresso da implantação em produção">Progresso da implantação em produção</span>
+<span style="color:#888">cluster us-east-1  </span> <span style="color:#0f0">████████████████████████</span><span style="color:#333">░░░░░░░░░░░░░░░░</span>  60%  <span style="color:#888">3/5 réplicas</span>
+<span style="color:#888">cluster eu-west-1  </span> <span style="color:#0f0">██████████████████████████████████</span><span style="color:#333">░░</span>  94%  <span style="color:#888">8/9 réplicas</span>
+<span style="color:#888">cluster sa-east-1  </span> <span style="color:#0f0">████████████████████████████████████</span> 100%  <span style="color:#888">4/4 réplicas</span>
+<span style="color:#888">cluster ap-south-1 </span> <span style="color:#ff0">██████</span><span style="color:#333">░░░░░░░░░░░░░░░░░░░░░░░░░░</span>  18%  <span style="color:#888">1/6 réplicas</span>
+
+<span style="color:#888">[2026-10-30 08:16:10]</span> <span style="color:#0ff">INFO</span>  Migração do esquema aplicada: <span style="background:#222;color:#fff"> 0047_indice_pedidos </span>
+<span style="color:#888">[2026-10-30 08:16:12]</span> <span style="color:#0f0">OK</span>   Verificação de saúde (readiness) respondeu 200 em todas as réplicas
+<span style="color:#888">[2026-10-30 08:16:14]</span> <span style="color:#ff0">AVISO</span> Latência p95 acima de 300 ms no cluster ap-south-1
+<span style="color:#888">[2026-10-30 08:16:15]</span> <span style="color:#0ff">INFO</span>  Desviando 10% do tráfego para a nova versão (canário)
+<span style="color:#888">[2026-10-30 08:16:31]</span> <span style="color:#0f0">OK</span>   Taxa de erro do canário: 0,02% (limite 0,5%)
+<span style="color:#888">[2026-10-30 08:16:46]</span> <span style="color:#0ff">INFO</span>  Desviando 50% do tráfego para a nova versão
+<span style="color:#888">[2026-10-30 08:17:02]</span> <span style="color:#f55">ERRO</span>  <span style="background:#600;color:#fff"> réplica api-gateway-7f9c4 reiniciada (OOMKilled) </span>
+<span style="color:#888">[2026-10-30 08:17:03]</span> <span style="color:#ff0">AVISO</span> Limite de memória de 512 MiB pode ser insuficiente para o pico de carga
+<span style="color:#888">[2026-10-30 08:17:05]</span> <span style="color:#0ff">INFO</span>  Revertendo o canário para 10% do tráfego
+<span style="color:#888">[2026-10-30 08:17:20]</span> <span style="color:#0f0">OK</span>   Estabilizado: nenhuma réplica reiniciada nos últimos 15 s
+<span style="color:#888">[2026-10-30 08:18:44]</span> <span style="color:#0ff">INFO</span>  Desviando 100% do tráfego para a nova versão
+<span style="color:#888">[2026-10-30 08:19:02]</span> <span style="color:#0f0">OK</span>   <span data-esperado="Versão 2026.10.30 ativa em todas as regiões">Versão 2026.10.30 ativa em todas as regiões</span>
+<span style="color:#888">[2026-10-30 08:19:03]</span> <span style="color:#0ff">INFO</span>  Removendo a versão anterior (2026.10.23) após 10 minutos de carência
+<span style="color:#888">[2026-10-30 08:19:03]</span> <span style="color:#888">  … 14 réplicas antigas encerradas</span>
+
+<span style="color:#888">[2026-10-30 08:29:03]</span> <span style="color:#0f0">OK</span>   Carência encerrada, versão anterior removida
+<span style="font-weight:bold;color:#0f0">==&gt; Implantação concluída em 15m 01s</span>
+<span style="color:#888">Resumo:</span> <span style="color:#0f0">12 sucessos</span>, <span style="color:#ff0">2 avisos</span>, <span style="color:#f55">1 erro recuperado</span></pre>
+
+<p>Os códigos de cor e o negrito acima vêm da saída original do terminal, convertidos em atributos <code>style</code> inline.</p>
+
+</body>
+</html>

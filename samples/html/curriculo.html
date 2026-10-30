@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Currículo - Helena Prado Ferreira</title>
+<style>
+:root {
+  --side: #1e3a5f;
+  --side-2: #2c5282;
+  --accent: #e07a5f;
+  --ink: #1a202c;
+  --soft: #4a5568;
+  --paper: #ffffff;
+  --chip: #e6f0fa;
+  --chip-ink: #1e4e8c;
+  --rule: #d6dde6;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #eef2f6; color: var(--ink); font-family: "Helvetica Neue", Arial, sans-serif; font-size: 15px; line-height: 1.55; }
+.folha { display: flex; max-width: 900px; margin: 24px auto; background: var(--paper); box-shadow: 0 6px 24px rgba(26,32,44,.12); border-radius: 8px; overflow: hidden; }
+aside.lateral { flex: 0 0 260px; background: linear-gradient(180deg, var(--side), var(--side-2)); color: #f7fafc; padding: 36px 24px; }
+.foto { width: 96px; height: 96px; border-radius: 50%; background: rgba(255,255,255,.18); border: 3px solid rgba(255,255,255,.5); margin: 0 0 16px; }
+aside h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: #bee3f8; margin: 28px 0 10px; border-bottom: 1px solid rgba(255,255,255,.2); padding-bottom: 4px; }
+aside p { margin: 0 0 8px; font-size: 14px; }
+aside a { color: #fbd38d; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag { display: inline-block; background: rgba(255,255,255,.14); color: #ffffff; border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: 3px 10px; font-size: 13px; }
+.tag.destaque { background: var(--accent); border-color: var(--accent); }
+main.corpo { flex: 1; padding: 36px 40px; }
+h1 { font-size: 34px; margin: 0; letter-spacing: -.01em; color: var(--side); }
+.cargo { font-size: 17px; color: var(--accent); font-weight: 600; margin: 4px 0 20px; }
+main h2 { font-size: 16px; text-transform: uppercase; letter-spacing: .1em; color: var(--side); border-bottom: 2px solid var(--accent); padding-bottom: 4px; margin: 28px 0 14px; }
+.vaga { margin: 0 0 20px; padding-left: 14px; border-left: 3px solid var(--rule); }
+.vaga h3 { font-size: 16px; margin: 0; }
+.vaga .periodo { color: var(--soft); font-size: 13px; margin: 0 0 6px; }
+.vaga p { margin: 0 0 6px; }
+.vaga ul { margin: 4px 0 0; padding-left: 18px; }
+.vaga li { margin-bottom: 4px; }
+.destaque-vaga { border-left-color: var(--accent); background: linear-gradient(90deg, rgba(224,122,95,.10), rgba(224,122,95,0)); padding: 10px 14px; border-radius: 0 6px 6px 0; }
+.resumo { background: var(--chip); color: var(--chip-ink); padding: 14px 16px; border-radius: 6px; margin: 0; }
+.formacao dt { font-weight: 700; }
+.formacao dd { margin: 0 0 12px; color: var(--soft); }
+.selo { display: inline-block; font-size: 12px; font-weight: 700; color: #22543d; background: #c6f6d5; border-radius: 4px; padding: 1px 8px; margin-left: 6px; }
+</style>
+</head>
+<body>
+<div class="folha">
+<aside class="lateral">
+<div class="foto" role="img" aria-label="Foto de Helena Prado Ferreira"></div>
+<p><strong>Helena Prado Ferreira</strong></p>
+<p>Engenheira de dados, São Paulo - SP</p>
+<p>helena.prado@exemplo.com.br</p>
+<p>github.com/helenaprado</p>
+
+<h2>Habilidades</h2>
+<div class="tags">
+<span class="tag destaque">SQL</span>
+<span class="tag">Python</span>
+<span class="tag" data-esperado="Apache Airflow">Apache Airflow</span>
+<span class="tag">dbt</span>
+<span class="tag">Spark</span>
+<span class="tag">Kafka</span>
+<span class="tag">Terraform</span>
+<span class="tag">Modelagem dimensional</span>
+</div>
+
+<h2>Idiomas</h2>
+<p>Português: nativo</p>
+<p>Inglês: fluente <span class="selo">C1</span></p>
+<p>Espanhol: intermediário</p>
+</aside>
+
+<main class="corpo">
+<h1 data-esperado="Helena Prado Ferreira">Helena Prado Ferreira</h1>
+<p class="cargo">Engenheira de Dados Sênior</p>
+
+<p class="resumo">Mais de oito anos construindo plataformas de dados para varejo e fintechs, com foco em confiabilidade, custo e governança.</p>
+
+<h2>Experiência profissional</h2>
+
+<div class="vaga destaque-vaga">
+<h3>Líder técnica de dados</h3>
+<p class="periodo">Mercadinho Boa Vista · março de 2022 a atual</p>
+<p data-esperado="Liderei a migração de 40 pipelines para um lakehouse único.">Liderei a migração de 40 pipelines para um lakehouse único.</p>
+<ul>
+<li data-esperado="Reduzi o custo mensal de armazenamento em 35%.">Reduzi o custo mensal de armazenamento em 35%.</li>
+<li>Montei um time de cinco engenheiros e definimos o padrão de revisão de código.</li>
+<li>Implantei testes de qualidade que bloqueiam cargas com dados inconsistentes.</li>
+</ul>
+</div>
+
+<div class="vaga">
+<h3>Engenheira de dados</h3>
+<p class="periodo">Pagafácil Soluções · junho de 2019 a fevereiro de 2022</p>
+<p>Desenvolvi a camada de transações usada por dez equipes de produto.</p>
+<ul>
+<li>Criei modelos dimensionais para conciliação financeira diária.</li>
+<li>Substituí cargas manuais por orquestração com Apache Airflow.</li>
+</ul>
+</div>
+
+<div class="vaga">
+<h3>Analista de dados júnior</h3>
+<p class="periodo">Consultoria Rota Norte · janeiro de 2017 a maio de 2019</p>
+<p>Produzi relatórios mensais e painéis para clientes do setor de logística.</p>
+</div>
+
+<h2>Projetos de destaque</h2>
+<div class="vaga">
+<h3>Catálogo de dados interno</h3>
+<p>Ferramenta de busca com linhagem de colunas, usada por mais de 300 pessoas.</p>
+</div>
+
+<h2>Formação acadêmica</h2>
+<dl class="formacao">
+<dt>Bacharelado em Estatística</dt>
+<dd>Universidade Federal de São Carlos, 2016.</dd>
+<dt>Especialização em Engenharia de Dados</dt>
+<dd>Instituto de Ensino Superior, 2020.</dd>
+</dl>
+
+<h2>Certificações</h2>
+<ul>
+<li>Certificação em engenharia de dados na nuvem, emitida em 2024.</li>
+<li>Curso de governança e privacidade de dados, concluído em 2025.</li>
+</ul>
+</main>
+</div>
+</body>
+</html>

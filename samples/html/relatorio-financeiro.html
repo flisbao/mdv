@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relatório financeiro trimestral</title>
+<style>
+  :root {
+    --texto: #1f2933;
+    --suave: #667085;
+    --borda: #d0d5dd;
+    --verde: #067647;
+    --verde-fundo: #ecfdf3;
+    --vermelho: #b42318;
+    --vermelho-fundo: #fef3f2;
+    --cabecalho: #101828;
+  }
+  body {
+    font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+    color: var(--texto);
+    background: #f9fafb;
+    margin: 0;
+    padding: 24px;
+  }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 19px; margin: 32px 0 10px; border-bottom: 2px solid var(--borda); padding-bottom: 6px; }
+  .resumo { color: var(--suave); margin-bottom: 20px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    font-size: 14px;
+  }
+  th, td {
+    padding: 8px 12px;
+    border: 1px solid var(--borda);
+  }
+  thead th {
+    background: var(--cabecalho);
+    color: #fff;
+    text-align: left;
+  }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr:nth-child(even) { background: #f2f4f7; }
+  tfoot th, tfoot td {
+    font-weight: bold;
+    background: #e4e7ec;
+    border-top: 2px solid var(--cabecalho);
+  }
+  .positivo { color: var(--verde); background: var(--verde-fundo); }
+  .negativo { color: var(--vermelho); background: var(--vermelho-fundo); }
+  .grupo { background: #eaecf0; font-style: italic; }
+  .nota { font-size: 12px; color: var(--suave); margin-top: 8px; }
+  .selo {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .selo.ok { background: var(--verde-fundo); color: var(--verde); }
+  .selo.alerta { background: #fffaeb; color: #b54708; }
+</style>
+<script>
+  // Script de exemplo: deve ser ignorado pelo renderizador.
+  document.title = "alterado";
+</script>
+</head>
+<body>
+
+<h1>Relatório financeiro trimestral</h1>
+<p class="resumo">Terceiro trimestre de 2026 · valores em milhares de reais (R$ mil)</p>
+
+<h2>Receitas e despesas por área</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Área</th>
+      <th class="num">Orçado</th>
+      <th class="num">Realizado</th>
+      <th class="num">Variação</th>
+      <th>Situação</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Vendas diretas</td>
+      <td class="num">1.200,0</td>
+      <td class="num">1.342,5</td>
+      <td class="num positivo">+11,9%</td>
+      <td><span class="selo ok">Acima da meta</span></td>
+    </tr>
+    <tr>
+      <td>Canal de parceiros</td>
+      <td class="num">850,0</td>
+      <td class="num">792,3</td>
+      <td class="num negativo">-6,8%</td>
+      <td><span class="selo alerta">Atenção</span></td>
+    </tr>
+    <tr>
+      <td>Assinaturas recorrentes</td>
+      <td class="num">430,0</td>
+      <td class="num">447,9</td>
+      <td class="num positivo">+4,2%</td>
+      <td><span class="selo ok">Acima da meta</span></td>
+    </tr>
+    <tr class="grupo">
+      <td colspan="5">Custos operacionais</td>
+    </tr>
+    <tr>
+      <td>Folha de pagamento</td>
+      <td class="num">640,0</td>
+      <td class="num">652,4</td>
+      <td class="num negativo">+1,9%</td>
+      <td><span class="selo alerta">Atenção</span></td>
+    </tr>
+    <tr>
+      <td>Infraestrutura em nuvem</td>
+      <td class="num">96,0</td>
+      <td class="num">81,7</td>
+      <td class="num positivo">-14,9%</td>
+      <td><span class="selo ok">Economia</span></td>
+    </tr>
+    <tr>
+      <td data-esperado="Marketing e eventos">Marketing e eventos</td>
+      <td class="num">210,0</td>
+      <td class="num">248,8</td>
+      <td class="num negativo">+18,5%</td>
+      <td><span class="selo alerta">Estourado</span></td>
+    </tr>
+  </tbody>
+  <tfoot>
+    <tr>
+      <th>Total</th>
+      <td class="num">2.426,0</td>
+      <td class="num">2.565,6</td>
+      <td class="num">+5,8%</td>
+      <td></td>
+    </tr>
+  </tfoot>
+</table>
+<p class="nota" data-esperado="Variação positiva em receitas e negativa em custos indica resultado favorável.">Variação positiva em receitas e negativa em custos indica resultado favorável.</p>
+
+<h2>Resultado do trimestre</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Indicador</th>
+      <th class="num">Julho</th>
+      <th class="num">Agosto</th>
+      <th class="num">Setembro</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Receita bruta</td>
+      <td class="num">812,4</td>
+      <td class="num">855,1</td>
+      <td class="num">899,0</td>
+    </tr>
+    <tr>
+      <td>Custos e despesas</td>
+      <td class="num">-640,2</td>
+      <td class="num">-668,7</td>
+      <td class="num">-702,5</td>
+    </tr>
+    <tr>
+      <td>Impostos</td>
+      <td class="num">-38,9</td>
+      <td class="num">-40,6</td>
+      <td class="num">-42,1</td>
+    </tr>
+  </tbody>
+  <tfoot>
+    <tr>
+      <th data-esperado="Lucro operacional líquido">Lucro operacional líquido</th>
+      <td class="num positivo">133,3</td>
+      <td class="num positivo">145,8</td>
+      <td class="num positivo">154,4</td>
+    </tr>
+  </tfoot>
+</table>
+
+<h2>Fluxo de caixa</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Movimento</th>
+      <th class="num">Entradas</th>
+      <th class="num">Saídas</th>
+      <th class="num">Saldo</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Recebimentos de clientes</td>
+      <td class="num positivo">2.610,0</td>
+      <td class="num">0,0</td>
+      <td class="num positivo">2.610,0</td>
+    </tr>
+    <tr>
+      <td data-esperado="Pagamentos a fornecedores">Pagamentos a fornecedores</td>
+      <td class="num">0,0</td>
+      <td class="num negativo">-980,3</td>
+      <td class="num negativo">-980,3</td>
+    </tr>
+    <tr>
+      <td>Empréstimo bancário (quitação)</td>
+      <td class="num">0,0</td>
+      <td class="num negativo">-210,0</td>
+      <td class="num negativo">-210,0</td>
+    </tr>
+  </tbody>
+  <tfoot>
+    <tr>
+      <th>Saldo do período</th>
+      <td class="num">2.610,0</td>
+      <td class="num">-1.190,3</td>
+      <td class="num positivo">1.419,7</td>
+    </tr>
+  </tfoot>
+</table>
+<p class="nota">Valores sem auditoria externa. Revisão prevista para novembro de 2026.</p>
+
+<p>Situação geral: <span class="selo ok" data-esperado="Dentro do plano">Dentro do plano</span></p>
+
+</body>
+</html>

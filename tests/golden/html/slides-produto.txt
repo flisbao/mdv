@@ -1,0 +1,143 @@
+                                                                                
+        ────────────────────────────────────────────────────────────────        
+        ▌   Lançamento oficial                                         ▐        
+        ────────────────────────────────────────────────────────────────        
+        Aurora Notes chega em 2026                                              
+        O bloco de notas que aprende a sua rotina, sincroniza sem atrito        
+        e funciona offline.                                                     
+                                                                                
+        Apresentação para time de produto - versão 1.0                          
+                                                                                
+        Equipe Lumen Software - outubro de 2026                                 
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+                                                                                
+        Agenda desta apresentação                                               
+                                                                                
+        ╭─────────────────╮   ╭─────────────────╮   ╭─────────────────╮         
+        │                 │   │                 │   │                 │         
+        │    01           │   │    02           │   │    03           │         
+        │    Problema     │   │    Solução      │   │    Resultado    │         
+        │    Por que      │   │    Como o       │   │    s            │         
+        │    as           │   │    Aurora       │   │    Métricas     │         
+        │    anotações    │   │    organiza     │   │    do piloto    │         
+        │    se perdem    │   │    ideias       │   │    com 4 mil    │         
+        │    entre        │   │    automatic    │   │    usuários.    │         
+        │    dispositi    │   │    amente.      │   │                 │         
+        │    vos.         │   │                 │   │                 │         
+        │                 │   │                 │   │                 │         
+        │                 │   │                 │   │                 │         
+        ╰─────────────────╯   ╰─────────────────╯   ╰─────────────────╯         
+        Ao final, veremos preços, roteiro e os próximos passos.                 
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+                                                                                
+        ────────────────────────────────────────────────────────────────        
+        ▌   Problema                                                   ▐        
+        ────────────────────────────────────────────────────────────────        
+        Anotações espalhadas em cinco apps                                      
+                                                                                
+        Em nossa pesquisa com 1.200 pessoas, a média era de cinco               
+        aplicativos diferentes para registrar ideias.                           
+                                                                                
+        ╭─────────────────╮   ╭─────────────────╮   ╭─────────────────╮         
+        │                 │   │                 │   │                 │         
+        │    Perda de     │   │    Busca        │   │    Sincroniz    │         
+        │    contexto     │   │    quebrada     │   │    ação         │         
+        │    Um           │   │    Cada app     │   │    lenta        │         
+        │    rascunho     │   │    tem o        │   │    Conflitos    │         
+        │    no           │   │    próprio      │   │    aparecem     │         
+        │    celular      │   │    índice, e    │   │    de           │         
+        │    some         │   │    nenhum       │   │    madrugada    │         
+        │    quando o     │   │    enxerga      │   │    e apagam     │         
+        │    notebook     │   │    os           │   │    parágrafo    │         
+        │    está por     │   │    outros.      │   │    s            │         
+        │    perto.       │   │                 │   │    inteiros.    │         
+        │                 │   │                 │   │                 │         
+        │                 │   │                 │   │                 │         
+        ╰─────────────────╯   ╰─────────────────╯   ╰─────────────────╯         
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+                                                                                
+        ────────────────────────────────────────────────────────────────        
+        ▌   Solução                                                    ▐        
+        ────────────────────────────────────────────────────────────────        
+        Três pilares da solução                                                 
+                                                                                
+        ╭─────────────────╮   ╭─────────────────╮   ╭─────────────────╮         
+        │                 │   │                 │   │                 │         
+        │    Captura      │   │    Sync sem     │   │    Offline      │         
+        │    inteligen    │   │    conflito     │   │    de           │         
+        │    te           │   │    Cada         │   │    verdade      │         
+        │    Reconhece    │   │    alteração    │   │    O            │         
+        │    datas,       │   │    é            │   │    histórico    │         
+        │    tarefas e    │   │    registrad    │   │    completo     │         
+        │    links        │   │    a como       │   │    fica no      │         
+        │    enquanto     │   │    evento, e    │   │    aparelho     │         
+        │    você         │   │    a fusão      │   │    e volta a    │         
+        │    escreve,     │   │    acontece     │   │    sincroniz    │         
+        │    sem          │   │    sem          │   │    ar quando    │         
+        │    exigir       │   │    perder       │   │    houver       │         
+        │    marcação.    │   │    texto.       │   │    rede.        │         
+        │                 │   │                 │   │                 │         
+        │                 │   │                 │   │                 │         
+        ╰─────────────────╯   ╰─────────────────╯   ╰─────────────────╯         
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+                                                                                
+        Resultados do piloto                                                    
+                                                                                
+        Quatro semanas com 4.000 contas ativas, comparadas ao grupo de          
+        controle.                                                               
+                                                                                
+                                                                                
+               +38%                   -61%                   4,7                
+         notas recuperadas        conflitos de          nota média na           
+             por busca            sincronização              loja               
+                                                                                
+        Pesquisa de satisfação: 92% dos participantes recomendariam o           
+        app.                                                                    
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+                                                                                
+        Planos e preços                                                         
+                                                                                
+          PLANO    │               RECURSOS               │ PREÇO MENSAL        
+        ───────────┼──────────────────────────────────────┼─────────────        
+        Essencial  │ Sincronização em 2 aparelhos         │      R$ 0,00        
+        Aurora Pro │ Ilimitado, busca avançada e          │     R$ 19,90        
+                   │ exportação                           │                     
+        Equipes    │ Pastas compartilhadas e controle de  │     R$ 49,00        
+                   │ acesso                               │                     
+                                                                                
+            // exemplo de atalho no terminal                                    
+            aurora capture --tag reuniao "decisão sobre o layout"               
+                                                                                
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+                                                                                
+        Roteiro até o primeiro semestre                                         
+                                                                                
+        ───────────────  ───────────────  ──────────────  ──────────────        
+                                                                                
+          Q3 2026          Q4 2026          Q1 2027         Q2 2027             
+          Piloto           Lançamento       Versão          API                 
+          fechado com      em iOS e         para            pública             
+          4 mil            Android.         navegador       para                
+          contas.                           e atalhos       integraçõe          
+                                            de              s de                
+                                            teclado.        terceiros.          
+                                                                                
+                                                                                
+        Itens marcados em verde já estão concluídos.                            
+                                                                                
+────────────────────────────────────────────────────────────────────────────────
+                                                                                
+        Obrigado, time Lumen                                                    
+        Dúvidas, sugestões e críticas são bem-vindas no canal                   
+        #aurora-lancamento.                                                     
+                                                                                
+        Próxima revisão: 15 de novembro                                         
+                                                                                
+        Aurora Notes 1.0 - documento interno                                    
+                                                                                

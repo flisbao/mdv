@@ -1,0 +1,42 @@
+                                                                                
+   Relatório financeiro trimestral                                              
+   Terceiro trimestre de 2026 · valores em milhares de reais (R$ mil)           
+                                                                                
+   Receitas e despesas por área                                                 
+   ──────────────────────────────────────────────────────────────────────────   
+            Área           │  Orçado │ Realizado │ Variação │   Situação        
+   ────────────────────────┼─────────┼───────────┼──────────┼──────────────     
+   Vendas diretas          │ 1.200,0 │   1.342,5 │   +11,9% │ Acima da meta     
+   Canal de parceiros      │   850,0 │     792,3 │    -6,8% │ Atenção           
+   Assinaturas recorrentes │   430,0 │     447,9 │    +4,2% │ Acima da meta     
+   Custos operacionais                                                          
+   Folha de pagamento      │   640,0 │     652,4 │    +1,9% │ Atenção           
+   Infraestrutura em nuvem │    96,0 │      81,7 │   -14,9% │ Economia          
+   Marketing e eventos     │   210,0 │     248,8 │   +18,5% │ Estourado         
+            Total          │ 2.426,0 │   2.565,6 │    +5,8% │                   
+                                                                                
+   Variação positiva em receitas e negativa em custos indica resultado          
+   favorável.                                                                   
+                                                                                
+   Resultado do trimestre                                                       
+   ──────────────────────────────────────────────────────────────────────────   
+           Indicador         │  Julho │ Agosto │ Setembro                       
+   ──────────────────────────┼────────┼────────┼─────────                       
+   Receita bruta             │  812,4 │  855,1 │    899,0                       
+   Custos e despesas         │ -640,2 │ -668,7 │   -702,5                       
+   Impostos                  │  -38,9 │  -40,6 │    -42,1                       
+   Lucro operacional líquido │  133,3 │  145,8 │    154,4                       
+                                                                                
+   Fluxo de caixa                                                               
+   ──────────────────────────────────────────────────────────────────────────   
+             Movimento            │ Entradas │   Saídas │   Saldo               
+   ───────────────────────────────┼──────────┼──────────┼────────               
+   Recebimentos de clientes       │  2.610,0 │      0,0 │ 2.610,0               
+   Pagamentos a fornecedores      │      0,0 │   -980,3 │  -980,3               
+   Empréstimo bancário (quitação) │      0,0 │   -210,0 │  -210,0               
+          Saldo do período        │  2.610,0 │ -1.190,3 │ 1.419,7               
+                                                                                
+   Valores sem auditoria externa. Revisão prevista para novembro de 2026.       
+                                                                                
+   Situação geral: Dentro do plano                                              
+                                                                                

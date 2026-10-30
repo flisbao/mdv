@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Changelog da biblioteca Lumen</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --text: #1f2933;
+  --muted: #617080;
+  --line: #e4e7eb;
+  --added: #1a7f37;
+  --added-bg: #dafbe1;
+  --fixed: #0550ae;
+  --fixed-bg: #ddf4ff;
+  --breaking: #cf222e;
+  --breaking-bg: #ffebe9;
+  --code: #f6f8fa;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.6; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 40px 24px 72px; }
+h1 { font-size: 36px; margin: 0 0 8px; }
+.lead { color: var(--muted); font-size: 17px; margin: 0 0 32px; }
+h2 { font-size: 22px; margin: 40px 0 4px; padding-top: 16px; border-top: 1px solid var(--line); scroll-margin-top: 16px; }
+.data { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+h2 code { font-size: 18px; background: var(--code); padding: 2px 8px; border-radius: 6px; }
+.tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; margin: 2px 6px 2px 0; vertical-align: middle; }
+.tag.added { color: var(--added); background: var(--added-bg); }
+.tag.fixed { color: var(--fixed); background: var(--fixed-bg); }
+.tag.breaking { color: var(--breaking); background: var(--breaking-bg); border: 1px solid rgba(207,34,46,.35); }
+ul { padding-left: 22px; }
+ul ul { margin-top: 4px; color: var(--muted); }
+li { margin: 6px 0; }
+li.quebra { border-left: 3px solid var(--breaking); padding-left: 10px; }
+code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 0.9em; background: var(--code); padding: 1px 5px; border-radius: 4px; }
+details { margin: 16px 0; border: 1px solid var(--line); border-radius: 8px; padding: 0; overflow: hidden; }
+summary { cursor: pointer; padding: 10px 14px; background: var(--code); font-weight: 600; }
+details[open] summary { border-bottom: 1px solid var(--line); }
+details > div { padding: 8px 14px 14px; }
+.resumo { list-style: none; padding: 0; }
+.resumo li { display: inline-block; margin-right: 16px; }
+footer { margin-top: 48px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); padding-top: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1 data-esperado="Changelog da Lumen">Changelog da Lumen</h1>
+<p class="lead">Histórico de versões da biblioteca de componentes para interfaces leves.</p>
+
+<ul class="resumo">
+<li><span class="tag added">Added</span> novidades</li>
+<li><span class="tag fixed">Fixed</span> correções</li>
+<li><span class="tag breaking">Breaking</span> mudanças incompatíveis</li>
+</ul>
+
+<h2 id="v3-2-0"><code>3.2.0</code> Conversão de fusos</h2>
+<p class="data">Lançada em 15 de outubro de 2026</p>
+<ul>
+<li><span class="tag added">Added</span> <span data-esperado="Suporte a fusos horários com a função converterFuso.">Suporte a fusos horários com a função converterFuso.</span>
+<ul>
+<li>Aceita nomes IANA, como <code>America/Sao_Paulo</code>.</li>
+<li>Usa a base de fusos do próprio pacote, sem rede.
+<ul>
+<li>Não depende do sistema operacional.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><span class="tag fixed">Fixed</span> Corrige vazamento de memória ao desmontar componentes aninhados.</li>
+</ul>
+
+<details open>
+<summary>Ver mudanças internas</summary>
+<div>
+<p data-esperado="Nenhuma mudança afeta a API pública desta versão.">Nenhuma mudança afeta a API pública desta versão.</p>
+<ul>
+<li>Refatoração do agendador de atualizações.</li>
+<li>Testes de regressão para listas com mais de mil itens.</li>
+</ul>
+</div>
+</details>
+
+<h2 id="v3-1-1"><code>3.1.1</code> Correções rápidas</h2>
+<p class="data">Lançada em 2 de setembro de 2026</p>
+<ul>
+<li><span class="tag fixed">Fixed</span> Ajusta o foco do teclado dentro de diálogos modais.</li>
+<li><span class="tag fixed">Fixed</span> Evita erro de tipo quando <code>valor</code> chega como <code>null</code>.</li>
+</ul>
+
+<h2 id="v3-1-0"><code>3.1.0</code> Tabelas e filtros</h2>
+<p class="data">Lançada em 18 de agosto de 2026</p>
+<ul>
+<li><span class="tag added">Added</span> Componente <code>Tabela</code> com ordenação por coluna.
+<ul>
+<li>Filtros por texto e por intervalo numérico.</li>
+<li>Paginação opcional, com tamanho configurável.</li>
+</ul>
+</li>
+<li><span class="tag added">Added</span> Tema escuro automático, seguindo a preferência do sistema.</li>
+<li><span class="tag fixed">Fixed</span> Melhora o contraste dos rótulos desabilitados.</li>
+</ul>
+
+<details>
+<summary>Ver exemplo de uso</summary>
+<div>
+<pre><code>&lt;Tabela dados={pedidos} ordenavel filtros /&gt;</code></pre>
+</div>
+</details>
+
+<h2 id="v3-0-0"><code>3.0.0</code> Nova API de estado</h2>
+<p class="data">Lançada em 4 de julho de 2026</p>
+<ul>
+<li><span class="tag breaking">Breaking</span> <span data-esperado="A opção modo legado foi removida; use modo=estrito.">A opção modo legado foi removida; use modo=estrito.</span></li>
+<li class="quebra"><span class="tag breaking">Breaking</span> O método <code>montar()</code> agora é assíncrono e devolve uma promessa.
+<ul>
+<li>Código síncrono precisa de <code>await</code>.</li>
+</ul>
+</li>
+<li><span class="tag added">Added</span> Ferramenta de migração: <code>lumen migrar</code>.</li>
+<li><span class="tag fixed">Fixed</span> Corrige ordem de eventos em formulários aninhados.</li>
+</ul>
+
+<h2 id="v2-9-4"><code>2.9.4</code> Manutenção</h2>
+<p class="data">Lançada em 12 de maio de 2026</p>
+<ul>
+<li><span class="tag fixed">Fixed</span> Atualiza dependências de desenvolvimento sem impacto no pacote final.</li>
+</ul>
+
+<footer>
+<p>Versões anteriores à 2.9 estão no arquivo <code>CHANGELOG-antigo.md</code> do repositório.</p>
+</footer>
+</div>
+</body>
+</html>

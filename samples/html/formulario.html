@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inscrição para o programa de estágio</title>
+<style>
+:root { --cor-borda: #b8c2cc; --cor-foco: #2563eb; --cor-erro: #b91c1c; --texto: #1f2933; }
+body { margin: 0; font-family: system-ui, sans-serif; color: var(--texto); background: #f5f7fa; }
+main { max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+form { background: #fff; border: 1px solid var(--cor-borda); border-radius: 8px; padding: 1.5rem; }
+fieldset { border: 1px solid var(--cor-borda); border-radius: 6px; margin: 0 0 1.25rem; padding: 1rem; }
+legend { font-weight: 600; padding: 0 .4rem; }
+label { display: block; margin: .6rem 0 .2rem; font-size: .95rem; }
+input[type="text"], input[type="email"], input[type="tel"], input[type="date"], input[type="number"], input[type="url"], select, textarea {
+  width: 100%; box-sizing: border-box; padding: .5rem; border: 1px solid var(--cor-borda); border-radius: 4px; font: inherit;
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--cor-foco); outline-offset: 1px; }
+.linha { display: flex; gap: 1rem; flex-wrap: wrap; }
+.linha > div { flex: 1 1 200px; }
+.ajuda { font-size: .85rem; color: #52606d; margin: .2rem 0 0; }
+.erro { color: var(--cor-erro); font-size: .85rem; }
+.opcao { display: flex; align-items: center; gap: .5rem; margin: .35rem 0; }
+.acoes { display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1rem; }
+button { padding: .55rem 1.1rem; border-radius: 4px; border: 1px solid transparent; font: inherit; cursor: pointer; }
+button[type="submit"] { background: var(--cor-foco); color: #fff; }
+button[type="reset"] { background: #fff; border-color: var(--cor-borda); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<main>
+<h1>Inscrição para o programa de estágio</h1>
+<p>Preencha os campos abaixo. Os itens marcados com * são obrigatórios.</p>
+
+<form action="/inscricao" method="post" enctype="multipart/form-data">
+
+  <fieldset>
+    <legend data-esperado="Dados pessoais do candidato">Dados pessoais do candidato</legend>
+    <div class="linha">
+      <div>
+        <label for="nome">Nome completo *</label>
+        <input type="text" id="nome" name="nome" required autocomplete="name">
+      </div>
+      <div>
+        <label for="nascimento">Data de nascimento</label>
+        <input type="date" id="nascimento" name="nascimento">
+      </div>
+    </div>
+    <label for="email">E-mail *</label>
+    <input type="email" id="email" name="email" required placeholder="voce@exemplo.com">
+    <label for="telefone">Telefone</label>
+    <input type="tel" id="telefone" name="telefone" placeholder="(41) 90000-0000">
+    <label for="site">Site ou portfólio</label>
+    <input type="url" id="site" name="site" placeholder="https://">
+    <label for="idade">Idade</label>
+    <input type="number" id="idade" name="idade" min="16" max="99" step="1">
+  </fieldset>
+
+  <fieldset>
+    <legend>Vaga desejada</legend>
+    <label for="area">Área de interesse</label>
+    <select id="area" name="area">
+      <option value="">Escolha uma área</option>
+      <option value="dev">Desenvolvimento de software</option>
+      <option value="dados">Análise de dados</option>
+      <option value="design">Design de interação</option>
+      <option value="suporte" disabled>Suporte (vagas encerradas)</option>
+    </select>
+    <p class="ajuda">Você poderá trocar de área depois da primeira avaliação.</p>
+
+    <span>Turno preferido</span>
+    <div class="opcao"><input type="radio" id="manha" name="turno" value="manha"><label for="manha">Manhã</label></div>
+    <div class="opcao"><input type="radio" id="tarde" name="turno" value="tarde" checked><label for="tarde">Tarde</label></div>
+    <div class="opcao"><input type="radio" id="noite" name="turno" value="noite"><label for="noite">Noite</label></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Experiência e interesses</legend>
+    <div class="opcao"><input type="checkbox" id="html" name="skills" value="html"><label for="html">HTML e CSS</label></div>
+    <div class="opcao"><input type="checkbox" id="python" name="skills" value="python"><label for="python">Python</label></div>
+    <div class="opcao"><input type="checkbox" id="rust" name="skills" value="rust"><label for="rust">Rust</label></div>
+    <label for="pretensao">Pretensão salarial (opcional)</label>
+    <input type="range" id="pretensao" name="pretensao" min="0" max="10000" step="500" value="2500">
+    <label for="cor">Cor do crachá</label>
+    <input type="color" id="cor" name="cor" value="#2563eb">
+    <label for="curriculo">Currículo em PDF</label>
+    <input type="file" id="curriculo" name="curriculo" accept="application/pdf">
+  </fieldset>
+
+  <fieldset>
+    <legend>Observações adicionais</legend>
+    <label for="obs" data-esperado="Observações adicionais">Observações adicionais</label>
+    <textarea id="obs" name="obs" rows="4" maxlength="500" placeholder="Conte algo que não apareceu no currículo"></textarea>
+    <p class="ajuda">Até 500 caracteres.</p>
+  </fieldset>
+
+  <div class="opcao">
+    <input type="checkbox" id="termos" name="termos" required>
+    <label for="termos" data-esperado="Aceito os termos de uso e a política de privacidade">Aceito os termos de uso e a política de privacidade</label>
+  </div>
+  <div class="opcao">
+    <input type="checkbox" id="newsletter" name="newsletter">
+    <label for="newsletter">Quero receber novidades por e-mail</label>
+  </div>
+
+  <p class="erro" role="alert">Campo obrigatório: confirme os termos antes de enviar.</p>
+
+  <div class="acoes">
+    <button type="reset">Limpar</button>
+    <button type="button" disabled>Salvar rascunho</button>
+    <button type="submit"><span data-esperado="Enviar inscrição">Enviar inscrição</span></button>
+  </div>
+</form>
+
+<p class="ajuda">Dúvidas? Escreva para estagio@exemplo.invalido.</p>
+</main>
+</body>
+</html>

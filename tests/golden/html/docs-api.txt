@@ -1,0 +1,155 @@
+                             ▐                                                  
+  DOCUMENTAÇÃO               ▐      Referência da API Trocapay                  
+   Início                    ▐      ──────────────────────────────────────      
+   Autenticação              ▐      Pressione Ctrl + K para buscar na           
+   Cobranças                 ▐      documentação.                               
+   Webhooks                  ▐                                                  
+   Erros                     ▐      Estável Beta: pix parcelado                 
+                             ▐                                                  
+  RECURSOS                   ▐      A API Trocapay permite criar                
+   Limites                   ▐      cobranças, consultar pagamentos e           
+   Changelog                 ▐      receber eventos em tempo real. Todas        
+                             ▐      as respostas são JSON e seguem o            
+                             ▐      padrão REST.                                
+                             ▐                                                  
+                             ▐      Autenticação                                
+                             ▐      Cada requisição precisa do cabeçalho        
+                             ▐      Authorization com a chave da sua            
+                             ▐      conta. As chaves de teste começam com       
+                             ▐      sk_test.                                    
+                             ▐                                                  
+                             ▐      ▌                                           
+                             ▐      ▌   Atenção                                 
+                             ▐      ▌   Nunca exponha a chave secreta no        
+                             ▐      ▌   navegador.                              
+                             ▐      ▌                                           
+                             ▐                                                  
+                             ▐      ▌                                           
+                             ▐      ▌   Dica                                    
+                             ▐      ▌   Ambientes de teste usam chaves          
+                             ▐      ▌   com o prefixo sk_test e não             
+                             ▐      ▌   geram cobranças reais.                  
+                             ▐      ▌                                           
+                             ▐                                                  
+                             ▐      Criar cobrança                              
+                             ▐      Uma cobrança é criada com um POST para      
+                             ▐      o endpoint abaixo. O corpo aceita os        
+                             ▐      parâmetros da tabela.                       
+                             ▐                                                  
+                             ▐      ╭────────────────────────────────────╮      
+                             ▐      │                                    │      
+                             ▐      │    # Cria uma cobrança de R$ 4…    │      
+                             ▐      │    curl https://api.trocapay.e…    │      
+                             ▐      │      -H "Authorization: Bearer…    │      
+                             ▐      │      -d "valor=4990" \             │      
+                             ▐      │      -d "descricao=Assinatura …    │      
+                             ▐      │                                    │      
+                             ▐      ╰────────────────────────────────────╯      
+                             ▐                                                  
+                             ▐      Parâmetros                                  
+                             ▐      Parâmet │  Tipo   │ Obrigat │ Descriç       
+                             ▐        ro    │         │  ório   │   ão          
+                             ▐      ────────┼─────────┼─────────┼────────       
+                             ▐      valor   │ inteiro │ sim     │ Valor         
+                             ▐              │         │         │ total         
+                             ▐              │         │         │ da            
+                             ▐              │         │         │ cobranç       
+                             ▐              │         │         │ a em          
+                             ▐              │         │         │ centavo       
+                             ▐              │         │         │ s             
+                             ▐      moeda   │ texto   │ não     │ Código        
+                             ▐              │         │         │ ISO           
+                             ▐              │         │         │ 4217. O       
+                             ▐              │         │         │ padrão        
+                             ▐              │         │         │ é BRL.        
+                             ▐      descric │ texto   │ não     │ Texto         
+                             ▐      ao      │         │         │ exibido       
+                             ▐              │         │         │ na            
+                             ▐              │         │         │ fatura        
+                             ▐              │         │         │ do            
+                             ▐              │         │         │ cliente       
+                             ▐              │         │         │ .             
+                             ▐      parcela │ inteiro │ não     │ De 1 a        
+                             ▐      s       │         │         │ 12. O         
+                             ▐              │         │         │ padrão        
+                             ▐              │         │         │ é 1.          
+                             ▐                                                  
+                             ▐      ▌                                           
+                             ▐      ▌   Valores em centavos                     
+                             ▐      ▌   Nunca envie valores com ponto           
+                             ▐      ▌   decimal. Um valor de R$ 49,90 é         
+                             ▐      ▌   enviado como 4990.                      
+                             ▐      ▌                                           
+                             ▐                                                  
+                             ▐      Resposta                                    
+                             ▐      ╭────────────────────────────────────╮      
+                             ▐      │                                    │      
+                             ▐      │    {                               │      
+                             ▐      │      "id": "cob_01HZX",            │      
+                             ▐      │      "status": "pendente",         │      
+                             ▐      │      "valor": 4990,                │      
+                             ▐      │      "pago": false                 │      
+                             ▐      │    }                               │      
+                             ▐      │                                    │      
+                             ▐      ╰────────────────────────────────────╯      
+                             ▐                                                  
+                             ▐      Exemplo com Node.js                         
+                             ▐      ╭────────────────────────────────────╮      
+                             ▐      │                                    │      
+                             ▐      │    import { Trocapay } from 't…    │      
+                             ▐      │    const pay = new Trocapay(pr…    │      
+                             ▐      │    await pay.cobrancas.criar({…    │      
+                             ▐      │                                    │      
+                             ▐      ╰────────────────────────────────────╯      
+                             ▐                                                  
+                             ▐      Webhooks                                    
+                             ▐      Os eventos são enviados por POST para       
+                             ▐      a URL que você cadastrou no painel.         
+                             ▐                                                  
+                             ▐      cobranca.pago           Disparado           
+                             ▐                              quando o            
+                             ▐                              pagamento é         
+                             ▐                              confirmado          
+                             ▐                              pelo banco.         
+                             ▐      cobranca.vencida        Disparado           
+                             ▐                              quando o            
+                             ▐                              prazo de            
+                             ▐                              pagamento           
+                             ▐                              termina sem         
+                             ▐                              quitação.           
+                             ▐      reembolso.criado        Disparado           
+                             ▐                              quando um           
+                             ▐                              estorno é           
+                             ▐                              solicitado          
+                             ▐                              pelo lojista.       
+                             ▐                                                  
+                             ▐      Erros                                       
+                             ▐      Erros usam os códigos HTTP padrão. O        
+                             ▐      corpo traz um campo codigo legível por      
+                             ▐      máquina.                                    
+                             ▐                                                  
+                             ▐      HTTP │     Código     │  Significado        
+                             ▐      ─────┼────────────────┼───────────────      
+                             ▐      400  │ parametro_inva │ Algum campo         
+                             ▐           │ lido           │ não passou na       
+                             ▐           │                │ validação.          
+                             ▐      401  │ chave_invalida │ A chave não         
+                             ▐           │                │ existe ou foi       
+                             ▐           │                │ revogada.           
+                             ▐      429  │ limite_excedid │ Muitas              
+                             ▐           │ o              │ requisições em      
+                             ▐           │                │ pouco tempo.        
+                             ▐                                                  
+                             ▐      Limites                                     
+                             ▐      Cada conta pode fazer até 100               
+                             ▐      requisições por segundo. Acima disso,       
+                             ▐      a API responde com 429.                     
+                             ▐                                                  
+                             ▐      ▌                                           
+                             ▐      ▌   Changelog                               
+                             ▐      ▌   As mudanças de versão estão             
+                             ▐      ▌   documentadas na página de               
+                             ▐      ▌   changelog do portal.                    
+                             ▐      ▌                                           
+                             ▐                                                  
+                             ▐                                                  

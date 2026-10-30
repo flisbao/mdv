@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Curso de Rust - Ownership e empréstimos</title>
+<style>
+:root {
+  --fundo: #fdf6e3;
+  --tinta: #2d2a26;
+  --ferrugem: #b7410e;
+  --ferrugem-clara: rgba(183, 65, 14, 0.12);
+  --verde: #2e7d32;
+  --cinza: #6b645c;
+  --sombra: 0 12px 32px rgba(45, 42, 38, 0.18);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: linear-gradient(135deg, #fdf6e3 0%, #f3e6c8 100%);
+  color: var(--tinta); font-family: Georgia, "Times New Roman", serif;
+}
+.reveal { width: 100%; min-height: 100vh; padding: 40px 24px; }
+.slides { max-width: 960px; margin: 0 auto; }
+section {
+  display: none; min-height: 520px; padding: 56px 64px;
+  background: #fffdf7; border-radius: 18px; box-shadow: var(--sombra);
+  border-top: 8px solid var(--ferrugem);
+}
+section.present { display: block; }
+h1 { text-align: center; font-size: 2.8rem; margin: 0 0 18px; color: var(--ferrugem); }
+h2 { font-size: 2rem; margin: 0 0 22px; border-bottom: 2px solid var(--ferrugem-clara); padding-bottom: 10px; }
+h3 { font-size: 1.25rem; color: var(--verde); margin: 18px 0 8px; }
+p, li { font-size: 1.15rem; line-height: 1.7; }
+ul { padding-left: 1.4em; }
+ul li::marker { color: var(--ferrugem); }
+.centro { text-align: center; }
+.subtitulo { text-align: center; color: var(--cinza); font-style: italic; font-size: 1.2rem; }
+blockquote {
+  margin: 28px 0; padding: 18px 26px; border-left: 6px solid var(--ferrugem);
+  background: var(--ferrugem-clara); border-radius: 0 12px 12px 0; font-size: 1.25rem;
+}
+blockquote footer { margin-top: 10px; font-size: 0.95rem; color: var(--cinza); font-style: normal; }
+code {
+  font-family: "Fira Code", "Courier New", monospace; background: #efe7d2;
+  padding: 2px 6px; border-radius: 4px; font-size: 0.95em;
+}
+pre {
+  background: #262321; color: #f5e6c8; padding: 20px 24px; border-radius: 12px;
+  font-family: "Fira Code", "Courier New", monospace; font-size: 1rem; line-height: 1.5;
+  overflow-x: auto;
+}
+pre .comentario { color: #9c9185; }
+pre .palavra { color: #ff9e64; }
+.duas-colunas { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 16px; }
+.caixa {
+  background: #f7f1e1; border-radius: 12px; padding: 18px 22px;
+  border: 1px solid rgba(45, 42, 38, 0.12);
+}
+.caixa.dica { border-left: 5px solid var(--verde); }
+.rodape-slide {
+  position: absolute; bottom: 14px; right: 26px; color: var(--cinza); font-size: 0.9rem;
+}
+.navegacao { text-align: center; margin-top: 22px; color: var(--cinza); font-family: sans-serif; }
+</style>
+</head>
+<body>
+<div class="reveal">
+  <div class="slides">
+
+    <section>
+      <h1>Curso de Rust</h1>
+      <p class="subtitulo">Módulo 3 - Ownership e empréstimos</p>
+      <p class="centro">Turma de outubro de 2026, com exercícios em todas as aulas.</p>
+    </section>
+
+    <section class="present">
+      <h2 data-esperado="Por que ownership existe">Por que ownership existe</h2>
+      <p>Rust garante segurança de memória sem coletor de lixo. A regra central é simples:</p>
+      <blockquote>
+        <p data-esperado="Cada valor tem exatamente um dono, e quando o dono sai de escopo, o valor é liberado.">Cada valor tem exatamente um dono, e quando o dono sai de escopo, o valor é liberado.</p>
+        <footer>Livro oficial da linguagem, capítulo 4</footer>
+      </blockquote>
+      <div class="duas-colunas">
+        <div class="caixa">
+          <h3 data-esperado="Na prática">Na prática</h3>
+          <ul>
+            <li>Atribuir um <code>String</code> move a posse.</li>
+            <li data-esperado="O original deixa de ser usável.">O original deixa de ser usável.</li>
+          </ul>
+        </div>
+        <div class="caixa dica">
+          <h3>Dica</h3>
+          <p>Use <code>clone()</code> quando precisar de uma cópia independente.</p>
+        </div>
+      </div>
+      <p class="rodape-slide">Slide 2 de 6</p>
+    </section>
+
+    <section>
+      <h2>Empréstimos imutáveis</h2>
+      <p>Uma referência <code>&amp;T</code> empresta o valor sem tomar posse dele.</p>
+      <ul>
+        <li>Várias referências imutáveis podem coexistir.</li>
+        <li>Nenhuma delas pode modificar o valor.</li>
+        <li>O dono continua responsável pela liberação.</li>
+      </ul>
+      <pre><span class="comentario">// várias leituras ao mesmo tempo</span>
+<span class="palavra">let</span> a = &amp;texto;
+<span class="palavra">let</span> b = &amp;texto;</pre>
+    </section>
+
+    <section>
+      <h2>Empréstimos mutáveis</h2>
+      <p>Só pode existir um empréstimo mutável por vez. Essa restrição evita corridas de dados.</p>
+      <div class="duas-colunas">
+        <div class="caixa">
+          <h3>Permitido</h3>
+          <p>Um <code>&amp;mut</code> sozinho, usado e encerrado.</p>
+        </div>
+        <div class="caixa">
+          <h3>Recusado</h3>
+          <p>Um <code>&amp;mut</code> enquanto existe um <code>&amp;</code> ainda usado.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Tempo de vida</h2>
+      <p class="centro">Lifetimes descrevem por quanto tempo uma referência é válida.</p>
+      <pre><span class="palavra">fn</span> maior&lt;<span class="palavra">'a</span>&gt;(x: &amp;<span class="palavra">'a</span> str, y: &amp;<span class="palavra">'a</span> str) -&gt; &amp;<span class="palavra">'a</span> str {
+    <span class="palavra">if</span> x.len() &gt; y.len() { x } <span class="palavra">else</span> { y }
+}</pre>
+      <p>O compilador verifica a regra; você apenas a declara quando ela não é óbvia.</p>
+    </section>
+
+    <section>
+      <h2>Exercícios da semana</h2>
+      <ol>
+        <li>Corrija o programa que move um vetor duas vezes.</li>
+        <li>Escreva uma função que devolve a maior palavra de uma lista.</li>
+        <li>Explique, com suas palavras, por que o código do exercício 1 falha.</li>
+      </ol>
+      <p class="navegacao">Entregas até domingo, no repositório da turma.</p>
+    </section>
+
+  </div>
+</div>
+</body>
+</html>

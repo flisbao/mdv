@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relatório trimestral - 3º trimestre 2026</title>
+<style>
+:root {
+  --fundo: #ffffff;
+  --superficie: #f4f7fb;
+  --texto: #1f2933;
+  --texto-suave: #52606d;
+  --azul: #1d4ed8;
+  --azul-claro: #dbeafe;
+  --verde: #15803d;
+  --verde-claro: #dcfce7;
+  --vermelho: #b91c1c;
+  --vermelho-claro: #fee2e2;
+  --borda: #d9e2ec;
+  --raio: 12px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--fundo); color: var(--texto);
+  font-family: "Helvetica Neue", Arial, "Segoe UI", sans-serif;
+}
+.deck { max-width: 1000px; margin: 0 auto; padding: 32px 24px; }
+.slide {
+  background: var(--fundo); border: 1px solid var(--borda); border-radius: 16px;
+  padding: 48px 56px; margin-bottom: 32px; min-height: 480px;
+  box-shadow: 0 6px 18px rgba(31, 41, 51, 0.08);
+  display: flex; flex-direction: column;
+}
+.slide.capa {
+  background: linear-gradient(135deg, var(--azul-claro) 0%, #ffffff 70%);
+  justify-content: center;
+}
+h1 { font-size: 3rem; margin: 0 0 12px; color: var(--azul); }
+h2 { font-size: 2rem; margin: 0 0 20px; color: var(--texto); }
+h3 { font-size: 1.2rem; margin: 0 0 8px; color: var(--azul); }
+p { font-size: 1.1rem; line-height: 1.65; margin: 0 0 14px; }
+.kicker {
+  text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.85rem;
+  color: var(--texto-suave); margin-bottom: 10px;
+}
+.indicadores { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 18px; }
+.indicador {
+  background: var(--superficie); border-radius: var(--raio); padding: 22px;
+  border-top: 4px solid var(--azul);
+}
+.indicador .valor { font-size: 2.2rem; font-weight: 700; color: var(--texto); }
+.indicador .delta { font-size: 0.95rem; font-weight: 600; }
+.delta.alta { color: var(--verde); }
+.delta.queda { color: var(--vermelho); }
+.etiqueta {
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  font-size: 0.85rem; font-weight: 600;
+}
+.etiqueta.verde { background: var(--verde-claro); color: var(--verde); }
+.etiqueta.vermelho { background: var(--vermelho-claro); color: var(--vermelho); }
+.etiqueta.azul { background: var(--azul-claro); color: var(--azul); }
+table { width: 100%; border-collapse: collapse; font-size: 1rem; }
+th, td { padding: 10px 14px; border-bottom: 1px solid var(--borda); text-align: left; }
+th { background: var(--superficie); color: var(--texto-suave); font-size: 0.85rem; text-transform: uppercase; }
+td.numero { text-align: right; font-variant-numeric: tabular-nums; }
+.tendencia { display: flex; align-items: flex-end; gap: 14px; height: 200px; margin-top: 16px; }
+.tendencia div { flex: 1; background: var(--azul); border-radius: 6px 6px 0 0; color: #ffffff; text-align: center; font-size: 0.9rem; padding-top: 6px; }
+.observacao {
+  background: #fffbeb; border-left: 5px solid #d97706; border-radius: 0 10px 10px 0;
+  padding: 16px 20px; margin-top: 18px;
+}
+.nota-rodape {
+  margin-top: auto; padding-top: 24px; font-size: 0.95rem;
+  color: #cccccc; border-top: 1px dashed var(--borda);
+}
+.fonte { font-size: 0.9rem; color: var(--texto-suave); }
+ul { font-size: 1.1rem; line-height: 1.7; padding-left: 1.3em; }
+</style>
+</head>
+<body>
+<main class="deck">
+
+  <section class="slide capa">
+    <p class="kicker">Relatório trimestral</p>
+    <h1>Terceiro trimestre de 2026</h1>
+    <p>Crescimento sustentado na base de clientes, com margem operacional acima da meta.</p>
+    <p class="fonte">Preparado pela área financeira da Cascata Logística - uso interno.</p>
+  </section>
+
+  <section class="slide">
+    <p class="kicker">Destaques</p>
+    <h2>Indicadores principais</h2>
+    <div class="indicadores">
+      <div class="indicador">
+        <h3>Receita líquida</h3>
+        <div class="valor">R$ 48,2 mi</div>
+        <div class="delta alta">+12% em relação ao 2º trimestre</div>
+      </div>
+      <div class="indicador">
+        <h3>Margem operacional</h3>
+        <div class="valor">18,4%</div>
+        <div class="delta alta">+2,1 pontos percentuais</div>
+      </div>
+      <div class="indicador">
+        <h3>Custo por entrega</h3>
+        <div class="valor">R$ 7,85</div>
+        <div class="delta queda">-6% em relação ao 2º trimestre</div>
+      </div>
+    </div>
+    <div class="observacao">
+      <p data-esperado="Receita acima do previsto nas três regiões, puxada pelo contrato com a rede do Sul.">Receita acima do previsto nas três regiões, puxada pelo contrato com a rede do Sul.</p>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="kicker">Receita</p>
+    <h2>Evolução mensal (R$ milhões)</h2>
+    <div class="tendencia">
+      <div style="height: 48%">jul 13,9</div>
+      <div style="height: 56%">ago 15,2</div>
+      <div style="height: 72%">set 19,1</div>
+    </div>
+    <p class="fonte">Valores brutos, antes de descontos comerciais e impostos.</p>
+  </section>
+
+  <section class="slide">
+    <p class="kicker">Regiões</p>
+    <h2 data-esperado="Desempenho por região">Desempenho por região</h2>
+    <table>
+      <thead>
+        <tr><th>Região</th><th>Receita</th><th>Variação</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Sudeste</td><td class="numero">R$ 24,6 mi</td><td class="numero">+9%</td><td><span class="etiqueta verde">Acima da meta</span></td></tr>
+        <tr><td>Sul</td><td class="numero">R$ 13,1 mi</td><td class="numero">+18%</td><td><span class="etiqueta verde">Acima da meta</span></td></tr>
+        <tr><td>Nordeste</td><td class="numero">R$ 7,4 mi</td><td class="numero">-3%</td><td><span class="etiqueta vermelho">Abaixo da meta</span></td></tr>
+        <tr><td>Centro-Oeste</td><td class="numero">R$ 3,1 mi</td><td class="numero">+1%</td><td><span class="etiqueta azul">Em linha</span></td></tr>
+      </tbody>
+    </table>
+    <div class="observacao">
+      <p>O Nordeste segue com atraso na renovação de frotas. O plano de ação começa em novembro.</p>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="kicker">Próximos passos</p>
+    <h2>Prioridades do quarto trimestre</h2>
+    <ul>
+      <li data-esperado="Concluir a renovação de frotas no Nordeste até dezembro.">Concluir a renovação de frotas no Nordeste até dezembro.</li>
+      <li>Reduzir o prazo médio de recebimento em cinco dias.</li>
+      <li>Lançar o painel de custos para as equipes de operação.</li>
+    </ul>
+    <p class="nota-rodape" data-esperado="Nota de rodapé: valores preliminares, sujeitos a auditoria externa no início de janeiro.">Nota de rodapé: valores preliminares, sujeitos a auditoria externa no início de janeiro.</p>
+  </section>
+
+</main>
+</body>
+</html>

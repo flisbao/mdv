@@ -1,0 +1,82 @@
+                                                                                
+   Changelog da Lumen                                                           
+   Histórico de versões da biblioteca de componentes para interfaces leves.     
+                                                                                
+   Added novidades Fixed correções Breaking mudanças incompatíveis              
+                                                                                
+   ──────────────────────────────────────────────────────────────────────────   
+                                                                                
+   3.2.0 Conversão de fusos                                                     
+   Lançada em 15 de outubro de 2026                                             
+                                                                                
+   • Added Suporte a fusos horários com a função converterFuso.                 
+     ◦ Aceita nomes IANA, como America/Sao_Paulo.                               
+     ◦ Usa a base de fusos do próprio pacote, sem rede.                         
+       ▪ Não depende do sistema operacional.                                    
+                                                                                
+                                                                                
+   • Fixed Corrige vazamento de memória ao desmontar componentes aninhados.     
+                                                                                
+   ╭────────────────────────────────────────────────────────────────────────╮   
+   │   ▾ Ver mudanças internas                                              │   
+   │ ────────────────────────────────────────────────────────────────────── │   
+   │   Nenhuma mudança afeta a API pública desta versão.                    │   
+   │                                                                        │   
+   │   • Refatoração do agendador de atualizações.                          │   
+   │   • Testes de regressão para listas com mais de mil itens.             │   
+   │                                                                        │   
+   │                                                                        │   
+   ╰────────────────────────────────────────────────────────────────────────╯   
+                                                                                
+   ──────────────────────────────────────────────────────────────────────────   
+                                                                                
+   3.1.1 Correções rápidas                                                      
+   Lançada em 2 de setembro de 2026                                             
+                                                                                
+   • Fixed Ajusta o foco do teclado dentro de diálogos modais.                  
+   • Fixed Evita erro de tipo quando valor chega como null.                     
+                                                                                
+   ──────────────────────────────────────────────────────────────────────────   
+                                                                                
+   3.1.0 Tabelas e filtros                                                      
+   Lançada em 18 de agosto de 2026                                              
+                                                                                
+   • Added Componente Tabela com ordenação por coluna.                          
+     ◦ Filtros por texto e por intervalo numérico.                              
+     ◦ Paginação opcional, com tamanho configurável.                            
+                                                                                
+   • Added Tema escuro automático, seguindo a preferência do sistema.           
+   • Fixed Melhora o contraste dos rótulos desabilitados.                       
+                                                                                
+   ╭────────────────────────────────────────────────────────────────────────╮   
+   │   ▸ Ver exemplo de uso                                                 │   
+   │    <Tabela dados={pedidos} ordenavel filtros />                        │   
+   │                                                                        │   
+   │                                                                        │   
+   ╰────────────────────────────────────────────────────────────────────────╯   
+                                                                                
+   ──────────────────────────────────────────────────────────────────────────   
+                                                                                
+   3.0.0 Nova API de estado                                                     
+   Lançada em 4 de julho de 2026                                                
+                                                                                
+   • Breaking A opção modo legado foi removida; use modo=estrito.               
+   • ▌  Breaking O método montar() agora é assíncrono e devolve uma promessa.   
+     ▌  ◦ Código síncrono precisa de await.                                     
+     ▌                                                                          
+   • Added Ferramenta de migração: lumen migrar.                                
+   • Fixed Corrige ordem de eventos em formulários aninhados.                   
+                                                                                
+   ──────────────────────────────────────────────────────────────────────────   
+                                                                                
+   2.9.4 Manutenção                                                             
+   Lançada em 12 de maio de 2026                                                
+                                                                                
+   • Fixed Atualiza dependências de desenvolvimento sem impacto no pacote       
+     final.                                                                     
+                                                                                
+   ──────────────────────────────────────────────────────────────────────────   
+                                                                                
+   Versões anteriores à 2.9 estão no arquivo CHANGELOG-antigo.md do             
+   repositório.                                                                 
+                                                                                

@@ -1,0 +1,79 @@
+                                                                                
+   Painel operacional de atendimento                                            
+   Dados consolidados da última hora · turno da manhã                           
+                                                                                
+   ╭───────────────╮  ╭───────────────╮  ╭───────────────╮  ╭───────────────╮   
+   │               │  │               │  │               │  │               │   
+   │   CHAMADOS    │  │   TEMPO       │  │   SATISFAÇÃ   │  │   RESOLVIDO   │   
+   │   ABERTOS     │  │   MÉDIO DE    │  │   O (CSAT)    │  │   S NO 1º     │   
+   │   348         │  │   RESPOSTA    │  │   92%         │  │   CONTATO     │   
+   │   ▲ 12% vs.   │  │   4m 12s      │  │   ▲ 2         │  │   71%         │   
+   │   ontem       │  │   ▼ 8% vs.    │  │   pontos      │  │   ▼ meta      │   
+   │               │  │   ontem       │  │               │  │   mínima de   │   
+   │               │  │               │  │               │  │   80%         │   
+   │               │  │               │  │               │  │               │   
+   ╰───────────────╯  ╰───────────────╯  ╰───────────────╯  ╰───────────────╯   
+                                                                                
+   ╭────────────────────────────────────────────────────────────────────────╮   
+   │                                                                        │   
+   │   Metas do turno                                                       │   
+   │   Chamados respondidos no prazo                                  86%   │   
+   │                                                                        │   
+   │   Base de conhecimento atualizada                                64%   │   
+   │                                                                        │   
+   │   Escalonamentos para o nível 2                                  23%   │   
+   │                                                                        │   
+   │                                                                        │   
+   ╰────────────────────────────────────────────────────────────────────────╯   
+                                                                                
+   ╭──────────────────────────────────╮  ╭──────────────────────────────────╮   
+   │                                  │  │                                  │   
+   │   Chamados por categoria         │  │   Volume por hora                │   
+   │   Faturamento                    │  │   [gráfico: Pico às 10h Fim do   │   
+   │   82                             │  │   turno]                         │   
+   │   Acesso à                       │  │                                  │   
+   │   conta                          │  │                                  │   
+   │   64                             │  │                                  │   
+   │   Entrega de                     │  │                                  │   
+   │   pedido                         │  │                                  │   
+   │   47                             │  │                                  │   
+   │   Devolução                      │  │                                  │   
+   │   31                             │  │                                  │   
+   │   Outros                         │  │                                  │   
+   │   18                             │  │                                  │   
+   │                                  │  │                                  │   
+   │                                  │  │                                  │   
+   ╰──────────────────────────────────╯  ╰──────────────────────────────────╯   
+                                                                                
+   ╭────────────────────────────────────────────────────────────────────────╮   
+   │                                                                        │   
+   │   Tendência de chamados (últimas 24 horas)                             │   
+   │   [canvas: Seu navegador não suporta o elemento canvas.]               │   
+   │   Linha de tendência renderizada por script; a amostra mostra apenas   │   
+   │   o conteúdo alternativo.                                              │   
+   │                                                                        │   
+   │                                                                        │   
+   ╰────────────────────────────────────────────────────────────────────────╯   
+                                                                                
+   ╭────────────────────────────────────────────────────────────────────────╮   
+   │                                                                        │   
+   │   Últimos eventos                                                      │   
+   │   Horário │     Canal     │    Evento     │ Duração │    Status        │   
+   │   ────────┼───────────────┼───────────────┼─────────┼──────────────    │   
+   │   09:41   │ Chat          │ Pedido        │  12 min │ Em análise       │   
+   │           │               │ reaberto pelo │         │                  │   
+   │           │               │ cliente       │         │                  │   
+   │   09:37   │ E-mail        │ Reembolso     │   3 min │ Concluído        │   
+   │           │               │ aprovado      │         │                  │   
+   │   09:29   │ Telefone      │ Falha de      │  27 min │ Escalonado       │   
+   │           │               │ acesso ao     │         │                  │   
+   │           │               │ aplicativo    │         │                  │   
+   │   09:12   │ Chat          │ Dúvida sobre  │   5 min │ Concluído        │   
+   │           │               │ faturamento   │         │                  │   
+   │   08:58   │ Redes sociais │ Reclamação de │  18 min │ Aguardando       │   
+   │           │               │ entrega       │         │ cliente          │   
+   │           │               │ atrasada      │         │                  │   
+   │                                                                        │   
+   │                                                                        │   
+   ╰────────────────────────────────────────────────────────────────────────╯   
+                                                                                

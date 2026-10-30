@@ -1,0 +1,75 @@
+                                                                                
+   ┌──────────┐                       Helena Prado Ferreira                     
+   │          │                       Engenheira de Dados Sênior                
+   │          │                                                                 
+   │          │                                                                 
+   │          │                         Mais de oito anos construindo           
+   │          │                         plataformas de dados para varejo        
+   │          │                         e fintechs, com foco em                 
+   └──────────┘                         confiabilidade, custo e                 
+                                        governança.                             
+   Helena Prado Ferreira                                                        
+   Engenheira de dados, São           EXPERIÊNCIA PROFISSIONAL                  
+   Paulo - SP                         ─────────────────────────────────────     
+   helena.prado@exemplo.com.br                                                  
+   github.com/helenaprado             ▌   Líder técnica de dados                
+   HABILIDADES                        ▌   Mercadinho Boa Vista · março de       
+   ───────────────────────────        ▌   2022 a atual                          
+   ───────────────────────────        ▌   Liderei a migração de 40              
+   ▌  SQL                    ▐        ▌   pipelines para um lakehouse           
+   ───────────────────────────        ▌   único.                                
+   ───────────────────────────        ▌   • Reduzi o custo mensal de            
+   ▌  Python                 ▐        ▌     armazenamento em 35%.               
+   ───────────────────────────        ▌   • Montei um time de cinco             
+   ───────────────────────────        ▌     engenheiros e definimos o           
+   ▌  Apache Airflow         ▐        ▌     padrão de revisão de código.        
+   ───────────────────────────        ▌   • Implantei testes de qualidade       
+   ───────────────────────────        ▌     que bloqueiam cargas com            
+   ▌  dbt                    ▐        ▌     dados inconsistentes.               
+   ───────────────────────────                                                  
+   ───────────────────────────        ▌   Engenheira de dados                   
+   ▌  Spark                  ▐        ▌   Pagafácil Soluções · junho de         
+   ───────────────────────────        ▌   2019 a fevereiro de 2022              
+   ───────────────────────────        ▌   Desenvolvi a camada de transações     
+   ▌  Kafka                  ▐        ▌   usada por dez equipes de produto.     
+   ───────────────────────────        ▌   • Criei modelos dimensionais para     
+   ───────────────────────────        ▌     conciliação financeira diária.      
+   ▌  Terraform              ▐        ▌   • Substituí cargas manuais por        
+   ───────────────────────────        ▌     orquestração com Apache             
+   ───────────────────────────        ▌     Airflow.                            
+   ▌  Modelagem dimensional  ▐                                                  
+   ───────────────────────────        ▌   Analista de dados júnior              
+   IDIOMAS                            ▌   Consultoria Rota Norte · janeiro      
+   ───────────────────────────        ▌   de 2017 a maio de 2019                
+   Português: nativo                  ▌   Produzi relatórios mensais e          
+   Inglês: fluente C1                 ▌   painéis para clientes do setor de     
+   Espanhol: intermediário            ▌   logística.                            
+                                                                                
+                                      PROJETOS DE DESTAQUE                      
+                                      ─────────────────────────────────────     
+                                                                                
+                                      ▌   Catálogo de dados interno             
+                                      ▌   Ferramenta de busca com linhagem      
+                                      ▌   de colunas, usada por mais de 300     
+                                      ▌   pessoas.                              
+                                                                                
+                                      FORMAÇÃO ACADÊMICA                        
+                                      ─────────────────────────────────────     
+                                                                                
+                                      Bacharelado em Estatística                
+                                          Universidade Federal de São           
+                                          Carlos, 2016.                         
+                                      Especialização em Engenharia de Dados     
+                                          Instituto de Ensino Superior,         
+                                          2020.                                 
+                                                                                
+                                      CERTIFICAÇÕES                             
+                                      ─────────────────────────────────────     
+                                                                                
+                                      • Certificação em engenharia de dados     
+                                        na nuvem, emitida em 2024.              
+                                      • Curso de governança e privacidade       
+                                        de dados, concluído em 2025.            
+                                                                                
+                                                                                
+                                                                                
