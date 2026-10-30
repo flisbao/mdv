@@ -1,9 +1,16 @@
 //! Trechos em linha para Markdown: marcas, links, imagens e referências de nota.
 
+use std::rc::Rc;
+
 use crate::escape;
 use crate::md_link;
 use crate::md_notas::Notas;
 use crate::modelo::{Marcas, Trecho};
+
+/// Soma máxima dos destinos de link escritos por uma chamada de `inline`. Cada trecho de marcas
+/// diferentes repete o destino, então sem teto uma URL de 4 KiB em centenas de milhares de runs
+/// viraria gigabytes de saída; o que passa disso fica como texto, sem link.
+pub(crate) const MAX_LINKS_BYTES: usize = 64 * 1024;
 
 /// Onde o texto em linha vai parar; muda quebras, escapes e o uso de negrito.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -20,7 +27,7 @@ pub(crate) enum Modo {
 
 /// Peça já reduzida: um grupo de texto ainda por escapar ou um trecho pronto (quebra, imagem, nota).
 enum Peca {
-    Grupo { texto: String, marcas: Marcas, link: Option<String> },
+    Grupo { texto: String, marcas: Marcas, link: Option<Rc<str>> },
     Pronta(String),
 }
 
@@ -34,7 +41,8 @@ enum Peca {
 /// muda a quebra, o escape de `|` (célula, inclusive no destino do link) e o negrito (título).
 pub(crate) fn inline(trechos: &[Trecho], notas: &mut Notas, modo: Modo) -> String {
     let pecas = fundir(trechos, notas, modo);
-    let juntos: String = pecas.iter().map(|p| escrever(p, modo)).collect();
+    let mut links = 0;
+    let juntos: String = pecas.iter().map(|p| escrever(p, modo, &mut links)).collect();
     let texto = aparar(&juntos, modo);
     if modo == Modo::Bloco {
         escapar_linhas(&texto)
@@ -80,7 +88,7 @@ fn fundir(trechos: &[Trecho], notas: &mut Notas, modo: Modo) -> Vec<Peca> {
 }
 
 /// Junta o texto ao grupo anterior se as marcas e o link forem os mesmos; senão abre um grupo.
-fn acrescentar(pecas: &mut Vec<Peca>, texto: String, marcas: Marcas, link: &Option<String>) {
+fn acrescentar(pecas: &mut Vec<Peca>, texto: String, marcas: Marcas, link: &Option<Rc<str>>) {
     if let Some(Peca::Grupo { texto: acc, marcas: m, link: l }) = pecas.last_mut() {
         if *m == marcas && l == link {
             acc.push_str(&texto);
@@ -136,15 +144,16 @@ fn escapar(texto: &str, modo: Modo) -> String {
 }
 
 /// Escreve uma peça: peça pronta sai como está, grupo recebe escape, marcadores e link.
-fn escrever(peca: &Peca, modo: Modo) -> String {
+/// `links` soma os bytes de destino já escritos (ver `MAX_LINKS_BYTES`).
+fn escrever(peca: &Peca, modo: Modo, links: &mut usize) -> String {
     match peca {
         Peca::Pronta(s) => s.clone(),
-        Peca::Grupo { texto, marcas, link } => grupo(texto, *marcas, link.as_deref(), modo),
+        Peca::Grupo { texto, marcas, link } => grupo(texto, *marcas, link.as_deref(), modo, links),
     }
 }
 
 /// Escreve um grupo: espaços das bordas por fora, e por dentro marcadores e, se couber, link.
-fn grupo(texto: &str, marcas: Marcas, link: Option<&str>, modo: Modo) -> String {
+fn grupo(texto: &str, marcas: Marcas, link: Option<&str>, modo: Modo, links: &mut usize) -> String {
     let miolo = texto.trim();
     if miolo.is_empty() {
         return escapar(texto, modo);
@@ -156,7 +165,8 @@ fn grupo(texto: &str, marcas: Marcas, link: Option<&str>, modo: Modo) -> String 
     } else {
         marcar(&escapar(miolo, modo), marcas, modo)
     };
-    if let Some(url) = link.filter(|u| md_link::permitido(u)) {
+    if let Some(url) = link.filter(|u| md_link::permitido(u) && *links + u.len() <= MAX_LINKS_BYTES) {
+        *links += url.len();
         // Em célula, `|` no destino dividiria a coluna da tabela GFM.
         let destino = md_link::destino(url);
         let destino = if modo == Modo::Celula { destino.replace('|', "%7C") } else { destino };

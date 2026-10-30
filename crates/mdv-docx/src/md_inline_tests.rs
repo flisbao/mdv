@@ -1,4 +1,4 @@
-use crate::md_inline::{inline, Modo};
+use crate::md_inline::{inline, Modo, MAX_LINKS_BYTES};
 use crate::md_notas::Notas;
 use crate::modelo::{Marcas, Trecho};
 
@@ -127,6 +127,19 @@ fn runs_com_links_diferentes_nao_se_fundem() {
         link("b", Marcas::default(), "https://b.org"),
     ];
     assert_eq!(linha(&ts), "[a](https://a.org)[b](https://b.org)");
+}
+
+#[test]
+fn links_acima_do_teto_do_paragrafo_viram_so_texto() {
+    // Marcas alternadas impedem a fusão: cada trecho repetiria a mesma URL na saída.
+    let url = format!("https://a.org/{}", "x".repeat(3986));
+    assert_eq!(url.len(), 4000);
+    let ts: Vec<Trecho> = (0..20)
+        .map(|i| link("t", if i % 2 == 0 { negrito() } else { italico() }, &url))
+        .collect();
+    let saida = linha(&ts);
+    assert_eq!(saida.matches("](").count(), MAX_LINKS_BYTES / 4000);
+    assert!(saida.len() < MAX_LINKS_BYTES + 1000, "{}", saida.len());
 }
 
 #[test]

@@ -14,6 +14,7 @@ mod escape;
 mod estilo_run;
 mod estilos;
 mod le;
+mod limite;
 mod leitura;
 mod markdown;
 mod md_bloco;
@@ -62,6 +63,8 @@ pub const MAX_TOTAL_BYTES: usize = 40 * 1024 * 1024;
 pub const MAX_ENTRADAS: usize = 5000;
 /// Profundidade máxima da árvore XML analisada.
 pub const MAX_PROFUNDIDADE_XML: usize = 100;
+/// Tamanho máximo do destino de um link; acima disso o texto fica sem link.
+pub const MAX_URL_BYTES: usize = 4096;
 /// Número máximo de colunas de uma tabela convertida.
 pub const MAX_COLUNAS: usize = 200;
 /// Nível máximo de recuo de uma lista.

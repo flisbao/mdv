@@ -1,7 +1,7 @@
 //! Testes ponta a ponta de `to_markdown`: do ZIP montado à mão até o Markdown final.
 
 use crate::testutil::{zip, DocxBuilder, NS};
-use crate::{to_markdown, Budget, Unlimited, MAX_PROFUNDIDADE_XML};
+use crate::{to_markdown, Budget, Unlimited, MAX_PROFUNDIDADE_XML, MAX_URL_BYTES};
 
 fn md(corpo: &str) -> String {
     to_markdown(&DocxBuilder::novo().corpo(corpo).construir(), &Unlimited).expect("converte")
@@ -98,6 +98,24 @@ fn link_externo_e_javascript() {
         .construir();
     let saida = to_markdown(&bytes, &Unlimited).expect("converte");
     assert_eq!(saida, "[site](https://exemplo.org)\n\nperigo\n");
+}
+
+#[test]
+fn link_com_url_acima_do_teto_vira_so_texto() {
+    // A URL é copiada por run: acima do teto o texto fica, sem link.
+    const TIPO: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
+    let longa = format!("https://a.org/{}", "x".repeat(MAX_URL_BYTES));
+    let curta = "https://a.org/ok";
+    let bytes = DocxBuilder::novo()
+        .relacao("rId5", TIPO, &longa, true)
+        .relacao("rId6", TIPO, curta, true)
+        .corpo(
+            r#"<w:p><w:hyperlink r:id="rId5"><w:r><w:t>longo</w:t></w:r></w:hyperlink></w:p>
+               <w:p><w:hyperlink r:id="rId6"><w:r><w:t>curto</w:t></w:r></w:hyperlink></w:p>"#,
+        )
+        .construir();
+    let saida = to_markdown(&bytes, &Unlimited).expect("converte");
+    assert_eq!(saida, "longo\n\n[curto](https://a.org/ok)\n");
 }
 
 #[test]

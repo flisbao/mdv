@@ -2,6 +2,7 @@
 //! Não conhece XML nem Markdown; quem lê preenche e quem escreve consome.
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Documento lido: blocos na ordem do corpo e o texto de cada nota (rodapé ou fim), por chave.
 #[derive(Debug, Clone, PartialEq)]
@@ -31,7 +32,7 @@ pub(crate) enum Bloco {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Trecho {
     /// Texto com marcas e, se for link, o destino.
-    Texto { texto: String, marcas: Marcas, link: Option<String> },
+    Texto { texto: String, marcas: Marcas, link: Option<Rc<str>> },
     /// Quebra de linha dentro do parágrafo (`w:br`).
     Quebra,
     /// Chave da nota: `n<id>` para rodapé, `e<id>` para nota de fim.

@@ -1,12 +1,15 @@
 //! Leitura de um parágrafo (`w:p`): reúne os runs, resolve links e entrega ao classificador.
 //! Revisões, controles de conteúdo e marcas de compatibilidade são tratados aqui.
 
+use std::rc::Rc;
+
 use crate::classificar::classificar;
 use crate::contexto::Contexto;
 use crate::modelo::{Bloco, Trecho};
 use crate::propriedades::{ler_ppr, Propriedades};
 use crate::trecho::ler_run;
 use crate::xml_leitor::{Evento, Leitor};
+use crate::MAX_URL_BYTES;
 
 /// Lê um `w:p` (chamada logo depois do `Abre("p")`), consome até o `Fecha` dele e o classifica.
 /// Quase todo elemento é transparente (`ins`, `sdt`, `smartTag`, `Choice`, `bookmarkStart`...):
@@ -25,7 +28,7 @@ pub(crate) fn ler_paragrafo(l: &mut Leitor, ctx: &mut Contexto) -> Result<Option
 fn percorrer(
     l: &mut Leitor,
     ctx: &mut Contexto,
-    link: Option<&str>,
+    link: Option<&Rc<str>>,
     props: &mut Propriedades,
     trechos: &mut Vec<Trecho>,
     fim: &str,
@@ -42,9 +45,9 @@ fn percorrer(
                     let url = tag
                         .attr("id")
                         .and_then(|id| ctx.relacoes.por_id(id))
-                        .filter(|r| r.externo)
-                        .map(|r| r.alvo.clone());
-                    percorrer(l, ctx, url.as_deref(), props, trechos, "hyperlink")?;
+                        .filter(|r| r.externo && r.alvo.len() <= MAX_URL_BYTES)
+                        .map(|r| Rc::from(r.alvo.as_str()));
+                    percorrer(l, ctx, url.as_ref(), props, trechos, "hyperlink")?;
                 }
                 "del" | "moveFrom" | "Fallback" | "drawing" | "pict" | "txbxContent" | "rPr" => {
                     l.pular()?

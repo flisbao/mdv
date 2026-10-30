@@ -1,6 +1,7 @@
 //! Montagem final: junta os grupos de blocos, as definições de notas e aplica o teto de tamanho.
 
 use crate::agrupar::agrupar;
+use crate::limite::{Limite, ERRO_GRANDE};
 use crate::md_bloco::grupo;
 use crate::md_notas::Notas;
 use crate::modelo::Documento;
@@ -16,14 +17,14 @@ fn escrever_com_teto(doc: &Documento, budget: &dyn Budget, teto: usize) -> Resul
     let mut saida = String::new();
     for g in agrupar(&doc.blocos) {
         budget.check()?;
-        let texto = grupo(&g, &mut notas, budget)?;
+        let texto = grupo(&g, &mut notas, &mut Limite::novo(budget, teto))?;
         if texto.is_empty() {
             continue;
         }
         acrescentar(&mut saida, &texto, teto)?;
     }
     // As definições vêm depois do corpo porque só ele diz quais notas foram citadas e em que ordem.
-    let definicoes = notas.definicoes(&doc.notas);
+    let definicoes = notas.definicoes(&doc.notas, &mut Limite::novo(budget, teto))?;
     if !definicoes.is_empty() {
         acrescentar(&mut saida, &definicoes, teto)?;
     }
@@ -38,7 +39,7 @@ fn escrever_com_teto(doc: &Documento, budget: &dyn Budget, teto: usize) -> Resul
 fn acrescentar(saida: &mut String, texto: &str, teto: usize) -> Result<(), String> {
     let separador = if saida.is_empty() { 0 } else { 2 };
     if saida.len() + separador + texto.len() > teto {
-        return Err("documento convertido grande demais".into());
+        return Err(ERRO_GRANDE.into());
     }
     if separador > 0 {
         saida.push_str("\n\n");

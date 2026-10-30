@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use crate::escape;
+use crate::limite::Limite;
 use crate::md_inline::{inline, Modo};
 use crate::modelo::Trecho;
 
@@ -35,14 +36,18 @@ impl Notas {
     /// sai numa linha só (`Modo::Linha`) e sem `NotaRef`, que dentro de uma definição não faria
     /// sentido; uma chave sem texto (ou com texto vazio) ainda ganha linha, para a referência
     /// `[^N]` do corpo nunca ficar sem definição.
-    pub(crate) fn definicoes(&self, textos: &HashMap<String, Vec<Trecho>>) -> String {
-        let linhas: Vec<String> = self
-            .chaves
-            .iter()
-            .enumerate()
-            .map(|(i, chave)| format!("[^{}]: {}", i + 1, texto_da_nota(textos.get(chave))))
-            .collect();
-        linhas.join("\n")
+    pub(crate) fn definicoes(
+        &self,
+        textos: &HashMap<String, Vec<Trecho>>,
+        limite: &mut Limite,
+    ) -> Result<String, String> {
+        let mut linhas: Vec<String> = Vec::with_capacity(self.chaves.len());
+        for (i, chave) in self.chaves.iter().enumerate() {
+            let linha = format!("[^{}]: {}", i + 1, texto_da_nota(textos.get(chave)));
+            limite.gastar(linha.len() + 1)?;
+            linhas.push(linha);
+        }
+        Ok(linhas.join("\n"))
     }
 }
 
@@ -67,6 +72,11 @@ fn texto_da_nota(trechos: Option<&Vec<Trecho>>) -> String {
 mod tests {
     use super::*;
     use crate::modelo::Marcas;
+    use crate::Unlimited;
+
+    fn ilimitado() -> Limite<'static> {
+        Limite::novo(&Unlimited, usize::MAX)
+    }
 
     fn texto(s: &str) -> Vec<Trecho> {
         vec![Trecho::Texto { texto: s.into(), marcas: Marcas::default(), link: None }]
@@ -88,14 +98,14 @@ mod tests {
         let mut textos = HashMap::new();
         textos.insert("n1".to_string(), texto("dois"));
         textos.insert("n2".to_string(), texto("um"));
-        assert_eq!(notas.definicoes(&textos), "[^1]: um\n[^2]: dois");
+        assert_eq!(notas.definicoes(&textos, &mut ilimitado()).unwrap(), "[^1]: um\n[^2]: dois");
     }
 
     #[test]
     fn nota_sem_texto() {
         let mut notas = Notas::novo();
         notas.referenciar("n");
-        assert_eq!(notas.definicoes(&HashMap::new()), "[^1]: (nota ausente)");
+        assert_eq!(notas.definicoes(&HashMap::new(), &mut ilimitado()).unwrap(), "[^1]: (nota ausente)");
     }
 
     #[test]
@@ -104,12 +114,25 @@ mod tests {
         notas.referenciar("n1");
         let mut textos = HashMap::new();
         textos.insert("n1".to_string(), texto("# Segredo"));
-        assert_eq!(notas.definicoes(&textos), "[^1]: \\# Segredo");
+        assert_eq!(notas.definicoes(&textos, &mut ilimitado()).unwrap(), "[^1]: \\# Segredo");
+    }
+
+    #[test]
+    fn notas_acima_do_teto_sao_recusadas() {
+        let mut notas = Notas::novo();
+        let mut textos = HashMap::new();
+        for i in 0..100 {
+            notas.referenciar(&format!("n{i}"));
+            textos.insert(format!("n{i}"), texto("conteúdo"));
+        }
+        let mut limite = Limite::novo(&Unlimited, 100);
+        let erro = notas.definicoes(&textos, &mut limite).expect_err("erro");
+        assert!(erro.contains("grande demais"), "{erro}");
     }
 
     #[test]
     fn sem_notas_devolve_vazio() {
-        assert_eq!(Notas::novo().definicoes(&HashMap::new()), "");
+        assert_eq!(Notas::novo().definicoes(&HashMap::new(), &mut ilimitado()).unwrap(), "");
     }
 
     #[test]
@@ -127,6 +150,6 @@ mod tests {
                 Trecho::Texto { texto: "b".into(), marcas: Marcas::default(), link: None },
             ],
         );
-        assert_eq!(notas.definicoes(&textos), "[^1]: **a** b");
+        assert_eq!(notas.definicoes(&textos, &mut ilimitado()).unwrap(), "[^1]: **a** b");
     }
 }

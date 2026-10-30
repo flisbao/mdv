@@ -4,33 +4,34 @@ use std::slice;
 
 use crate::agrupar::Grupo;
 use crate::escape;
+use crate::limite::Limite;
 use crate::md_inline::{inline, Modo};
 use crate::md_notas::Notas;
 use crate::md_tabela;
 use crate::modelo::{Bloco, Trecho};
-use crate::Budget;
 
 /// Escreve o grupo como Markdown, sem quebra de linha no fim.
 ///
-/// Só a tabela pode crescer muito além da entrada, por isso só ela recebe o orçamento.
-pub(crate) fn grupo(g: &Grupo, notas: &mut Notas, budget: &dyn Budget) -> Result<String, String> {
+/// Lista, citação e tabela descontam do `limite` a cada pedaço que produzem; título, parágrafo e
+/// código saem de um bloco só, cujo tamanho a entrada já limita.
+pub(crate) fn grupo(g: &Grupo, notas: &mut Notas, limite: &mut Limite) -> Result<String, String> {
     match g {
-        Grupo::Lista(itens) => Ok(lista(itens, notas)),
+        Grupo::Lista(itens) => lista(itens, notas, limite),
         Grupo::Codigo(blocos) => Ok(codigo(blocos)),
-        Grupo::Citacao(blocos) => Ok(citacao(blocos, notas)),
-        Grupo::Bloco(bloco) => avulso(bloco, notas, budget),
+        Grupo::Citacao(blocos) => citacao(blocos, notas, limite),
+        Grupo::Bloco(bloco) => avulso(bloco, notas, limite),
     }
 }
 
 /// Escreve um bloco que veio sozinho; item, código e citação soltos valem como grupo de um.
-fn avulso(bloco: &Bloco, notas: &mut Notas, budget: &dyn Budget) -> Result<String, String> {
+fn avulso(bloco: &Bloco, notas: &mut Notas, limite: &mut Limite) -> Result<String, String> {
     Ok(match bloco {
         Bloco::Titulo { nivel, texto } => titulo(*nivel, texto, notas),
         Bloco::Paragrafo(texto) => paragrafo(texto, notas),
-        Bloco::Tabela(t) => return md_tabela::tabela(t, notas, budget),
-        Bloco::Item { .. } => lista(slice::from_ref(bloco), notas),
+        Bloco::Tabela(t) => return md_tabela::tabela(t, notas, limite),
+        Bloco::Item { .. } => return lista(slice::from_ref(bloco), notas, limite),
         Bloco::Codigo(_) => codigo(slice::from_ref(bloco)),
-        Bloco::Citacao(_) => citacao(slice::from_ref(bloco), notas),
+        Bloco::Citacao(_) => return citacao(slice::from_ref(bloco), notas, limite),
     })
 }
 
@@ -53,7 +54,7 @@ fn paragrafo(texto: &[Trecho], notas: &mut Notas) -> String {
 /// serve sob `- ` e sob `10. `, e cresce sob `100. ` (5 colunas), em que 4 deixariam o filho
 /// como continuação do texto. O item vai em `Modo::Linha` porque uma quebra `\` + nova linha
 /// desfaria o recuo da lista.
-fn lista(itens: &[Bloco], notas: &mut Notas) -> String {
+fn lista(itens: &[Bloco], notas: &mut Notas, limite: &mut Limite) -> Result<String, String> {
     // Itens abertos: nível no Word e recuo dos filhos deles.
     let mut abertos: Vec<(u8, usize)> = Vec::new();
     let mut linhas: Vec<String> = Vec::new();
@@ -65,9 +66,11 @@ fn lista(itens: &[Bloco], notas: &mut Notas) -> String {
         }
         let recuo = abertos.last().map_or(0, |&(_, r)| r);
         abertos.push((*nivel, recuo + marcador.len().max(4)));
-        linhas.push(item(recuo, &marcador, texto, notas));
+        let linha = item(recuo, &marcador, texto, notas);
+        limite.gastar(linha.len() + 1)?;
+        linhas.push(linha);
     }
-    linhas.join("\n")
+    Ok(linhas.join("\n"))
 }
 
 fn item(recuo: usize, marcador: &str, texto: &[Trecho], notas: &mut Notas) -> String {
@@ -100,12 +103,16 @@ fn cerca(conteudo: &str) -> String {
 }
 
 /// Parágrafos de citação separados por uma linha `>`; cada linha leva o prefixo `> `.
-fn citacao(blocos: &[Bloco], notas: &mut Notas) -> String {
-    let paragrafos: Vec<String> = blocos
-        .iter()
-        .filter_map(|b| if let Bloco::Citacao(t) = b { Some(citado(t, notas)) } else { None })
-        .collect();
-    paragrafos.join("\n>\n")
+fn citacao(blocos: &[Bloco], notas: &mut Notas, limite: &mut Limite) -> Result<String, String> {
+    let mut paragrafos: Vec<String> = Vec::new();
+    for bloco in blocos {
+        if let Bloco::Citacao(t) = bloco {
+            let p = citado(t, notas);
+            limite.gastar(p.len() + 3)?;
+            paragrafos.push(p);
+        }
+    }
+    Ok(paragrafos.join("\n>\n"))
 }
 
 /// Um parágrafo de citação com o prefixo em todas as linhas (linha vazia vira só `>`).

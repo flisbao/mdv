@@ -1,7 +1,8 @@
 use crate::md_notas::Notas;
-use crate::md_tabela::{tabela, tabela_com_teto};
+use crate::limite::Limite;
+use crate::md_tabela::tabela;
 use crate::modelo::{Celula, Marcas, Tabela, Trecho};
-use crate::{Budget, Unlimited, MAX_COLUNAS};
+use crate::{Budget, Unlimited, MAX_COLUNAS, MAX_MARKDOWN_BYTES};
 
 fn texto(s: &str) -> Vec<Trecho> {
     vec![Trecho::Texto { texto: s.into(), marcas: Marcas::default(), link: None }]
@@ -12,7 +13,7 @@ fn c(s: &str) -> Celula {
 }
 
 fn md(linhas: Vec<Vec<Celula>>) -> String {
-    tabela(&Tabela { linhas }, &mut Notas::novo(), &Unlimited).unwrap()
+    tabela(&Tabela { linhas }, &mut Notas::novo(), &mut Limite::novo(&Unlimited, MAX_MARKDOWN_BYTES)).unwrap()
 }
 
 #[test]
@@ -89,12 +90,12 @@ fn linhas_largas(n: usize) -> Vec<Vec<Celula>> {
 }
 
 #[test]
-fn tabela_cuja_saida_passa_do_teto_e_recusada_antes_de_montar() {
-    // 11 linhas (com o separador) de 200 colunas ocupam ao menos 6600 bytes.
+fn tabela_cuja_saida_passa_do_teto_e_recusada_no_meio() {
+    // 10 linhas de 200 células vazias custam 600 bytes cada: o teto de 3000 acaba na 6ª.
     let t = Tabela { linhas: linhas_largas(10) };
-    let erro = tabela_com_teto(&t, &mut Notas::novo(), &Unlimited, 6599).expect_err("erro");
+    let erro = tabela(&t, &mut Notas::novo(), &mut Limite::novo(&Unlimited, 3000)).expect_err("erro");
     assert!(erro.contains("grande demais"), "{erro}");
-    assert!(tabela_com_teto(&t, &mut Notas::novo(), &Unlimited, 1 << 20).is_ok());
+    assert!(tabela(&t, &mut Notas::novo(), &mut Limite::novo(&Unlimited, 1 << 20)).is_ok());
 }
 
 struct SemOrcamento;
@@ -108,6 +109,6 @@ impl Budget for SemOrcamento {
 #[test]
 fn orcamento_esgotado_para_a_tabela() {
     let t = Tabela { linhas: vec![vec![c("A")]] };
-    let erro = tabela(&t, &mut Notas::novo(), &SemOrcamento).expect_err("erro");
+    let erro = tabela(&t, &mut Notas::novo(), &mut Limite::novo(&SemOrcamento, 1 << 20)).expect_err("erro");
     assert!(erro.contains("orçamento esgotado"), "{erro}");
 }

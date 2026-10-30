@@ -1,8 +1,9 @@
 use crate::agrupar::{agrupar, Grupo};
+use crate::limite::Limite;
 use crate::md_bloco::grupo;
 use crate::md_notas::Notas;
 use crate::modelo::{Bloco, Celula, Marcas, Tabela, Trecho};
-use crate::Unlimited;
+use crate::{Unlimited, MAX_MARKDOWN_BYTES};
 
 fn texto(s: &str) -> Vec<Trecho> {
     vec![Trecho::Texto { texto: s.into(), marcas: Marcas::default(), link: None }]
@@ -19,7 +20,7 @@ fn numerado(nivel: u8, numero: u32, s: &str) -> Bloco {
 /// Escreve todos os grupos dos blocos, um por vez, separados por linha vazia.
 fn md(blocos: &[Bloco]) -> String {
     let mut notas = Notas::novo();
-    let partes: Vec<String> = agrupar(blocos).iter().map(|g| grupo(g, &mut notas, &Unlimited).unwrap()).collect();
+    let partes: Vec<String> = agrupar(blocos).iter().map(|g| grupo(g, &mut notas, &mut Limite::novo(&Unlimited, MAX_MARKDOWN_BYTES)).unwrap()).collect();
     partes.join("\n\n")
 }
 
@@ -132,5 +133,26 @@ fn tabela_delega() {
     let celula = |s: &str| Celula { paragrafos: vec![texto(s)], colunas: 1, continua: false };
     let t = Tabela { linhas: vec![vec![celula("A")], vec![celula("1")]] };
     let blocos = [Bloco::Tabela(t)];
-    assert_eq!(grupo(&Grupo::Bloco(&blocos[0]), &mut Notas::novo(), &Unlimited).unwrap(), "| A |\n| --- |\n| 1 |");
+    assert_eq!(grupo(&Grupo::Bloco(&blocos[0]), &mut Notas::novo(), &mut Limite::novo(&Unlimited, MAX_MARKDOWN_BYTES)).unwrap(), "| A |\n| --- |\n| 1 |");
+}
+
+/// Escreve o primeiro grupo dos blocos com um teto de saída pequeno.
+fn com_teto(blocos: &[Bloco], teto: usize) -> Result<String, String> {
+    grupo(&agrupar(blocos)[0], &mut Notas::novo(), &mut Limite::novo(&Unlimited, teto))
+}
+
+#[test]
+fn lista_acima_do_teto_e_recusada_no_meio() {
+    let blocos: Vec<Bloco> = (0..100).map(|_| item(0, "texto")).collect();
+    let erro = com_teto(&blocos, 100).expect_err("erro");
+    assert!(erro.contains("grande demais"), "{erro}");
+    assert!(com_teto(&blocos, 1000).is_ok());
+}
+
+#[test]
+fn citacao_acima_do_teto_e_recusada_no_meio() {
+    let blocos: Vec<Bloco> = (0..100).map(|_| Bloco::Citacao(texto("texto"))).collect();
+    let erro = com_teto(&blocos, 100).expect_err("erro");
+    assert!(erro.contains("grande demais"), "{erro}");
+    assert!(com_teto(&blocos, 2000).is_ok());
 }

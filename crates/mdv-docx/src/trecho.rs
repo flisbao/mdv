@@ -9,12 +9,13 @@ use crate::xml_leitor::Leitor;
 use crate::modelo::{chave_nota, Marcas};
 use crate::xml_leitor::Evento;
 use mdv_text::sanitize;
+use std::rc::Rc;
 
 /// Lê um `w:r` (chamada logo depois do `Abre("r")`) e consome até o `Fecha` dele.
 pub(crate) fn ler_run(
     l: &mut Leitor,
     ctx: &Contexto,
-    link: Option<&str>,
+    link: Option<&Rc<str>>,
     saida: &mut Vec<Trecho>,
 ) -> Result<(), String> {
     // O `w:rPr` pode vir depois do texto no XML: os trechos saem com marcas padrão e recebem as
@@ -103,13 +104,13 @@ fn ler_desenho(l: &mut Leitor) -> Result<String, String> {
 }
 
 /// Passa o texto acumulado (já sem controles de terminal) para a saída; vazio não gera trecho.
-fn esvaziar(pendente: &mut String, link: Option<&str>, saida: &mut Vec<Trecho>) {
+fn esvaziar(pendente: &mut String, link: Option<&Rc<str>>, saida: &mut Vec<Trecho>) {
     if pendente.is_empty() {
         return;
     }
     let texto = sanitize(pendente).into_owned();
     pendente.clear();
-    saida.push(Trecho::Texto { texto, marcas: Marcas::default(), link: link.map(str::to_string) });
+    saida.push(Trecho::Texto { texto, marcas: Marcas::default(), link: link.cloned() });
 }
 
 #[cfg(test)]
@@ -127,7 +128,7 @@ mod tests {
             let mut l = Leitor::novo(xml.as_bytes(), &Unlimited);
             l.ate("r").unwrap().unwrap();
             let mut saida = Vec::new();
-            ler_run(&mut l, ctx, link, &mut saida).unwrap();
+            ler_run(&mut l, ctx, link.map(Rc::from).as_ref(), &mut saida).unwrap();
             assert_eq!(l.proximo().unwrap(), None, "o run deve ser consumido por inteiro");
             saida
         })
