@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/mdv-text", "crates/mdv-tools", "crates/mdv-export", "crates/mdv-msg"]
+members = [".", "crates/mdv-text", "crates/mdv-tools", "crates/mdv-export", "crates/mdv-msg", "crates/mdv-html"]
 resolver = "2"
 
 [workspace.package]

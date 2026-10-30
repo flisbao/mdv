@@ -972,6 +972,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mdv-html"
+version = "0.7.1"
+dependencies = [
+ "scraper",
+ "unicode-width",
+]
+
+[[package]]
 name = "mdv-msg"
 version = "0.7.1"
 dependencies = [
