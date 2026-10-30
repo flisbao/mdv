@@ -187,7 +187,6 @@ fn comprimir(dados: &[u8]) -> Vec<u8> {
     enc.finish().expect("deflate em memória")
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::{zip, DocxBuilder};

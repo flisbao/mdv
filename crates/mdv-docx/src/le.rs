@@ -1,7 +1,7 @@
 //! Leitura de inteiros little-endian com verificação de limites.
 
 /// Lê `n` bytes a partir de `pos`; `pos + n` que estoura o `usize` vira erro, não pânico.
-fn fatia(b: &[u8], pos: usize, n: usize) -> Result<&[u8], String> {
+pub(crate) fn fatia(b: &[u8], pos: usize, n: usize) -> Result<&[u8], String> {
     pos.checked_add(n)
         .and_then(|fim| b.get(pos..fim))
         .ok_or_else(|| "ZIP truncado".to_string())
@@ -18,7 +18,6 @@ pub(crate) fn u32_em(b: &[u8], pos: usize) -> Result<u32, String> {
     let s = fatia(b, pos, 4)?;
     Ok(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
 }
-
 
 #[cfg(test)]
 mod tests {
