@@ -159,8 +159,9 @@ USO:
     mdv [opções] <arquivo.md> -o <saída.pdf|docx|odt|xlsx|ods>
     mdv [opções] <email.msg> [-o <saída.md|pdf|docx|odt>]
     mdv csv|tsv [opções] <arquivo|-> -o <saída.xlsx|ods>
-    mdv <pasta>            (seletor: .md, .msg e .yaml/.yml da pasta por data, filtro ao digitar)
-    (o formato também é deduzido da extensão: .json, .jsonl, .yaml, .yml, .csv, .tsv)
+    mdv <pasta>            (seletor: .md, .msg, .yaml/.yml e .html/.htm da pasta por data, filtro ao digitar)
+    (o formato também é deduzido da extensão: .json, .jsonl, .yaml, .yml, .csv, .tsv, .html, .htm)
+    HTML (.html, .htm): páginas com cores do CSS, sem JavaScript; é uma aproximação, não um navegador
 
 OPÇÕES:
     -p, --plain        imprime no terminal (sem TUI), como `cat` com cores
@@ -290,7 +291,14 @@ Para não estourar a máquina com entrada hostil, a leitura do YAML tem tetos: 2
 
 ## HTML
 
-`mdv pagina.html` lê uma página HTML no terminal: títulos, parágrafos, listas, tabelas, blocos de código, links e as **cores e estilos que o próprio arquivo declara** (`color`, `background`, negrito, itálico, sublinhado). Layout de bloco e `flex` são aproximados.
+`mdv pagina.html` lê uma página HTML no terminal: títulos, parágrafos, listas, tabelas, blocos de código, links e as **cores e estilos que o próprio arquivo declara** (`color`, `background`, negrito, itálico, sublinhado). Layout de bloco, `flex` e `grid` são aproximados.
+
+```bash
+mdv pagina.html                       # TUI, com as cores do CSS
+mdv -p -w 100 relatorio.html          # imprime no terminal (cor só se a saída for um terminal)
+mdv apresentacao.html                 # slides viram páginas; ] e [ pulam de slide
+mdv docs/                             # seletor de pasta: lista também .html e .htm
+```
 
 - **Sem JavaScript, sem rede, sem CSS externo.** `<script>` não roda; imagens, folhas de estilo e fontes externas não são baixadas. Só valem o `<style>` e os `style="..."` do próprio arquivo.
 - **Texto escondido não aparece** (`display:none`, `visibility:hidden`, `hidden`, `<template>`, `<noscript>`).
