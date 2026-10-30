@@ -5,6 +5,8 @@
 
 mod le;
 mod pacote;
+mod partes;
+mod relacoes;
 mod xml_leitor;
 mod zip_diretorio;
 mod zip_entrada;
