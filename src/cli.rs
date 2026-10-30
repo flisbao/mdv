@@ -51,6 +51,8 @@ pub enum Doc {
     Json { json_path: Option<String>, view: JsonView },
     Yaml { yaml_path: Option<String>, view: JsonView },
     Table { delimiter: u8, head: usize, cols: Vec<String>, no_header: bool },
+    /// Página HTML (`.html`, `.htm`, `.xhtml`): só o formato, sem opções próprias.
+    Html,
 }
 
 impl Doc {
@@ -123,6 +125,7 @@ enum Format {
     Markdown,
     Json,
     Yaml,
+    Html,
     Table(u8),
 }
 
@@ -131,6 +134,7 @@ fn format_from_extension(path: &str) -> Format {
     match ext.as_str() {
         "json" | "jsonl" | "ndjson" => Format::Json,
         "yaml" | "yml" => Format::Yaml,
+        "html" | "htm" | "xhtml" => Format::Html,
         "csv" => Format::Table(b','),
         "tsv" => Format::Table(b'\t'),
         _ => Format::Markdown,
@@ -143,6 +147,7 @@ pub fn doc_for_path(path: &str) -> Doc {
         Format::Markdown => Doc::Markdown,
         Format::Json => Doc::Json { json_path: None, view: JsonView::Auto },
         Format::Yaml => Doc::Yaml { yaml_path: None, view: JsonView::Auto },
+        Format::Html => Doc::Html,
         Format::Table(delimiter) => {
             Doc::Table { delimiter, head: DEFAULT_HEAD, cols: Vec::new(), no_header: false }
         }
@@ -232,6 +237,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
         Format::Markdown => parse_markdown(common, &flags),
         Format::Json => parse_data(common, &flags, false),
         Format::Yaml => parse_data(common, &flags, true),
+        Format::Html => parse_html(common, &flags),
         Format::Table(delimiter) => parse_table(common, &flags, delimiter),
     }?;
     match output {
@@ -283,6 +289,7 @@ fn into_export(
     match &doc {
         Doc::Json { .. } => return Err("JSON ainda não exporta (use .md, .csv ou .tsv)".to_string()),
         Doc::Yaml { .. } => return Err("YAML ainda não exporta (use .md, .csv ou .tsv)".to_string()),
+        Doc::Html => return Err("HTML ainda não exporta (use .md, .csv ou .tsv como saída)".to_string()),
         Doc::Table { .. } => {
             if let Some(f) = ["--head", "--cols"].into_iter().find(|f| had.iter().any(|h| h == f)) {
                 return Err(format!("a opção {f} não vale com -o (a exportação leva todas as linhas e colunas)"));
@@ -428,6 +435,17 @@ fn parse_table(mut common: Common, flags: &[Flag], mut delimiter: u8) -> Result<
         }
     }
     Ok(Cli { common, command: Command::View(Doc::Table { delimiter, head, cols, no_header }) })
+}
+
+/// HTML não tem opções próprias: só as comuns valem; as de outros formatos são erro de uso.
+fn parse_html(mut common: Common, flags: &[Flag]) -> Result<Cli, String> {
+    for f in flags {
+        if take_common(&mut common, f)? {
+            continue;
+        }
+        return Err(wrong_format(f.name.as_str()));
+    }
+    Ok(Cli { common, command: Command::View(Doc::Html) })
 }
 
 #[cfg(test)]
@@ -827,6 +845,36 @@ mod tests {
         assert!(doc_for_path("a.json").data_view().is_some());
         assert!(doc_for_path("a.md").data_view().is_none());
         assert!(doc_for_path("a.csv").data_view_mut().is_none());
+    }
+
+    #[test]
+    fn doc_for_path_html() {
+        for a in ["a.html", "a.htm", "a.HTM", "a.xhtml"] {
+            assert_eq!(doc_for_path(a), Doc::Html, "{a}");
+        }
+        assert_eq!(doc(&["página.HTML"]), Doc::Html);
+    }
+
+    #[test]
+    fn html_nao_exporta() {
+        let e = run(&["a.html", "-o", "x.pdf"]).unwrap_err();
+        assert_eq!(e, "HTML ainda não exporta (use .md, .csv ou .tsv como saída)");
+    }
+
+    #[test]
+    fn toc_e_stats_so_markdown_inclui_html() {
+        assert_eq!(run(&["a.html", "--toc"]).unwrap_err(), "--toc só vale para Markdown");
+        assert_eq!(run(&["a.htm", "--stats"]).unwrap_err(), "--stats só vale para Markdown");
+    }
+
+    #[test]
+    fn head_em_html_e_erro() {
+        assert_eq!(run(&["a.html", "--head", "5"]).unwrap_err(), "a opção --head só vale para CSV/TSV");
+    }
+
+    #[test]
+    fn ajuda_cita_html() {
+        assert!(crate::plain::HELP.contains("HTML"));
     }
 
     #[test]

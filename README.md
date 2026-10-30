@@ -2,7 +2,7 @@
 
 **Leia Markdown no terminal como deveria ser: com cor, estrutura e sem sair do teclado.** E converta para PDF, Word, LibreOffice e planilhas quando precisar.
 
-`mdv` transforma qualquer `.md` numa página bem formatada direto no terminal e abre num leitor interativo com busca, navegação por títulos e recarga com `r`. Também abre **JSON, YAML, CSV e TSV** (tabelas, esquema ou texto, com o erro de sintaxe apontado na linha), desenha **imagens e diagramas Mermaid**, acompanha a saída de **agentes e LLMs** (`--follow`) e **exporta** para PDF, DOCX, ODT, XLSX e ODS. Dois binários pequenos e independentes (`mdv` e `mdv-tools`), sem runtime, sem navegador.
+`mdv` transforma qualquer `.md` numa página bem formatada direto no terminal e abre num leitor interativo com busca, navegação por títulos e recarga com `r`. Também abre **JSON, YAML, CSV, TSV e HTML** (tabelas, esquema ou texto, com o erro de sintaxe apontado na linha), desenha **imagens e diagramas Mermaid**, acompanha a saída de **agentes e LLMs** (`--follow`) e **exporta** para PDF, DOCX, ODT, XLSX e ODS. Dois binários pequenos e independentes (`mdv` e `mdv-tools`), sem runtime, sem navegador.
 
 [![release](https://img.shields.io/github/v/release/flisbao/mdv)](https://github.com/flisbao/mdv/releases/latest)
 [![ci](https://github.com/flisbao/mdv/actions/workflows/ci.yml/badge.svg)](https://github.com/flisbao/mdv/actions/workflows/ci.yml)
@@ -282,11 +282,22 @@ mdv csv dados.txt --delimiter ';'
 
 O formato também é deduzido da extensão (`.json`, `.jsonl`, `.yaml`, `.yml`, `.csv`, `.tsv`) e aceita `-` (stdin). JSON em lista de objetos vira tabela (objetos aninhados achatados como `endereco.cidade`); na TUI, `v` alterna tabela, esquema e texto (JSON e YAML). Tabelas mostram até 200 colunas e cortam células com mais de 500 caracteres (use `t` para o zoom ou `--cols`). A entrada é limitada a 5 MiB. `--path` e `--as` valem para JSON e YAML (com `--path`, o trecho do YAML aparece escrito como JSON); as opções de CSV/TSV (`--head`, `--cols`, `--no-header`, `--delimiter`) só para CSV/TSV.
 
-**YAML.** A vista padrão (`auto`) é o texto original, com comentários e ordem preservados e cor por tipo (chaves, textos, números, `true`/`false`/`null`); só uma lista de objetos (como vários documentos `---`) abre como tabela, igual ao JSON, e `v` ou `--as text` mostram o texto. As vistas de tabela e de esquema leem o documento como dados: âncoras (`&`), aliases (`*`) e merge keys (`<<`) são resolvidos, tags como `!Ref` e `!Sub` (CloudFormation) são aceitas, vários documentos separados por `---` viram uma lista (como um manifesto Kubernetes com Deployment e Service) e chave repetida vale a última. O YAML 1.1 (`yes`/`no` como booleano) não é aplicado: só o esquema core do YAML 1.2 (a cor da vista de texto vem do realce de código e ainda pinta `yes`/`no` como booleano, mas a tabela e o esquema os tratam como texto). `mdv samples/` lista `.yaml` e `.yml` no seletor, junto com `.md` e `.msg`. YAML ainda não exporta (`-o`).
+**YAML.** A vista padrão (`auto`) é o texto original, com comentários e ordem preservados e cor por tipo (chaves, textos, números, `true`/`false`/`null`); só uma lista de objetos (como vários documentos `---`) abre como tabela, igual ao JSON, e `v` ou `--as text` mostram o texto. As vistas de tabela e de esquema leem o documento como dados: âncoras (`&`), aliases (`*`) e merge keys (`<<`) são resolvidos, tags como `!Ref` e `!Sub` (CloudFormation) são aceitas, vários documentos separados por `---` viram uma lista (como um manifesto Kubernetes com Deployment e Service) e chave repetida vale a última. O YAML 1.1 (`yes`/`no` como booleano) não é aplicado: só o esquema core do YAML 1.2 (a cor da vista de texto vem do realce de código e ainda pinta `yes`/`no` como booleano, mas a tabela e o esquema os tratam como texto). `mdv samples/` lista `.yaml` e `.yml` no seletor, junto com `.md`, `.msg`, `.html` e `.htm`. YAML ainda não exporta (`-o`).
 
 **Erros de sintaxe (JSON e YAML).** Arquivo inválido não vira uma tela de erro vazia: o `mdv` mostra o texto original com a **linha do erro em fundo vermelho** e logo abaixo `✗ linha N, coluna M: mensagem` em português (por exemplo, `vírgula sobrando antes de fechar` no JSON ou `esperava uma chave nesta linha (verifique a indentação)` no YAML). Na TUI o documento abre já rolado até o erro, com algumas linhas de contexto acima; `m` mostra a fonte crua. Só erros de sintaxe são apontados, nunca estilo. Experimente `mdv samples/quebrado.yaml` e `mdv samples/quebrado.json`.
 
 Para não estourar a máquina com entrada hostil, a leitura do YAML tem tetos: 2 milhões de nós vindos do próprio texto (folga para os 5 MiB de entrada), 1 milhão de nós criados por cópia (cada alias e cada âncora guardada, o que barra a "bomba de aliases"), 128 níveis de aninhamento e 32 MiB somados de chaves e textos. Passou de um teto, as vistas de tabela e de esquema avisam `estrutura grande demais: use a vista de texto`, e a vista de texto continua mostrando o original, com uma linha de aviso no topo (com `--path`, o aviso vira erro, pois o trecho não pode ser lido).
+
+## HTML
+
+`mdv pagina.html` lê uma página HTML no terminal: títulos, parágrafos, listas, tabelas, blocos de código, links e as **cores e estilos que o próprio arquivo declara** (`color`, `background`, negrito, itálico, sublinhado). Layout de bloco e `flex` são aproximados.
+
+- **Sem JavaScript, sem rede, sem CSS externo.** `<script>` não roda; imagens, folhas de estilo e fontes externas não são baixadas. Só valem o `<style>` e os `style="..."` do próprio arquivo.
+- **Texto escondido não aparece** (`display:none`, `visibility:hidden`, `hidden`, `<template>`, `<noscript>`).
+- **Links** funcionam como nos Markdown: `Tab` escolhe, `Enter` segue. Um `.md` ou `.html` relativo abre no próprio `mdv`, dentro da pasta do documento. `]`/`[` pulam entre títulos.
+- **Apresentações** viram páginas navegáveis: cada slide é uma página, separada por uma régua, e `]`/`[` pulam de slide em slide. Uma página comum nunca é fatiada; para forçar a apresentação, marque o contêiner com `data-mdv-deck`.
+- **É uma aproximação, não um navegador.** Pixels viram colunas e linhas, tamanhos de fonte viram só negrito e itálico, e efeitos visuais sem equivalente no terminal são simplificados ou deixados de fora. Use para ler o conteúdo, não para conferir a aparência.
+- A tecla `m` mostra o HTML cru. A entrada por stdin é sempre Markdown, mesmo que o texto seja uma página. `-o` ainda não exporta HTML. Arquivos até 8 MiB.
 
 ## Exportar
 

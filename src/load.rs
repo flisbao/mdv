@@ -88,10 +88,12 @@ pub(crate) fn read_stdin() -> io::Result<String> {
     read_limited(io::stdin().lock(), MAX_INPUT_BYTES)
 }
 
-/// Lê o documento de um caminho: `.msg` vira Markdown pelo `mdv-msg`; o resto é Markdown puro.
+/// Lê o documento de um caminho: `.msg` vira Markdown pelo `mdv-msg`; HTML vai para `html`; o resto é Markdown puro.
 pub(crate) fn read_document(path: &Path) -> io::Result<String> {
     if crate::msg::is_msg(path) {
         crate::msg::read_msg_file(path)
+    } else if crate::html::is_html(path) {
+        crate::html::read_html_file(path)
     } else {
         read_markdown_file(path)
     }

@@ -2,6 +2,8 @@
 
 mod input;
 #[cfg(test)]
+mod html_tests;
+#[cfg(test)]
 mod keys_tests;
 mod modal;
 mod search;

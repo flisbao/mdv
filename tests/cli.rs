@@ -784,3 +784,19 @@ fn msg_com_limite_de_memoria_baixo_nao_trava() {
     // Sucesso ou erro de memória são aceitos; o que não pode acontecer é morrer por sinal.
     assert!(out.status.code().is_some(), "terminou por sinal: {:?}", out.status);
 }
+
+#[test]
+fn html_em_plain() {
+    let d = tempfile::tempdir().unwrap();
+    let p = d.path().join("a.html");
+    std::fs::write(&p, "<h1>Oi</h1><p style=\"color:red\">x</p>").unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_mdv"))
+        .args(["-p", "-w", "40"])
+        .arg(&p)
+        .output()
+        .expect("mdv deve terminar");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let saida = String::from_utf8_lossy(&out.stdout);
+    // Saída em pipe não tem cor (só em TTY); a cor do HTML é coberta em `src/html.rs`.
+    assert!(saida.contains("Oi") && saida.contains('x') && !saida.contains('\x1b'), "{saida}");
+}

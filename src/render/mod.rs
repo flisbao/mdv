@@ -50,7 +50,7 @@ pub use self::model::*;
 pub use self::outline::*;
 pub use self::ansi::*;
 use self::wrap::*;
-pub use self::inline::{link_id, strip_link_marks};
+pub use self::inline::{link_id, link_mark, strip_link_marks};
 use self::inline::*;
 use self::highlight::*;
 use self::images::*;

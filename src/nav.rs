@@ -50,8 +50,8 @@ pub fn resolve(dest: &str, base: Option<&Path>) -> Target {
         return Target::Unsupported("caminho fora da pasta do documento".to_string());
     }
     let ext = Path::new(&file).extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    if !matches!(ext.as_str(), "md" | "markdown") {
-        return Target::Unsupported("só abro arquivos .md".to_string());
+    if !matches!(ext.as_str(), "md" | "markdown" | "html" | "htm") {
+        return Target::Unsupported("só abro arquivos .md e .html".to_string());
     }
     let Some(base) = base else {
         return Target::Unsupported("links relativos precisam de um arquivo (não stdin)".to_string());
@@ -151,6 +151,28 @@ mod tests {
         for dest in ["config.yaml", "sub/config.yml#x", "dados.json", "t.csv"] {
             assert!(matches!(resolve(dest, Some(base)), Target::Unsupported(_)), "{dest}");
         }
+    }
+
+    #[test]
+    fn resolve_aceita_html_relativo() {
+        let base = Path::new("/d");
+        assert_eq!(
+            resolve("sub/pagina.html#secao", Some(base)),
+            Target::Local { path: PathBuf::from("/d/sub/pagina.html"), anchor: Some("secao".into()) }
+        );
+        assert_eq!(
+            resolve("outra.HTM", Some(base)),
+            Target::Local { path: PathBuf::from("/d/outra.HTM"), anchor: None }
+        );
+    }
+
+    #[test]
+    fn html_fora_da_pasta_e_recusado() {
+        let base = Path::new("/d");
+        for dest in ["../x.html", "/etc/x.html", "%2Fetc%2Fx.html", "sub/../../x.htm", "%2e%2e/x.html"] {
+            assert!(matches!(resolve(dest, Some(base)), Target::Unsupported(_)), "{dest}");
+        }
+        assert!(matches!(resolve("x.html", None), Target::Unsupported(_)));
     }
 
     #[test]

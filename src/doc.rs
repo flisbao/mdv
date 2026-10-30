@@ -1,6 +1,6 @@
 //! O documento aberto: texto, opções de leitura e como o texto vira linhas.
 
-use crate::{cli, data, image, render, yaml_view};
+use crate::{cli, data, html, image, render, yaml_view};
 
 /// Como a entrada é interpretada: o formato (com as opções que só ele aceita) e a rolagem de código.
 #[derive(Clone)]
@@ -35,6 +35,7 @@ pub(crate) fn render_doc(doc: &DocOpts, text: &str, width: usize, images: &image
         }
         cli::Doc::Json { json_path, view } => data::render_json(text, &json_opts(json_path, *view), width),
         cli::Doc::Yaml { yaml_path, view } => yaml_view::render_yaml(text, &json_opts(yaml_path, *view), width),
+        cli::Doc::Html => html::render_html(text, width),
         cli::Doc::Table { delimiter, head, cols, no_header } => {
             let opts = data::TableOpts {
                 delimiter: *delimiter,
@@ -53,6 +54,7 @@ pub(crate) fn raw_lang(doc: &cli::Doc) -> &'static str {
         cli::Doc::Markdown => "md",
         cli::Doc::Json { .. } => "json",
         cli::Doc::Yaml { .. } => "yaml",
+        cli::Doc::Html => "html",
         cli::Doc::Table { .. } => "text",
     }
 }
@@ -123,6 +125,25 @@ mod tests {
         assert!(texto.contains("nome"), "{texto}");
         let colorido = r.lines.iter().flat_map(|l| &l.spans).any(|s| s.style.fg.is_some());
         assert!(colorido, "o YAML deveria sair com cores");
+    }
+
+    #[test]
+    fn render_doc_html_devolve_linhas() {
+        let store = image::ImageStore::new(None);
+        let doc = DocOpts { doc: cli::doc_for_path("a.html"), code_scroll: None };
+        let r = render_doc(&doc, "<h1>Oi</h1>\n<p>texto</p>\n", 60, &store);
+        assert!(!r.lines.is_empty());
+    }
+
+    #[test]
+    fn render_doc_html_colore() {
+        let store = image::ImageStore::new(None);
+        let doc = DocOpts { doc: cli::doc_for_path("a.html"), code_scroll: None };
+        let r = render_doc(&doc, "<h1>Oi</h1><p style=\"color:red\">x</p>", 60, &store);
+        let texto: String = r.lines.iter().flat_map(|l| l.spans.iter().map(|s| s.content.as_ref())).collect();
+        assert!(texto.contains("Oi"), "{texto}");
+        let colorido = r.lines.iter().flat_map(|l| &l.spans).any(|s| s.style.fg.is_some());
+        assert!(colorido, "o HTML deveria sair com cores");
     }
 
     #[test]

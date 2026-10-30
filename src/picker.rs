@@ -1,4 +1,4 @@
-//! Seletor de arquivos (`mdv <pasta>`): lista os `.md`, `.msg` e `.yaml`/`.yml` da pasta por mtime, com filtro fuzzy.
+//! Seletor de arquivos (`mdv <pasta>`): lista os `.md`, `.msg`, `.yaml`/`.yml` e `.html`/`.htm` da pasta por mtime, com filtro fuzzy.
 
 use std::fs;
 use std::io;
@@ -27,7 +27,7 @@ pub struct Picker {
     pub truncated: bool,
 }
 
-/// Arquivos listados no seletor: Markdown, e-mails `.msg` e YAML (JSON e CSV/TSV ficam de fora).
+/// Arquivos listados no seletor: Markdown, e-mails `.msg`, YAML e HTML (JSON e CSV/TSV ficam de fora).
 fn is_listed(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     n.ends_with(".md")
@@ -35,6 +35,8 @@ fn is_listed(name: &str) -> bool {
         || n.ends_with(".msg")
         || n.ends_with(".yaml")
         || n.ends_with(".yml")
+        || n.ends_with(".html")
+        || n.ends_with(".htm")
 }
 
 impl Picker {
@@ -189,6 +191,18 @@ mod tests {
         let mut names: Vec<_> = p.entries.iter().map(|e| e.name.as_str()).collect();
         names.sort_unstable();
         assert_eq!(names, ["a.md", "b.yaml", "c.YML"]);
+    }
+
+    #[test]
+    fn lista_html_e_htm() {
+        let d = tempfile::tempdir().unwrap();
+        for n in ["a.html", "b.HTM", "c.htm", "d.xhtml", "e.html.bak", "f.json"] {
+            fs::write(d.path().join(n), "a").unwrap();
+        }
+        let p = Picker::scan(d.path()).unwrap();
+        let mut names: Vec<_> = p.entries.iter().map(|e| e.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["a.html", "b.HTM", "c.htm"]);
     }
 
     #[cfg(unix)]

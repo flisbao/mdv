@@ -98,7 +98,9 @@ impl App {
                 self.modal = Modal::ConfirmOpen(u);
             }
             Target::Local { path, anchor } => {
-                self.open_file(path, anchor.map(Jump::Anchor), true, crate::cli::Doc::Markdown);
+                // O destino decide o formato (`.md`, `.html`...), como no seletor.
+                let doc = crate::cli::doc_for_path(&path.to_string_lossy());
+                self.open_file(path, anchor.map(Jump::Anchor), true, doc);
             }
             Target::Unsupported(why) => self.notice = Some(format!("não abri o link: {why}")),
         }
@@ -275,7 +277,7 @@ impl App {
         }
         if p.filtered.is_empty() {
             lines.push(Line::from(Span::styled(
-                " nenhum arquivo .md encontrado",
+                " nenhum arquivo compatível encontrado",
                 Style::default().fg(Color::Rgb(110, 118, 129)),
             )));
         }

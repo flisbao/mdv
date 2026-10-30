@@ -7,6 +7,7 @@ mod data;
 mod doc;
 mod export;
 mod graphics;
+mod html;
 #[cfg(test)]
 mod golden_ansi;
 mod imgview;
@@ -34,7 +35,6 @@ use std::process::ExitCode;
 use app::{run_tui, App};
 use load::{load_source, reads_stdin, Source, MAX_INPUT_BYTES};
 use plain::{run_plain, write_stdout, HELP};
-
 #[global_allocator]
 static ALLOC: mem::CountingAlloc = mem::CountingAlloc;
 

@@ -23,8 +23,9 @@ USO:
     mdv [opções] <arquivo.md> -o <saída.pdf|docx|odt|xlsx|ods>
     mdv [opções] <email.msg> [-o <saída.md|pdf|docx|odt>]
     mdv csv|tsv [opções] <arquivo|-> -o <saída.xlsx|ods>
-    mdv <pasta>            (seletor: .md, .msg e .yaml/.yml da pasta por data, filtro ao digitar)
-    (o formato também é deduzido da extensão: .json, .jsonl, .yaml, .yml, .csv, .tsv)
+    mdv <pasta>            (seletor: .md, .msg, .yaml/.yml e .html/.htm da pasta por data, filtro ao digitar)
+    (o formato também é deduzido da extensão: .json, .jsonl, .yaml, .yml, .csv, .tsv, .html, .htm)
+    HTML (.html, .htm): páginas com cores do CSS, sem JavaScript; é uma aproximação, não um navegador
 
 OPÇÕES:
     -p, --plain        imprime no terminal (sem TUI), como `cat` com cores

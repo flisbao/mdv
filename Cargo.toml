@@ -13,6 +13,7 @@ tempfile = "3"
 mdv-text = { path = "crates/mdv-text" }
 mdv-export = { path = "crates/mdv-export" }
 mdv-msg = { path = "crates/mdv-msg" }
+mdv-html = { path = "crates/mdv-html" }
 
 [package]
 name = "mdv"
@@ -26,6 +27,8 @@ pulldown-cmark.workspace = true
 mdv-text.workspace = true
 mdv-export.workspace = true
 mdv-msg.workspace = true
+mdv-html.workspace = true
+encoding_rs = "0.8"
 tempfile.workspace = true
 ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 syntect = { version = "5", default-features = false, features = ["parsing", "default-syntaxes", "default-themes", "regex-fancy"] }
@@ -49,6 +52,7 @@ remote = ["images", "dep:ureq", "dep:url"]
 [dev-dependencies]
 tempfile.workspace = true
 mdv-msg = { workspace = true, features = ["testutil"] }
+unicode-width = "0.2"
 
 [profile.release]
 lto = "thin"

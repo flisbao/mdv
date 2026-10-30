@@ -943,8 +943,10 @@ name = "mdv"
 version = "0.7.1"
 dependencies = [
  "csv",
+ "encoding_rs",
  "image",
  "mdv-export",
+ "mdv-html",
  "mdv-msg",
  "mdv-text",
  "mermaid-rs-renderer",

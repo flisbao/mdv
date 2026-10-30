@@ -25,7 +25,7 @@ impl Piece {
     }
 }
 
-pub(super) fn link_mark(id: usize) -> Color {
+pub fn link_mark(id: usize) -> Color {
     let id = u16::try_from(id).unwrap_or(u16::MAX);
     Color::Rgb(LINK_MARK_R, (id >> 8) as u8, (id & 0xFF) as u8)
 }
