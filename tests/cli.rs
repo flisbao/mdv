@@ -785,6 +785,110 @@ fn msg_com_limite_de_memoria_baixo_nao_trava() {
     assert!(out.status.code().is_some(), "terminou por sinal: {:?}", out.status);
 }
 
+/// Grava um `.docx` de teste numa pasta temporária e devolve o caminho.
+fn docx_file(dir: &tempfile::TempDir, name: &str, bytes: &[u8]) -> String {
+    let p = dir.path().join(name);
+    std::fs::write(&p, bytes).unwrap();
+    p.to_string_lossy().into_owned()
+}
+
+fn docx_com_titulo_lista_e_tabela() -> Vec<u8> {
+    use mdv_docx::testutil::DocxBuilder;
+    let celula = |t: &str| format!("<w:tc><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>");
+    let corpo = format!(
+        r#"<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Relatório semanal</w:t></w:r></w:p>
+        <w:p><w:pPr><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>primeiro item</w:t></w:r></w:p>
+        <w:tbl><w:tr>{}{}</w:tr><w:tr>{}{}</w:tr></w:tbl>"#,
+        celula("nome"),
+        celula("valor"),
+        celula("alfa"),
+        celula("42"),
+    );
+    DocxBuilder::novo()
+        .estilos(r#"<w:style w:styleId="Heading1"><w:name w:val="heading 1"/></w:style>"#)
+        .numeracao(
+            r#"<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/></w:lvl></w:abstractNum>
+            <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>"#,
+        )
+        .corpo(&corpo)
+        .construir()
+}
+
+#[test]
+fn docx_no_modo_plain_mostra_titulo_lista_e_tabela() {
+    let d = tempfile::TempDir::new().unwrap();
+    let p = docx_file(&d, "rel.docx", &docx_com_titulo_lista_e_tabela());
+    let out = Command::new(env!("CARGO_BIN_EXE_mdv")).args(["-p", "-w", "80", &p]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    for esperado in ["Relatório semanal", "primeiro item", "alfa", "42", "│"] {
+        assert!(text.contains(esperado), "faltou {esperado:?} em:\n{text}");
+    }
+}
+
+#[test]
+fn docx_exporta_markdown() {
+    let d = tempfile::TempDir::new().unwrap();
+    let p = docx_file(&d, "rel.docx", &docx_com_titulo_lista_e_tabela());
+    let saida = d.path().join("out.md").to_string_lossy().into_owned();
+    let out = Command::new(env!("CARGO_BIN_EXE_mdv")).args([&p, "-o", &saida]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let md = std::fs::read_to_string(&saida).unwrap();
+    assert!(md.starts_with("# "), "{md}");
+    assert!(md.contains("Relatório semanal") && md.contains("- primeiro item"), "{md}");
+}
+
+#[test]
+fn docx_invalido_sai_com_erro_e_codigo_1() {
+    let d = tempfile::TempDir::new().unwrap();
+    let p = docx_file(&d, "ruim.docx", b"nao sou zip");
+    let out = Command::new(env!("CARGO_BIN_EXE_mdv")).args(["-p", &p]).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("não é um arquivo .docx válido"));
+}
+
+#[test]
+fn docx_antigo_ole2_explica_o_formato() {
+    let d = tempfile::TempDir::new().unwrap();
+    let mut bytes = vec![0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+    bytes.resize(bytes.len() + 100, 0);
+    let p = docx_file(&d, "velho.docx", &bytes);
+    let out = Command::new(env!("CARGO_BIN_EXE_mdv")).args(["-p", &p]).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("formato .doc antigo"));
+}
+
+#[test]
+fn docx_exportado_pelo_mdv_volta_como_markdown() {
+    let d = tempfile::TempDir::new().unwrap();
+    let md = d.path().join("x.md");
+    std::fs::write(&md, "# Volta\n\n| a | b |\n| --- | --- |\n| um | dois |\n").unwrap();
+    let docx = d.path().join("y.docx");
+    let out = Command::new(env!("CARGO_BIN_EXE_mdv")).arg(&md).arg("-o").arg(&docx).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = Command::new(env!("CARGO_BIN_EXE_mdv")).args(["-p", "-w", "80"]).arg(&docx).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("Volta"), "{text}");
+    assert!(text.contains("um") && text.contains("dois") && text.contains('│'), "{text}");
+}
+
+#[test]
+fn docx_com_limite_de_memoria_baixo_nao_trava() {
+    use mdv_docx::testutil::DocxBuilder;
+    let d = tempfile::TempDir::new().unwrap();
+    // Cerca de 2 MiB de XML: 26 000 parágrafos de 49 caracteres.
+    let corpo = "<w:p><w:r><w:t>0123456789012345678901234567890123456789012345678</w:t></w:r></w:p>".repeat(26_000);
+    let p = docx_file(&d, "grande.docx", &DocxBuilder::novo().corpo(&corpo).construir());
+    let out = Command::new(env!("CARGO_BIN_EXE_mdv"))
+        .args(["-p", &p])
+        .env("MDV_MEMORY_BUFFER", "32M")
+        .output()
+        .unwrap();
+    // Sucesso ou erro de memória são aceitos; o que não pode acontecer é morrer por sinal.
+    assert!(out.status.code().is_some(), "terminou por sinal: {:?}", out.status);
+}
+
 #[test]
 fn html_em_plain() {
     let d = tempfile::tempdir().unwrap();

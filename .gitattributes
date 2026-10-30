@@ -5,3 +5,4 @@ samples/** text eol=lf
 sample.md text eol=lf
 samples/*.png binary
 samples/*.msg binary
+samples/*.docx binary
