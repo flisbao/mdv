@@ -30,17 +30,30 @@ enum Peca {
 /// texto em vários runs sem motivo visual, e `**a****b**` não fecha direito. Os espaços das
 /// bordas de um grupo ficam fora dos marcadores, pois `** a**` não vira negrito. O resultado é
 /// aparado (4 espaços iniciais virariam bloco de código; espaços finais quebram o `\` de
-/// quebra); só no modo `Bloco` o começo é escapado, depois de aparar. Cada modo muda a quebra,
-/// o escape de `|` (célula) e o negrito (título).
+/// quebra); só no modo `Bloco` o começo de cada linha é escapado, depois de aparar. Cada modo
+/// muda a quebra, o escape de `|` (célula, inclusive no destino do link) e o negrito (título).
 pub(crate) fn inline(trechos: &[Trecho], notas: &mut Notas, modo: Modo) -> String {
     let pecas = fundir(trechos, notas, modo);
     let juntos: String = pecas.iter().map(|p| escrever(p, modo)).collect();
     let texto = aparar(&juntos, modo);
     if modo == Modo::Bloco {
-        escape::inicio_de_linha(&texto)
+        escapar_linhas(&texto)
     } else {
         texto
     }
+}
+
+/// Escapa o começo de cada linha de um parágrafo do modo `Bloco`.
+///
+/// Todo `\n` do resultado vem de um `Quebra` (as quebras do texto já viraram `Quebra` em
+/// `segmentos`), e a linha que vem depois dele também pode parecer título, lista, citação ou
+/// régua; por isso cada linha é aparada à esquerda (4 espaços virariam código) e escapada.
+fn escapar_linhas(texto: &str) -> String {
+    let linhas: Vec<String> = texto
+        .split('\n')
+        .map(|linha| escape::inicio_de_linha(linha.trim_start()))
+        .collect();
+    linhas.join("\n")
 }
 
 /// Reduz os trechos a peças, fundindo `Texto` vizinhos de mesmas marcas e mesmo link.
@@ -49,14 +62,12 @@ fn fundir(trechos: &[Trecho], notas: &mut Notas, modo: Modo) -> Vec<Peca> {
     for trecho in trechos {
         match trecho {
             Trecho::Texto { texto, marcas, link } => {
-                if let Some(Peca::Grupo { texto: acc, marcas: m, link: l }) = pecas.last_mut() {
-                    if m == marcas && l == link {
-                        acc.push_str(texto);
-                        continue;
+                for (i, segmento) in segmentos(texto, modo).into_iter().enumerate() {
+                    if i > 0 {
+                        pecas.push(Peca::Pronta(quebra(modo).to_string()));
                     }
+                    acrescentar(&mut pecas, segmento, *marcas, link);
                 }
-                let grupo = Peca::Grupo { texto: texto.clone(), marcas: *marcas, link: link.clone() };
-                pecas.push(grupo);
             }
             Trecho::Quebra => pecas.push(Peca::Pronta(quebra(modo).to_string())),
             Trecho::NotaRef(chave) => {
@@ -66,6 +77,32 @@ fn fundir(trechos: &[Trecho], notas: &mut Notas, modo: Modo) -> Vec<Peca> {
         }
     }
     pecas
+}
+
+/// Junta o texto ao grupo anterior se as marcas e o link forem os mesmos; senão abre um grupo.
+fn acrescentar(pecas: &mut Vec<Peca>, texto: String, marcas: Marcas, link: &Option<String>) {
+    if let Some(Peca::Grupo { texto: acc, marcas: m, link: l }) = pecas.last_mut() {
+        if *m == marcas && l == link {
+            acc.push_str(&texto);
+            return;
+        }
+    }
+    pecas.push(Peca::Grupo { texto, marcas, link: link.clone() });
+}
+
+/// Neutraliza `\r`, `\n` e `\t` do texto (o `sanitize` os mantém) e o parte em linhas.
+///
+/// Uma quebra de linha crua forjaria título, lista ou citação no `Bloco` e sairia do contexto de
+/// uma linha só nos outros modos (título, item, definição de nota, célula); por isso, fora do
+/// `Bloco`, tudo vira espaço. No `Bloco` o `\n` vira uma quebra de linha de verdade (`Quebra`),
+/// e `\r`/`\t` viram espaço. Vale também dentro de código, onde a quebra cairia fora da crase.
+fn segmentos(texto: &str, modo: Modo) -> Vec<String> {
+    let plano = texto.replace("\r\n", "\n").replace(['\r', '\t'], " ");
+    if modo == Modo::Bloco {
+        plano.split('\n').map(String::from).collect()
+    } else {
+        vec![plano.replace('\n', " ")]
+    }
 }
 
 /// Marca de quebra de linha de cada modo.
@@ -79,7 +116,9 @@ fn quebra(modo: Modo) -> &'static str {
 
 /// Imagem vira uma linha em itálico com o texto alternativo; a imagem em si não é extraída.
 fn imagem(alt: &str, modo: Modo) -> String {
-    let alt = alt.trim();
+    // Mesma regra de `segmentos`: o alt não pode trazer quebra de linha, nem no `Bloco`.
+    let plano = alt.replace(['\r', '\n', '\t'], " ");
+    let alt = plano.trim();
     if alt.is_empty() {
         "*[imagem]*".to_string()
     } else {
@@ -118,7 +157,10 @@ fn grupo(texto: &str, marcas: Marcas, link: Option<&str>, modo: Modo) -> String 
         marcar(&escapar(miolo, modo), marcas, modo)
     };
     if let Some(url) = link.filter(|u| md_link::permitido(u)) {
-        corpo = format!("[{corpo}]({})", md_link::destino(url));
+        // Em célula, `|` no destino dividiria a coluna da tabela GFM.
+        let destino = md_link::destino(url);
+        let destino = if modo == Modo::Celula { destino.replace('|', "%7C") } else { destino };
+        corpo = format!("[{corpo}]({destino})");
     }
     format!("{}{corpo}{}", escapar(inicio, modo), escapar(fim, modo))
 }
@@ -165,17 +207,21 @@ fn cerca(texto: &str) -> String {
     format!("{cerca}{guarda}{texto}{guarda}{cerca}")
 }
 
-/// Apara as bordas; no modo `Bloco` tira também a `\` solta de uma quebra no fim.
+/// Apara as bordas; no modo `Bloco` tira também as `\` soltas de quebras no fim.
 ///
 /// Texto escapado dobra toda barra invertida, então um número ímpar de barras no fim só pode
-/// ser o marcador de quebra de linha de um `Trecho::Quebra` final.
+/// ser o marcador de quebra de linha de um `Trecho::Quebra` final; repete-se porque várias
+/// quebras seguidas deixam uma barra após a outra (`a\⏎\⏎`).
 fn aparar(s: &str, modo: Modo) -> String {
     let mut texto = s.trim();
-    if modo == Modo::Bloco {
-        let barras = texto.bytes().rev().take_while(|&b| b == b'\\').count();
-        if barras % 2 == 1 {
-            texto = texto[..texto.len() - 1].trim_end();
-        }
+    if modo != Modo::Bloco {
+        return texto.to_string();
     }
-    texto.to_string()
+    loop {
+        let barras = texto.bytes().rev().take_while(|&b| b == b'\\').count();
+        if barras % 2 == 0 {
+            return texto.to_string();
+        }
+        texto = texto[..texto.len() - 1].trim_end();
+    }
 }

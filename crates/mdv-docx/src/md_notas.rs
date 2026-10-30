@@ -8,20 +8,23 @@ use crate::modelo::Trecho;
 /// Notas referenciadas até agora, na ordem da primeira aparição.
 pub(crate) struct Notas {
     chaves: Vec<String>,
+    // Índice chave -> número, para não varrer `chaves` a cada referência.
+    numeros: HashMap<String, usize>,
 }
 
 impl Notas {
     /// Cria o controle sem nenhuma nota referenciada.
     pub(crate) fn novo() -> Self {
-        Notas { chaves: Vec::new() }
+        Notas { chaves: Vec::new(), numeros: HashMap::new() }
     }
 
     /// Devolve o número (1, 2, 3...) da nota; chave repetida devolve o mesmo número.
     pub(crate) fn referenciar(&mut self, chave: &str) -> usize {
-        if let Some(posicao) = self.chaves.iter().position(|c| c == chave) {
-            return posicao + 1;
+        if let Some(&numero) = self.numeros.get(chave) {
+            return numero;
         }
         self.chaves.push(chave.to_string());
+        self.numeros.insert(chave.to_string(), self.chaves.len());
         self.chaves.len()
     }
 

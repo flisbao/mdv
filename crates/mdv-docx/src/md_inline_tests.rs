@@ -237,3 +237,94 @@ fn bordas_sao_aparadas_antes_do_escape_de_inicio() {
 fn trechos_vazios_dao_texto_vazio() {
     assert_eq!(md(&[], Modo::Bloco), "");
 }
+
+#[test]
+fn quebra_crua_no_bloco_vira_quebra_de_linha_sem_forjar_titulo() {
+    let ts = [simples("a\n\n# H\n- x")];
+    assert_eq!(md(&ts, Modo::Bloco), "a\\\n\\\n\\# H\\\n\\- x");
+}
+
+#[test]
+fn quebra_crua_vira_espaco_fora_do_bloco() {
+    let ts = [simples("a\r\n# H\n- x\ty")];
+    assert_eq!(md(&ts, Modo::Linha), "a # H - x y");
+    assert_eq!(md(&ts, Modo::Titulo), "a # H - x y");
+    assert_eq!(md(&ts, Modo::Celula), "a # H - x y");
+}
+
+#[test]
+fn quebra_crua_dentro_do_codigo_nao_sai_da_linha() {
+    let ts = [t("a\nb", codigo())];
+    assert_eq!(md(&ts, Modo::Linha), "`a b`");
+    assert_eq!(md(&ts, Modo::Bloco), "`a`\\\n`b`");
+}
+
+#[test]
+fn quebra_crua_no_alt_da_imagem_vira_espaco() {
+    let alt = Trecho::Imagem("a\n# b".into());
+    assert_eq!(md(std::slice::from_ref(&alt), Modo::Bloco), "*[imagem: a # b]*");
+    assert_eq!(md(&[alt], Modo::Linha), "*[imagem: a # b]*");
+}
+
+#[test]
+fn quebra_crua_com_marcas_continua_fundindo() {
+    let ts = [t("a\nb", negrito()), t("c", negrito())];
+    assert_eq!(md(&ts, Modo::Bloco), "**a**\\\n**bc**");
+}
+
+fn depois_da_quebra(linha: &str) -> String {
+    md(&[simples("a"), Trecho::Quebra, simples(linha)], Modo::Bloco)
+}
+
+#[test]
+fn linha_depois_da_quebra_nao_vira_titulo() {
+    assert_eq!(depois_da_quebra("# x"), "a\\\n\\# x");
+}
+
+#[test]
+fn linha_depois_da_quebra_nao_vira_item() {
+    assert_eq!(depois_da_quebra("- x"), "a\\\n\\- x");
+}
+
+#[test]
+fn linha_depois_da_quebra_nao_vira_lista_numerada() {
+    assert_eq!(depois_da_quebra("1. x"), "a\\\n1\\. x");
+}
+
+#[test]
+fn linha_depois_da_quebra_nao_vira_citacao() {
+    assert_eq!(depois_da_quebra("> x"), "a\\\n\\> x");
+}
+
+#[test]
+fn linha_depois_da_quebra_nao_vira_regua() {
+    assert_eq!(depois_da_quebra("---"), "a\\\n\\---");
+}
+
+#[test]
+fn linha_depois_da_quebra_nao_vira_sublinhado_de_titulo() {
+    assert_eq!(depois_da_quebra("==="), "a\\\n\\===");
+}
+
+#[test]
+fn linha_depois_da_quebra_perde_o_recuo_que_viraria_codigo() {
+    assert_eq!(depois_da_quebra("     x"), "a\\\nx");
+}
+
+#[test]
+fn duas_quebras_no_fim_nao_deixam_barra_solta() {
+    let ts = [simples("a"), Trecho::Quebra, Trecho::Quebra];
+    assert_eq!(md(&ts, Modo::Bloco), "a");
+}
+
+#[test]
+fn barra_do_texto_no_fim_nao_e_confundida_com_quebra() {
+    assert_eq!(md(&[simples("a\\")], Modo::Bloco), "a\\\\");
+}
+
+#[test]
+fn barra_vertical_no_destino_do_link_e_codificada_na_celula() {
+    let ts = [link("x", Marcas::default(), "https://a.org/a|b")];
+    assert_eq!(md(&ts, Modo::Celula), "[x](https://a.org/a%7Cb)");
+    assert_eq!(md(&ts, Modo::Linha), "[x](https://a.org/a|b)");
+}
