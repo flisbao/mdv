@@ -19,6 +19,9 @@ mod paragrafo_tests;
 mod partes;
 mod propriedades;
 mod relacoes;
+mod tabela;
+#[cfg(test)]
+mod tabela_tests;
 mod trecho;
 mod xml_leitor;
 mod zip_diretorio;
