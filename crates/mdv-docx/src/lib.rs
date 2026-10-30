@@ -12,6 +12,7 @@ mod numeracao;
 mod pacote;
 mod partes;
 mod relacoes;
+mod trecho;
 mod xml_leitor;
 mod zip_diretorio;
 mod zip_entrada;
