@@ -15,8 +15,8 @@ pub(crate) fn permitido(url: &str) -> bool {
 
 /// Codifica a URL para caber em `[texto](destino)`.
 ///
-/// Espaço e parênteses fecham cedo a sintaxe `[texto](destino)`, e `<`/`>` ficam ambíguos no
-/// Markdown; por isso são codificados. Controles são descartados, não codificados.
+/// Espaço e parênteses fecham cedo a sintaxe `[texto](destino)`, `<`/`>` ficam ambíguos no
+/// Markdown e a barra invertida escaparia o `)` final; por isso são codificados. Controles são descartados, não codificados.
 pub(crate) fn destino(url: &str) -> String {
     let mut saida = String::with_capacity(url.len());
     for c in url.chars() {
@@ -27,6 +27,7 @@ pub(crate) fn destino(url: &str) -> String {
             ')' => saida.push_str("%29"),
             '<' => saida.push_str("%3C"),
             '>' => saida.push_str("%3E"),
+            '\\' => saida.push_str("%5C"),
             _ => saida.push(c),
         }
     }
@@ -69,6 +70,11 @@ mod tests {
         let d = destino("https://a.org/<b>");
         assert!(!d.contains('<') && !d.contains('>'));
         assert_eq!(d, "https://a.org/%3Cb%3E");
+    }
+
+    #[test]
+    fn codifica_barra_invertida() {
+        assert_eq!(destino("https://a.org/x\\"), "https://a.org/x%5C");
     }
 
     #[test]

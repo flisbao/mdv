@@ -13,7 +13,11 @@ mod estilo_run;
 mod estilos;
 mod le;
 mod leitura;
+mod md_inline;
+#[cfg(test)]
+mod md_inline_tests;
 mod md_link;
+mod md_notas;
 mod modelo;
 mod notas;
 mod numeracao;
