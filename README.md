@@ -2,7 +2,7 @@
 
 **Leia Markdown no terminal como deveria ser: com cor, estrutura e sem sair do teclado.** E converta para PDF, Word, LibreOffice e planilhas quando precisar.
 
-`mdv` transforma qualquer `.md` numa página bem formatada direto no terminal e abre num leitor interativo com busca, navegação por títulos e recarga com `r`. Também abre **JSON, YAML, CSV, TSV e HTML** (tabelas, esquema ou texto, com o erro de sintaxe apontado na linha), desenha **imagens e diagramas Mermaid**, acompanha a saída de **agentes e LLMs** (`--follow`) e **exporta** para PDF, DOCX, ODT, XLSX e ODS. Dois binários pequenos e independentes (`mdv` e `mdv-tools`), sem runtime, sem navegador.
+`mdv` transforma qualquer `.md` numa página bem formatada direto no terminal e abre num leitor interativo com busca, navegação por títulos e recarga com `r`. Também abre **JSON, YAML, CSV, TSV, HTML e documentos do Word (`.docx`)** (tabelas, esquema ou texto, com o erro de sintaxe apontado na linha), desenha **imagens e diagramas Mermaid**, acompanha a saída de **agentes e LLMs** (`--follow`) e **exporta** para PDF, DOCX, ODT, XLSX e ODS. Dois binários pequenos e independentes (`mdv` e `mdv-tools`), sem runtime, sem navegador.
 
 [![release](https://img.shields.io/github/v/release/flisbao/mdv)](https://github.com/flisbao/mdv/releases/latest)
 [![ci](https://github.com/flisbao/mdv/actions/workflows/ci.yml/badge.svg)](https://github.com/flisbao/mdv/actions/workflows/ci.yml)
@@ -14,6 +14,7 @@ agente | mdv --follow                  # acompanha um texto que ainda está cheg
 mdv csv vendas.csv --cols produto,total
 mdv json dados.json --path .itens[0]
 mdv config.yaml                        # YAML: cor por tipo e erro de sintaxe na linha certa
+mdv relatorio.docx                     # Word vira Markdown (também -o relatorio.md)
 mdv relatorio.md -o relatorio.pdf      # exporta (também .docx e .odt)
 mdv vendas.csv -o vendas.xlsx          # CSV/TSV para planilha (também .ods)
 ```
@@ -313,7 +314,7 @@ mdv csv dados.txt --delimiter ';'
 
 O formato também é deduzido da extensão (`.json`, `.jsonl`, `.yaml`, `.yml`, `.csv`, `.tsv`) e aceita `-` (stdin). JSON em lista de objetos vira tabela (objetos aninhados achatados como `endereco.cidade`); na TUI, `v` alterna tabela, esquema e texto (JSON e YAML). Tabelas mostram até 200 colunas e cortam células com mais de 500 caracteres (use `t` para o zoom ou `--cols`). A entrada é limitada a 5 MiB. `--path` e `--as` valem para JSON e YAML (com `--path`, o trecho do YAML aparece escrito como JSON); as opções de CSV/TSV (`--head`, `--cols`, `--no-header`, `--delimiter`) só para CSV/TSV.
 
-**YAML.** A vista padrão (`auto`) é o texto original, com comentários e ordem preservados e cor por tipo (chaves, textos, números, `true`/`false`/`null`); só uma lista de objetos (como vários documentos `---`) abre como tabela, igual ao JSON, e `v` ou `--as text` mostram o texto. As vistas de tabela e de esquema leem o documento como dados: âncoras (`&`), aliases (`*`) e merge keys (`<<`) são resolvidos, tags como `!Ref` e `!Sub` (CloudFormation) são aceitas, vários documentos separados por `---` viram uma lista (como um manifesto Kubernetes com Deployment e Service) e chave repetida vale a última. O YAML 1.1 (`yes`/`no` como booleano) não é aplicado: só o esquema core do YAML 1.2 (a cor da vista de texto vem do realce de código e ainda pinta `yes`/`no` como booleano, mas a tabela e o esquema os tratam como texto). `mdv samples/` lista `.yaml` e `.yml` no seletor, junto com `.md`, `.msg`, `.html` e `.htm`. YAML ainda não exporta (`-o`).
+**YAML.** A vista padrão (`auto`) é o texto original, com comentários e ordem preservados e cor por tipo (chaves, textos, números, `true`/`false`/`null`); só uma lista de objetos (como vários documentos `---`) abre como tabela, igual ao JSON, e `v` ou `--as text` mostram o texto. As vistas de tabela e de esquema leem o documento como dados: âncoras (`&`), aliases (`*`) e merge keys (`<<`) são resolvidos, tags como `!Ref` e `!Sub` (CloudFormation) são aceitas, vários documentos separados por `---` viram uma lista (como um manifesto Kubernetes com Deployment e Service) e chave repetida vale a última. O YAML 1.1 (`yes`/`no` como booleano) não é aplicado: só o esquema core do YAML 1.2 (a cor da vista de texto vem do realce de código e ainda pinta `yes`/`no` como booleano, mas a tabela e o esquema os tratam como texto). `mdv samples/` lista `.yaml` e `.yml` no seletor, junto com `.md`, `.msg`, `.docx`, `.html` e `.htm`. YAML ainda não exporta (`-o`).
 
 **Erros de sintaxe (JSON e YAML).** Arquivo inválido não vira uma tela de erro vazia: o `mdv` mostra o texto original com a **linha do erro em fundo vermelho** e logo abaixo `✗ linha N, coluna M: mensagem` em português (por exemplo, `vírgula sobrando antes de fechar` no JSON ou `esperava uma chave nesta linha (verifique a indentação)` no YAML). Na TUI o documento abre já rolado até o erro, com algumas linhas de contexto acima; `m` mostra a fonte crua. Só erros de sintaxe são apontados, nunca estilo. Experimente `mdv samples/quebrado.yaml` e `mdv samples/quebrado.json`.
 
