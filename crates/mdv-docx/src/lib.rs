@@ -3,6 +3,7 @@
 //! O limite de trabalho vem por `Budget`; os tetos de tamanho e contagem são as constantes abaixo.
 #![allow(dead_code)]
 
+mod agrupar;
 mod classificar;
 #[cfg(test)]
 mod classificar_tests;
@@ -13,11 +14,17 @@ mod estilo_run;
 mod estilos;
 mod le;
 mod leitura;
+mod md_bloco;
+#[cfg(test)]
+mod md_bloco_tests;
 mod md_inline;
 #[cfg(test)]
 mod md_inline_tests;
 mod md_link;
 mod md_notas;
+mod md_tabela;
+#[cfg(test)]
+mod md_tabela_tests;
 mod modelo;
 mod notas;
 mod numeracao;

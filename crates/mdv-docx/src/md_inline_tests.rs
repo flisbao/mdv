@@ -328,3 +328,8 @@ fn barra_vertical_no_destino_do_link_e_codificada_na_celula() {
     assert_eq!(md(&ts, Modo::Celula), "[x](https://a.org/a%7Cb)");
     assert_eq!(md(&ts, Modo::Linha), "[x](https://a.org/a|b)");
 }
+
+#[test]
+fn barra_vertical_no_inicio_do_paragrafo_e_escapada() {
+    assert_eq!(md(&[simples("|a|")], Modo::Bloco), "\\|a|");
+}

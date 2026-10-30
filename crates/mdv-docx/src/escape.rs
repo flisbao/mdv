@@ -13,13 +13,13 @@ pub(crate) fn inline(s: &str) -> String {
     saida
 }
 
-/// Escapa texto já inline-escapado para o começo de linha (`# > - + =` e `N.`/`N)`).
+/// Escapa texto já inline-escapado para o começo de linha (`# > - + = |` e `N.`/`N)`).
 ///
 /// Roda sobre texto já escapado e só no começo da linha: `#`, `>`, `-`, `+` e `=` seriam
-/// marcadores de bloco, e `N.`/`N)` viraria lista numerada. Depois do primeiro caractere
+/// marcadores de bloco, `|` poderia forjar uma tabela GFM, e `N.`/`N)` viraria lista numerada. Depois do primeiro caractere
 /// o texto já está seguro e não precisa de nova barra.
 pub(crate) fn inicio_de_linha(s: &str) -> String {
-    if s.starts_with(['#', '>', '-', '+', '=']) {
+    if s.starts_with(['#', '>', '-', '+', '=', '|']) {
         return format!("\\{s}");
     }
     let digitos = s.bytes().take_while(u8::is_ascii_digit).count();
@@ -112,6 +112,11 @@ mod tests {
     #[test]
     fn inicio_de_linha_texto_intacto() {
         assert_eq!(inicio_de_linha("texto"), "texto");
+    }
+
+    #[test]
+    fn inicio_de_linha_marca_barra_vertical() {
+        assert_eq!(inicio_de_linha("|a|"), "\\|a|");
     }
 
     #[test]
