@@ -43,28 +43,34 @@ fn paragrafo(texto: &[Trecho], notas: &mut Notas) -> String {
 
 /// Itens colados, um por linha.
 ///
-/// O recuo é de 4 espaços por nível: serve tanto sob `- ` (2 colunas) quanto sob `10. `
-/// (4 colunas), pois o filho precisa começar na coluna do texto do pai ou além. O item vai em
-/// `Modo::Linha` porque uma quebra `\` + nova linha desfaria o recuo da lista.
+/// O nível do Word só diz quem é filho de quem: o pai de um item é o último item aberto de nível
+/// menor, e sem pai ele fica na margem. Usar `4 × nível` direto faria uma lista que abre em
+/// nível 1 começar com 4 espaços (bloco de código indentado) e um salto de nível virar texto do
+/// item pai. O recuo do filho é o do pai mais a largura do marcador do pai, no mínimo 4 espaços:
+/// serve sob `- ` e sob `10. `, e cresce sob `100. ` (5 colunas), em que 4 deixariam o filho
+/// como continuação do texto. O item vai em `Modo::Linha` porque uma quebra `\` + nova linha
+/// desfaria o recuo da lista.
 fn lista(itens: &[Bloco], notas: &mut Notas) -> String {
-    let linhas: Vec<String> = itens
-        .iter()
-        .filter_map(|bloco| match bloco {
-            Bloco::Item { nivel, numerada, numero, texto } => {
-                Some(item(*nivel, *numerada, *numero, texto, notas))
-            }
-            _ => None,
-        })
-        .collect();
+    // Itens abertos: nível no Word e recuo dos filhos deles.
+    let mut abertos: Vec<(u8, usize)> = Vec::new();
+    let mut linhas: Vec<String> = Vec::new();
+    for bloco in itens {
+        let Bloco::Item { nivel, numerada, numero, texto } = bloco else { continue };
+        let marcador = if *numerada { format!("{numero}. ") } else { "- ".to_string() };
+        while abertos.last().is_some_and(|&(n, _)| n >= *nivel) {
+            abertos.pop();
+        }
+        let recuo = abertos.last().map_or(0, |&(_, r)| r);
+        abertos.push((*nivel, recuo + marcador.len().max(4)));
+        linhas.push(item(recuo, &marcador, texto, notas));
+    }
     linhas.join("\n")
 }
 
-fn item(nivel: u8, numerada: bool, numero: u32, texto: &[Trecho], notas: &mut Notas) -> String {
-    let recuo = "    ".repeat(nivel as usize);
-    let marcador = if numerada { format!("{numero}. ") } else { "- ".to_string() };
+fn item(recuo: usize, marcador: &str, texto: &[Trecho], notas: &mut Notas) -> String {
     // O texto vem logo depois do marcador, onde `# `, `> ` ou `1. ` abririam outro bloco.
     let corpo = escape::inicio_de_linha(&inline(texto, notas, Modo::Linha));
-    format!("{recuo}{marcador}{corpo}").trim_end().to_string()
+    format!("{}{marcador}{corpo}", " ".repeat(recuo)).trim_end().to_string()
 }
 
 /// Blocos de código seguidos numa cerca só, sem escape do conteúdo.

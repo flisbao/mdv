@@ -46,7 +46,38 @@ fn lista_aninhada_usa_quatro_espacos() {
 #[test]
 fn lista_numerada_usa_o_numero_do_item() {
     assert_eq!(md(&[numerado(0, 3, "x")]), "3. x");
-    assert_eq!(md(&[numerado(1, 1, "y")]), "    1. y");
+    assert_eq!(md(&[numerado(1, 1, "y")]), "1. y");
+}
+
+#[test]
+fn lista_que_abre_em_nivel_fundo_comeca_na_margem() {
+    // Quatro espaços no começo do grupo seriam um bloco de código indentado.
+    assert_eq!(md(&[item(1, "x"), item(1, "y")]), "- x
+- y");
+}
+
+#[test]
+fn salto_de_nivel_desce_um_so() {
+    assert_eq!(md(&[item(0, "a"), item(2, "b"), item(1, "c"), item(0, "d")]), "- a
+    - b
+    - c
+- d");
+}
+
+#[test]
+fn volta_de_nivel_fundo_para_raso_nao_deixa_recuo_velho() {
+    let blocos = [item(0, "a"), item(1, "b"), item(2, "c"), item(0, "d"), item(2, "e")];
+    assert_eq!(md(&blocos), "- a
+    - b
+        - c
+- d
+    - e");
+}
+
+#[test]
+fn filho_de_numero_largo_comeca_na_coluna_do_texto() {
+    // `100. ` tem 5 colunas: quatro espaços deixariam o filho como texto do item.
+    assert_eq!(md(&[numerado(0, 100, "a"), item(1, "b")]), "100. a\n     - b");
 }
 
 #[test]
