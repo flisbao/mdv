@@ -3,7 +3,7 @@
 use crate::md_inline::{inline, Modo};
 use crate::md_notas::Notas;
 use crate::modelo::{Celula, Tabela};
-use crate::MAX_COLUNAS;
+use crate::{Budget, MAX_COLUNAS, MAX_MARKDOWN_BYTES};
 
 /// Escreve a tabela GFM; vazio se não houver linhas ou colunas.
 ///
@@ -12,19 +12,36 @@ use crate::MAX_COLUNAS;
 /// vazias, a continuação de mescla vertical (`vMerge`) fica vazia e a linha curta é completada
 /// com vazias. A primeira linha é o cabeçalho (GFM exige um); se algo passou do teto, um aviso
 /// no fim diz que a tabela foi cortada.
-pub(crate) fn tabela(t: &Tabela, notas: &mut Notas) -> String {
+pub(crate) fn tabela(t: &Tabela, notas: &mut Notas, budget: &dyn Budget) -> Result<String, String> {
+    tabela_com_teto(t, notas, budget, MAX_MARKDOWN_BYTES)
+}
+
+/// `tabela` com o teto de bytes da saída como parâmetro (os testes usam um teto pequeno).
+///
+/// Cada célula ocupa ao menos 3 bytes (` | `) em cada linha, mesmo vazia, e uma linha de um
+/// `<w:tc/>` com `gridSpan` de 200 vira 200 células: poucos KiB de entrada viram centenas de MiB
+/// de saída. Por isso o tamanho mínimo é conferido antes de montar qualquer linha.
+pub(crate) fn tabela_com_teto(t: &Tabela, notas: &mut Notas, budget: &dyn Budget, teto: usize) -> Result<String, String> {
     let soma = t.linhas.iter().map(|l| larguras(l)).max().unwrap_or(0);
     let largura = soma.min(MAX_COLUNAS);
     if largura == 0 {
-        return String::new();
+        return Ok(String::new());
     }
-    let mut linhas: Vec<String> = t.linhas.iter().map(|l| linha(l, largura, notas)).collect();
+    let minimo = (t.linhas.len() + 1).saturating_mul(largura).saturating_mul(3);
+    if minimo > teto {
+        return Err("documento convertido grande demais".into());
+    }
+    let mut linhas: Vec<String> = Vec::with_capacity(t.linhas.len() + 1);
+    for l in &t.linhas {
+        budget.check()?;
+        linhas.push(linha(l, largura, notas));
+    }
     linhas.insert(1.min(linhas.len()), separador(largura));
     let mut saida = linhas.join("\n");
     if soma > MAX_COLUNAS {
         saida.push_str(&format!("\n\n*(tabela cortada em {MAX_COLUNAS} colunas)*"));
     }
-    saida
+    Ok(saida)
 }
 
 /// Colunas que a linha ocupa (célula sem `colunas` conta como 1).

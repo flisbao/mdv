@@ -1,7 +1,7 @@
 use crate::md_notas::Notas;
-use crate::md_tabela::tabela;
+use crate::md_tabela::{tabela, tabela_com_teto};
 use crate::modelo::{Celula, Marcas, Tabela, Trecho};
-use crate::MAX_COLUNAS;
+use crate::{Budget, Unlimited, MAX_COLUNAS};
 
 fn texto(s: &str) -> Vec<Trecho> {
     vec![Trecho::Texto { texto: s.into(), marcas: Marcas::default(), link: None }]
@@ -12,7 +12,7 @@ fn c(s: &str) -> Celula {
 }
 
 fn md(linhas: Vec<Vec<Celula>>) -> String {
-    tabela(&Tabela { linhas }, &mut Notas::novo())
+    tabela(&Tabela { linhas }, &mut Notas::novo(), &Unlimited).unwrap()
 }
 
 #[test]
@@ -81,4 +81,33 @@ fn celula_mesclada_na_borda_e_cortada() {
 #[test]
 fn tabela_sem_linhas_da_string_vazia() {
     assert_eq!(md(vec![]), "");
+}
+
+/// Linhas de uma célula mesclada em `MAX_COLUNAS` colunas: poucas células de entrada, saída larga.
+fn linhas_largas(n: usize) -> Vec<Vec<Celula>> {
+    (0..n).map(|_| vec![Celula { colunas: MAX_COLUNAS, ..c("") }]).collect()
+}
+
+#[test]
+fn tabela_cuja_saida_passa_do_teto_e_recusada_antes_de_montar() {
+    // 11 linhas (com o separador) de 200 colunas ocupam ao menos 6600 bytes.
+    let t = Tabela { linhas: linhas_largas(10) };
+    let erro = tabela_com_teto(&t, &mut Notas::novo(), &Unlimited, 6599).expect_err("erro");
+    assert!(erro.contains("grande demais"), "{erro}");
+    assert!(tabela_com_teto(&t, &mut Notas::novo(), &Unlimited, 1 << 20).is_ok());
+}
+
+struct SemOrcamento;
+
+impl Budget for SemOrcamento {
+    fn check(&self) -> Result<(), String> {
+        Err("orçamento esgotado".into())
+    }
+}
+
+#[test]
+fn orcamento_esgotado_para_a_tabela() {
+    let t = Tabela { linhas: vec![vec![c("A")]] };
+    let erro = tabela(&t, &mut Notas::novo(), &SemOrcamento).expect_err("erro");
+    assert!(erro.contains("orçamento esgotado"), "{erro}");
 }

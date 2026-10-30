@@ -16,7 +16,7 @@ fn escrever_com_teto(doc: &Documento, budget: &dyn Budget, teto: usize) -> Resul
     let mut saida = String::new();
     for g in agrupar(&doc.blocos) {
         budget.check()?;
-        let texto = grupo(&g, &mut notas);
+        let texto = grupo(&g, &mut notas, budget)?;
         if texto.is_empty() {
             continue;
         }

@@ -2,6 +2,7 @@ use crate::agrupar::{agrupar, Grupo};
 use crate::md_bloco::grupo;
 use crate::md_notas::Notas;
 use crate::modelo::{Bloco, Celula, Marcas, Tabela, Trecho};
+use crate::Unlimited;
 
 fn texto(s: &str) -> Vec<Trecho> {
     vec![Trecho::Texto { texto: s.into(), marcas: Marcas::default(), link: None }]
@@ -18,7 +19,7 @@ fn numerado(nivel: u8, numero: u32, s: &str) -> Bloco {
 /// Escreve todos os grupos dos blocos, um por vez, separados por linha vazia.
 fn md(blocos: &[Bloco]) -> String {
     let mut notas = Notas::novo();
-    let partes: Vec<String> = agrupar(blocos).iter().map(|g| grupo(g, &mut notas)).collect();
+    let partes: Vec<String> = agrupar(blocos).iter().map(|g| grupo(g, &mut notas, &Unlimited).unwrap()).collect();
     partes.join("\n\n")
 }
 
@@ -131,5 +132,5 @@ fn tabela_delega() {
     let celula = |s: &str| Celula { paragrafos: vec![texto(s)], colunas: 1, continua: false };
     let t = Tabela { linhas: vec![vec![celula("A")], vec![celula("1")]] };
     let blocos = [Bloco::Tabela(t)];
-    assert_eq!(grupo(&Grupo::Bloco(&blocos[0]), &mut Notas::novo()), "| A |\n| --- |\n| 1 |");
+    assert_eq!(grupo(&Grupo::Bloco(&blocos[0]), &mut Notas::novo(), &Unlimited).unwrap(), "| A |\n| --- |\n| 1 |");
 }

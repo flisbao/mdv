@@ -8,27 +8,30 @@ use crate::md_inline::{inline, Modo};
 use crate::md_notas::Notas;
 use crate::md_tabela;
 use crate::modelo::{Bloco, Trecho};
+use crate::Budget;
 
 /// Escreve o grupo como Markdown, sem quebra de linha no fim.
-pub(crate) fn grupo(g: &Grupo, notas: &mut Notas) -> String {
+///
+/// Só a tabela pode crescer muito além da entrada, por isso só ela recebe o orçamento.
+pub(crate) fn grupo(g: &Grupo, notas: &mut Notas, budget: &dyn Budget) -> Result<String, String> {
     match g {
-        Grupo::Lista(itens) => lista(itens, notas),
-        Grupo::Codigo(blocos) => codigo(blocos),
-        Grupo::Citacao(blocos) => citacao(blocos, notas),
-        Grupo::Bloco(bloco) => avulso(bloco, notas),
+        Grupo::Lista(itens) => Ok(lista(itens, notas)),
+        Grupo::Codigo(blocos) => Ok(codigo(blocos)),
+        Grupo::Citacao(blocos) => Ok(citacao(blocos, notas)),
+        Grupo::Bloco(bloco) => avulso(bloco, notas, budget),
     }
 }
 
 /// Escreve um bloco que veio sozinho; item, código e citação soltos valem como grupo de um.
-fn avulso(bloco: &Bloco, notas: &mut Notas) -> String {
-    match bloco {
+fn avulso(bloco: &Bloco, notas: &mut Notas, budget: &dyn Budget) -> Result<String, String> {
+    Ok(match bloco {
         Bloco::Titulo { nivel, texto } => titulo(*nivel, texto, notas),
         Bloco::Paragrafo(texto) => paragrafo(texto, notas),
-        Bloco::Tabela(t) => md_tabela::tabela(t, notas),
+        Bloco::Tabela(t) => return md_tabela::tabela(t, notas, budget),
         Bloco::Item { .. } => lista(slice::from_ref(bloco), notas),
         Bloco::Codigo(_) => codigo(slice::from_ref(bloco)),
         Bloco::Citacao(_) => citacao(slice::from_ref(bloco), notas),
-    }
+    })
 }
 
 /// Título ATX; o nível é limitado a 1..=6.
