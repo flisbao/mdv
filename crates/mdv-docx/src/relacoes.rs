@@ -1,6 +1,8 @@
 //! Relações OPC (`.rels`): liga o `Id` de cada relação ao tipo, ao alvo e a se ela é externa.
 //! Também resolve os alvos relativos ao caminho da parte dona das relações.
 
+use std::collections::HashMap;
+
 use crate::xml_leitor::Leitor;
 use crate::Budget;
 
@@ -16,6 +18,8 @@ pub(crate) struct Relacao {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct Relacoes {
     itens: Vec<(String, Relacao)>,
+    /// `Id` → posição em `itens`, para `por_id` não varrer a lista a cada `r:id` do documento.
+    indice: HashMap<String, usize>,
 }
 
 impl Relacoes {
@@ -28,6 +32,7 @@ impl Relacoes {
     pub(crate) fn ler(xml: &[u8], budget: &dyn Budget) -> Result<Self, String> {
         let mut leitor = Leitor::novo(xml, budget);
         let mut itens = Vec::new();
+        let mut indice = HashMap::new();
         while let Some(tag) = leitor.ate("Relationship")? {
             let (Some(id), Some(tipo), Some(alvo)) = (tag.attr("Id"), tag.attr("Type"), tag.attr("Target"))
             else {
@@ -37,14 +42,16 @@ impl Relacoes {
             let externo = tag.attr("TargetMode").is_some_and(|m| m.eq_ignore_ascii_case("External"));
             let tipo = tipo.rsplit_once('/').map_or(tipo, |(_, ultimo)| ultimo).to_string();
             let relacao = Relacao { tipo, alvo: alvo.to_string(), externo };
+            // `Id` repetido: vale o primeiro, o mesmo que a varredura em ordem daria.
+            indice.entry(id.to_string()).or_insert(itens.len());
             itens.push((id.to_string(), relacao));
         }
-        Ok(Self { itens })
+        Ok(Self { itens, indice })
     }
 
     /// Relação pelo `Id` (ex.: `rId5`).
     pub(crate) fn por_id(&self, id: &str) -> Option<&Relacao> {
-        self.itens.iter().find(|(i, _)| i == id).map(|(_, r)| r)
+        self.indice.get(id).map(|&i| &self.itens[i].1)
     }
 
     /// Primeira relação cujo tipo (último segmento da URL) é `tipo`.
@@ -93,6 +100,15 @@ mod tests {
         assert_eq!(rels.por_tipo("styles").expect("styles").alvo, "styles.xml");
         assert!(!rels.por_id("rId1").expect("rId1").externo);
         assert!(rels.por_id("rId9").is_none());
+    }
+
+    #[test]
+    fn id_repetido_devolve_o_primeiro() {
+        let xml = r#"<Relationships><Relationship Id="rId1" Type="x/hyperlink" Target="primeiro" TargetMode="External"/><Relationship Id="rId1" Type="x/hyperlink" Target="segundo"/></Relationships>"#;
+        let rels = Relacoes::ler(xml.as_bytes(), &Unlimited).expect("lê");
+        let r = rels.por_id("rId1").expect("rId1");
+        assert_eq!(r.alvo, "primeiro");
+        assert!(r.externo);
     }
 
     #[test]

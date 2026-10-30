@@ -3,6 +3,9 @@
 //! O limite de trabalho vem por `Budget`; os tetos de tamanho e contagem são as constantes abaixo.
 #![allow(dead_code)]
 
+mod classificar;
+#[cfg(test)]
+mod classificar_tests;
 mod contexto;
 mod estilo_run;
 mod estilos;
@@ -10,7 +13,11 @@ mod le;
 mod modelo;
 mod numeracao;
 mod pacote;
+mod paragrafo;
+#[cfg(test)]
+mod paragrafo_tests;
 mod partes;
+mod propriedades;
 mod relacoes;
 mod trecho;
 mod xml_leitor;
