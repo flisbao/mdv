@@ -15,7 +15,8 @@ pub(crate) fn classificar(props: &Propriedades, trechos: Vec<Trecho>, ctx: &mut 
         return None;
     }
     let estilo = props.estilo.as_deref().map(|id| ctx.estilos.de(id)).unwrap_or_default();
-    if let Some(nivel) = props.nivel.or(estilo.titulo) {
+    let titulo = if props.texto_comum { None } else { props.nivel.or(estilo.titulo) };
+    if let Some(nivel) = titulo {
         return Some(Bloco::Titulo { nivel, texto: trechos });
     }
     // `numPr` direto vence o estilo, até quando é `numId` 0: aí o autor tirou o parágrafo da
@@ -28,7 +29,9 @@ pub(crate) fn classificar(props: &Propriedades, trechos: Vec<Trecho>, ctx: &mut 
     if let Some((num_id, nivel)) = lista {
         let nivel = nivel.min(MAX_NIVEL_LISTA);
         let numerada = ctx.numeracao.marca(num_id, nivel) == Marca::Numerada;
-        let numero = if numerada { ctx.contador.proximo(ctx.numeracao, num_id, nivel) } else { 0 };
+        // O marcador também conta: item de nível raso zera os níveis fundos, numerados ou não.
+        let contado = ctx.contador.proximo(ctx.numeracao, num_id, nivel);
+        let numero = if numerada { contado } else { 0 };
         return Some(Bloco::Item { nivel, numerada, numero, texto: trechos });
     }
     if estilo.codigo || todo_em_codigo(&trechos) {

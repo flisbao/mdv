@@ -18,7 +18,8 @@ pub(crate) fn ler_corpo(xml: &[u8], ctx: &mut Contexto) -> Result<Vec<Bloco>, St
         match tag.nome.as_str() {
             "p" => blocos.extend(ler_paragrafo(&mut l, ctx)?),
             "tbl" => blocos.push(Bloco::Tabela(ler_tabela(&mut l, ctx)?)),
-            "sectPr" => l.pular()?,
+            // `Fallback` é a cópia do `Choice` para leitores antigos: lê-lo duplicaria o bloco.
+            "sectPr" | "Fallback" => l.pular()?,
             _ => {}
         }
     }

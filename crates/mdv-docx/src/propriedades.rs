@@ -12,6 +12,8 @@ pub(crate) struct Propriedades {
     pub num: Option<(u32, u8)>,
     /// `outlineLvl + 1` limitado a 6; `outlineLvl` 9 (texto comum) ou inválido fica `None`.
     pub nivel: Option<u8>,
+    /// `outlineLvl` 9 declarado: o parágrafo é texto comum mesmo que o estilo seja um título.
+    pub texto_comum: bool,
 }
 
 /// Lê um `w:pPr` (chamada logo depois do `Abre("pPr")`) e consome até o `Fecha` dele.
@@ -28,6 +30,7 @@ pub(crate) fn ler_ppr(l: &mut Leitor) -> Result<Propriedades, String> {
                     l.pular()?;
                 }
                 "outlineLvl" => {
+                    props.texto_comum = tag.val() == Some("9");
                     props.nivel = tag
                         .val()
                         .and_then(|v| v.parse::<u8>().ok())
@@ -99,7 +102,9 @@ mod tests {
 
     #[test]
     fn outline_9_nao_e_titulo() {
-        assert_eq!(ler(r#"<w:outlineLvl w:val="9"/>"#).nivel, None);
+        let p = ler(r#"<w:outlineLvl w:val="9"/>"#);
+        assert_eq!(p.nivel, None);
+        assert!(p.texto_comum);
     }
 
     #[test]

@@ -115,7 +115,7 @@ mod tests {
             .map(|i| format!(r#"<Relationship Id="r{i}" Type="x/hyperlink" Target="a"/>"#))
             .collect();
         let xml = format!("<Relationships>{itens}</Relationships>");
-        let erro = Relacoes::ler(xml.as_bytes(), &Unlimited).err().expect("erro");
+        let erro = Relacoes::ler(xml.as_bytes(), &Unlimited).expect_err("erro");
         assert!(erro.contains("relações demais"), "{erro}");
         let xml = format!("<Relationships>{}</Relationships>", &itens[..itens.rfind("<Relationship ").unwrap()]);
         assert!(Relacoes::ler(xml.as_bytes(), &Unlimited).is_ok());

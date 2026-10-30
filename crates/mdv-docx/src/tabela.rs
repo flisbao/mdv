@@ -19,7 +19,7 @@ pub(crate) fn ler_tabela(l: &mut Leitor, ctx: &mut Contexto) -> Result<Tabela, S
                     ctx.budget.check()?;
                     linhas.push(ler_linha(l, ctx)?);
                 }
-                "tblPr" | "tblGrid" => l.pular()?,
+                "tblPr" | "tblGrid" | "Fallback" => l.pular()?,
                 _ => {}
             },
             Some(_) => {}
@@ -36,7 +36,7 @@ fn ler_linha(l: &mut Leitor, ctx: &mut Contexto) -> Result<Vec<Celula>, String> 
             Some(Evento::Fecha(n)) if n == "tr" => return Ok(celulas),
             Some(Evento::Abre(tag)) => match tag.nome.as_str() {
                 "tc" => celulas.push(ler_celula(l, ctx)?),
-                "trPr" | "tblPrEx" => l.pular()?,
+                "trPr" | "tblPrEx" | "Fallback" => l.pular()?,
                 _ => {}
             },
             Some(_) => {}
@@ -50,6 +50,14 @@ fn ler_linha(l: &mut Leitor, ctx: &mut Contexto) -> Result<Vec<Celula>, String> 
 /// absurdo não gerar milhares de colunas na saída; `vMerge` sem `val` ou diferente de `restart`
 /// marca a continuação de uma mesclagem vertical. Outros elementos (`sdt`...) são transparentes.
 fn ler_celula(l: &mut Leitor, ctx: &mut Contexto) -> Result<Celula, String> {
+    let antes = ctx.contador.parar(true);
+    let celula = ler_conteudo(l, ctx);
+    ctx.contador.parar(antes);
+    celula
+}
+
+/// Lê o conteúdo da célula até o `Fecha("tc")`; `ler_celula` cuida de parar a numeração.
+fn ler_conteudo(l: &mut Leitor, ctx: &mut Contexto) -> Result<Celula, String> {
     let mut celula = Celula { paragrafos: Vec::new(), colunas: 1, continua: false };
     loop {
         match l.proximo()? {
@@ -66,6 +74,7 @@ fn ler_celula(l: &mut Leitor, ctx: &mut Contexto) -> Result<Celula, String> {
                     celula.paragrafos.extend(Bloco::Tabela(interna).paragrafos());
                 }
                 "tcPr" => ler_tc_pr(l, &mut celula)?,
+                "Fallback" => l.pular()?,
                 _ => {}
             },
             Some(_) => {}

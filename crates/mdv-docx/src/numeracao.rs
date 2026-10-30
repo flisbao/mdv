@@ -204,12 +204,21 @@ fn ler_override(leitor: &mut Leitor, tag: &Tag, num: &mut Num) -> Result<(), Str
 /// Contadores de itens de cada lista, por `numId`.
 pub(crate) struct Contador {
     contagens: HashMap<u32, [u32; NIVEIS]>,
+    /// Dentro de célula ou nota o item vira texto sem marcador, então não conta.
+    parado: bool,
 }
 
 impl Contador {
     /// Sem nenhum item contado.
     pub(crate) fn novo() -> Self {
-        Contador { contagens: HashMap::new() }
+        Contador { contagens: HashMap::new(), parado: false }
+    }
+
+    /// Para ou retoma a contagem e devolve o estado anterior, para restaurá-lo depois.
+    /// Um item numerado dentro de célula ou de nota sai sem marcador; se contasse, deslocaria
+    /// a numeração da lista do corpo que usa o mesmo `numId`.
+    pub(crate) fn parar(&mut self, parar: bool) -> bool {
+        std::mem::replace(&mut self.parado, parar)
     }
 
     /// Número do próximo item deste nível e `numId`.
@@ -217,6 +226,9 @@ impl Contador {
     /// do `inicio` a cada item do pai. Contadores são por `numId` (limitação conhecida):
     /// `numId`s diferentes que compartilham um `abstractNum` não continuam a contagem um do outro.
     pub(crate) fn proximo(&mut self, num: &Numeracao, num_id: u32, nivel: u8) -> u32 {
+        if self.parado {
+            return 0;
+        }
         let nivel = nivel.min(MAX_NIVEL_LISTA);
         let idx = indice(nivel);
         let conta = self.contagens.entry(num_id).or_insert([0; NIVEIS]);

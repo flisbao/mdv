@@ -49,7 +49,9 @@ fn percorrer(
                         .map(|r| Rc::from(r.alvo.as_str()));
                     percorrer(l, ctx, url.as_ref(), props, trechos, "hyperlink")?;
                 }
-                "del" | "moveFrom" | "Fallback" | "drawing" | "pict" | "txbxContent" | "rPr" => {
+                // `oMath` e `oMathPara` têm runs `m:r`/`m:t` com o mesmo nome local dos de texto.
+                "del" | "moveFrom" | "Fallback" | "drawing" | "pict" | "txbxContent" | "rPr" | "oMath"
+                | "oMathPara" => {
                     l.pular()?
                 }
                 _ => {}

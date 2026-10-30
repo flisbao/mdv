@@ -44,6 +44,14 @@ pub(crate) fn ler_notas(
 
 /// Lê os parágrafos de uma nota (depois do `Abre`) e os junta em uma só lista de trechos.
 fn ler_nota(l: &mut Leitor, ctx: &mut Contexto, elemento: &str) -> Result<Vec<Trecho>, String> {
+    let antes = ctx.contador.parar(true);
+    let trechos = ler_paragrafos(l, ctx, elemento);
+    ctx.contador.parar(antes);
+    trechos
+}
+
+/// Lê os parágrafos da nota até o `Fecha(elemento)`; `ler_nota` cuida de parar a numeração.
+fn ler_paragrafos(l: &mut Leitor, ctx: &mut Contexto, elemento: &str) -> Result<Vec<Trecho>, String> {
     let mut trechos: Vec<Trecho> = Vec::new();
     let mut primeiro = true;
     loop {

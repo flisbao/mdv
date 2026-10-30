@@ -38,6 +38,14 @@ fn titulo_pelo_estilo() {
 }
 
 #[test]
+fn outline_9_direto_tira_o_titulo_do_estilo() {
+    assert_eq!(
+        bloco(r#"<w:pStyle w:val="Heading2"/><w:outlineLvl w:val="9"/>"#, RUN),
+        Some(Bloco::Paragrafo(texto("texto")))
+    );
+}
+
+#[test]
 fn titulo_por_outline_direto_vence_o_estilo() {
     assert_eq!(
         bloco(r#"<w:pStyle w:val="Normal"/><w:outlineLvl w:val="0"/>"#, RUN),

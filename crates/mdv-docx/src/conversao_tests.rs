@@ -57,6 +57,64 @@ fn lista_com_numbering_xml() {
 }
 
 #[test]
+fn marcador_raso_reinicia_a_numeracao_dos_niveis_fundos() {
+    let corpo = [item(0, "a"), item(1, "b"), item(1, "c"), item(0, "d"), item(1, "e")].concat();
+    let bytes = DocxBuilder::novo().numeracao(NUMERACAO).corpo(&corpo).construir();
+    let saida = to_markdown(&bytes, &Unlimited).expect("converte");
+    assert_eq!(saida, "- a\n    1. b\n    2. c\n- d\n    1. e\n");
+}
+
+#[test]
+fn lista_numerada_dentro_de_celula_nao_desloca_a_do_corpo() {
+    const DECIMAL: &str = r#"<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/></w:lvl></w:abstractNum>
+        <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>"#;
+    let numerado = |t: &str| {
+        format!(r#"<w:p><w:pPr><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#)
+    };
+    let corpo = format!(
+        "{}<w:tbl><w:tr><w:tc>{}{}</w:tc></w:tr></w:tbl>{}",
+        numerado("x"),
+        numerado("d1"),
+        numerado("d2"),
+        numerado("y")
+    );
+    let bytes = DocxBuilder::novo().numeracao(DECIMAL).corpo(&corpo).construir();
+    let saida = to_markdown(&bytes, &Unlimited).expect("converte");
+    assert!(saida.starts_with("1. x\n\n"), "{saida}");
+    assert!(saida.ends_with("\n\n2. y\n"), "{saida}");
+}
+
+#[test]
+fn fallback_de_bloco_nao_duplica_paragrafo_nem_tabela() {
+    let p = "<w:p><w:r><w:t>unico</w:t></w:r></w:p>";
+    let tabela = "<w:tbl><w:tr><w:tc><w:p><w:r><w:t>cel</w:t></w:r></w:p></w:tc></w:tr></w:tbl>";
+    let alterna = |dentro: &str| {
+        format!("<mc:AlternateContent><mc:Choice Requires=\"x\">{dentro}</mc:Choice><mc:Fallback>{dentro}</mc:Fallback></mc:AlternateContent>")
+    };
+    assert_eq!(md(&alterna(p)), "unico\n");
+    assert_eq!(md(&alterna(tabela)), "| cel |\n| --- |\n");
+    let na_celula = format!("<w:tbl><w:tr><w:tc>{}</w:tc></w:tr></w:tbl>", alterna(p));
+    assert_eq!(md(&na_celula), "| unico |\n| --- |\n");
+}
+
+#[test]
+fn equacao_nao_vaza_como_texto_corrido() {
+    let eq = r#"<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:oMath><m:r><m:t>x+y</m:t></m:r></m:oMath></m:oMathPara>"#;
+    let saida = md(&format!("<w:p><w:r><w:t>a</w:t></w:r>{eq}<w:r><w:t>b</w:t></w:r></w:p>"));
+    assert_eq!(saida, "ab\n");
+}
+
+#[test]
+fn tabela_aninhada_acima_da_profundidade_e_recusada() {
+    // Cada tabela soma 3 níveis (tbl, tr, tc): 40 passam de MAX_PROFUNDIDADE_XML.
+    let n = 40;
+    let corpo = format!("{}<w:p/>{}", "<w:tbl><w:tr><w:tc>".repeat(n), "</w:tc></w:tr></w:tbl>".repeat(n));
+    let bytes = DocxBuilder::novo().corpo(&corpo).construir();
+    let erro = to_markdown(&bytes, &Unlimited).expect_err("erro");
+    assert!(erro.contains("profundidade"), "{erro}");
+}
+
+#[test]
 fn tabela_com_celulas_mescladas() {
     let saida = md(r#"<w:tbl>
         <w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>topo</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>c</w:t></w:r></w:p></w:tc></w:tr>
