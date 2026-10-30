@@ -3,6 +3,7 @@
 use std::slice;
 
 use crate::agrupar::Grupo;
+use crate::escape;
 use crate::md_inline::{inline, Modo};
 use crate::md_notas::Notas;
 use crate::md_tabela;
@@ -61,7 +62,9 @@ fn lista(itens: &[Bloco], notas: &mut Notas) -> String {
 fn item(nivel: u8, numerada: bool, numero: u32, texto: &[Trecho], notas: &mut Notas) -> String {
     let recuo = "    ".repeat(nivel as usize);
     let marcador = if numerada { format!("{numero}. ") } else { "- ".to_string() };
-    format!("{recuo}{marcador}{}", inline(texto, notas, Modo::Linha)).trim_end().to_string()
+    // O texto vem logo depois do marcador, onde `# `, `> ` ou `1. ` abririam outro bloco.
+    let corpo = escape::inicio_de_linha(&inline(texto, notas, Modo::Linha));
+    format!("{recuo}{marcador}{corpo}").trim_end().to_string()
 }
 
 /// Blocos de código seguidos numa cerca só, sem escape do conteúdo.

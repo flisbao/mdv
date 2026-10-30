@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use crate::escape;
 use crate::md_inline::{inline, Modo};
 use crate::modelo::Trecho;
 
@@ -53,7 +54,8 @@ fn texto_da_nota(trechos: Option<&Vec<Trecho>>) -> String {
         .filter(|t| !matches!(t, Trecho::NotaRef(_)))
         .cloned()
         .collect();
-    let texto = inline(&sem_refs, &mut Notas::novo(), Modo::Linha);
+    // O texto vem logo depois de `[^N]: `, onde `# ` ou `> ` abririam um bloco dentro da nota.
+    let texto = escape::inicio_de_linha(&inline(&sem_refs, &mut Notas::novo(), Modo::Linha));
     if texto.is_empty() {
         "(nota ausente)".to_string()
     } else {
@@ -94,6 +96,15 @@ mod tests {
         let mut notas = Notas::novo();
         notas.referenciar("n");
         assert_eq!(notas.definicoes(&HashMap::new()), "[^1]: (nota ausente)");
+    }
+
+    #[test]
+    fn texto_de_nota_que_parece_bloco_e_escapado() {
+        let mut notas = Notas::novo();
+        notas.referenciar("n1");
+        let mut textos = HashMap::new();
+        textos.insert("n1".to_string(), texto("# Segredo"));
+        assert_eq!(notas.definicoes(&textos), "[^1]: \\# Segredo");
     }
 
     #[test]

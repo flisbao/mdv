@@ -50,6 +50,15 @@ fn lista_numerada_usa_o_numero_do_item() {
 }
 
 #[test]
+fn texto_de_item_que_parece_bloco_e_escapado() {
+    assert_eq!(md(&[item(0, "# Segredo")]), "- \\# Segredo");
+    assert_eq!(md(&[item(0, "> x")]), "- \\> x");
+    assert_eq!(md(&[item(0, "- y")]), "- \\- y");
+    assert_eq!(md(&[item(0, "---")]), "- \\---");
+    assert_eq!(md(&[numerado(0, 3, "1. z")]), "3. 1\\. z");
+}
+
+#[test]
 fn item_vazio_ainda_tem_marcador() {
     assert_eq!(md(&[item(0, "")]), "-");
 }
