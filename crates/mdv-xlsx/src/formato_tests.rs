@@ -63,3 +63,39 @@ fn carregar_ignora_xf_alem_do_teto() {
     assert_eq!(e.formato(99_999).aplicar(45000.0, false), "2023-03-15");
     assert_eq!(*e.formato(100_000), Formato::Geral);
 }
+
+/// `numFmt` de id 164 com o código dado (aspas viram `&quot;` no atributo).
+fn numfmt_164(codigo: &str) -> String {
+    format!("<numFmts><numFmt numFmtId=\"164\" formatCode=\"{}\"/></numFmts>", codigo.replace('"', "&quot;"))
+}
+
+#[test]
+fn xf_com_o_mesmo_codigo_longo_guardam_um_formato_so() {
+    // código de 252 caracteres com prefixo e sufixo; 100 001 `xf` apontam para ele
+    let p = "p".repeat(120);
+    let s = "s".repeat(120);
+    let codigo = format!("\"{p}\"#,##0.00\"{s}\"");
+    assert!(codigo.chars().count() <= 255);
+    let mut xml = numfmt_164(&codigo);
+    xml.push_str("<cellXfs>");
+    for _ in 0..=100_000 {
+        xml.push_str("<xf numFmtId=\"164\"/>");
+    }
+    xml.push_str("</cellXfs>");
+    let e = estilos(&xml);
+    assert_eq!(e.formatos_distintos(), 1);
+    assert_eq!(e.formato(99_999).aplicar(1.0, false), format!("{p}1.00{s}"));
+}
+
+#[test]
+fn codigo_de_300_caracteres_e_ignorado_e_o_de_255_vale() {
+    let ok = format!("0.00\"{}\"", "a".repeat(249)); // 255 caracteres
+    let longo = format!("0.00\"{}\"", "a".repeat(294)); // 300 caracteres
+    assert_eq!(ok.chars().count(), 255);
+    assert_eq!(longo.chars().count(), 300);
+    let aceito = estilos(&format!("{}<cellXfs><xf numFmtId=\"164\"/></cellXfs>", numfmt_164(&ok)));
+    assert_eq!(aceito.formato(0).aplicar(1.0, false), format!("1.00{}", "a".repeat(249)));
+    let ignorado = estilos(&format!("{}<cellXfs><xf numFmtId=\"164\"/></cellXfs>", numfmt_164(&longo)));
+    assert_eq!(*ignorado.formato(0), Formato::Geral);
+    assert_eq!(ignorado.formato(0).aplicar(1.0, false), "1");
+}

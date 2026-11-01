@@ -1,5 +1,7 @@
 //! `styles.xml` → `Estilos`: índice de estilo da célula (`s`) → `Formato` de número.
-//! Só `cellXfs` entra (não `cellStyleXfs`); a classificação de cada id é feita uma vez.
+//! Só `cellXfs` entra (não `cellStyleXfs`). Cada `numFmtId` distinto é classificado uma vez e
+//! guardado numa tabela; cada `xf` guarda só o índice dessa tabela, então muitos `xf` com o
+//! mesmo formato não multiplicam a memória.
 
 use std::collections::HashMap;
 
@@ -10,40 +12,46 @@ use crate::Budget;
 
 /// Quantos códigos `numFmt` são guardados; o resto fica Geral.
 const MAX_NUMFMT: usize = 5000;
-/// Código mais longo que isso não é classificado (fica Geral).
-const MAX_CODIGO_CHARS: usize = 5000;
+/// Limite de caracteres de um código de formato personalizado no próprio Excel; mais longo fica Geral.
+const MAX_CODIGO_CHARS: usize = 255;
 /// Quantos `xf` de `cellXfs` são aceitos; índice maior que isso fica Geral.
 const MAX_XF: usize = 100_000;
 
 static GERAL: Formato = Formato::Geral;
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Estilos(Vec<Formato>);
+pub(crate) struct Estilos {
+    /// Para cada `xf` (índice de estilo), posição do formato em `formatos`.
+    indices: Vec<usize>,
+    /// Um `Formato` por `numFmtId` distinto encontrado nos `xf`.
+    formatos: Vec<Formato>,
+}
 
 impl Estilos {
     /// Sem `styles.xml`: toda célula sai no formato Geral.
     pub(crate) fn vazio() -> Estilos {
-        Estilos(Vec::new())
+        Estilos { indices: Vec::new(), formatos: Vec::new() }
     }
 
     pub(crate) fn carregar(xml: &[u8], budget: &dyn Budget) -> Result<Estilos, String> {
         let mut leitor = Leitor::novo(xml, budget);
         let mut codigos: HashMap<u32, String> = HashMap::new();
-        let mut cache: HashMap<u32, Formato> = HashMap::new();
-        let mut xfs: Vec<Formato> = Vec::new();
+        let mut posicao_do_id: HashMap<u32, usize> = HashMap::new();
+        let mut formatos: Vec<Formato> = Vec::new();
+        let mut indices: Vec<usize> = Vec::new();
         let mut em_xfs = false;
         while let Some(evento) = leitor.proximo()? {
             match evento {
                 Evento::Abre(tag) => match tag.nome.as_str() {
                     "numFmt" => guarda_codigo(&mut codigos, &tag),
                     "cellXfs" => em_xfs = true,
-                    "xf" if em_xfs && xfs.len() < MAX_XF => {
+                    "xf" if em_xfs && indices.len() < MAX_XF => {
                         let id = id_de(&tag, "numFmtId");
-                        let formato = cache
-                            .entry(id)
-                            .or_insert_with(|| classificar(id, codigos.get(&id).map(String::as_str)))
-                            .clone();
-                        xfs.push(formato);
+                        let posicao = *posicao_do_id.entry(id).or_insert_with(|| {
+                            formatos.push(classificar(id, codigos.get(&id).map(String::as_str)));
+                            formatos.len() - 1
+                        });
+                        indices.push(posicao);
                     }
                     _ => {}
                 },
@@ -51,12 +59,21 @@ impl Estilos {
                 _ => {}
             }
         }
-        Ok(Estilos(xfs))
+        Ok(Estilos { indices, formatos })
     }
 
     /// Formato do estilo `indice_s`; índice fora da lista é Geral.
     pub(crate) fn formato(&self, indice_s: usize) -> &Formato {
-        self.0.get(indice_s).unwrap_or(&GERAL)
+        match self.indices.get(indice_s) {
+            Some(&posicao) => &self.formatos[posicao],
+            None => &GERAL,
+        }
+    }
+
+    /// Quantos `Formato` distintos a tabela guarda (um por `numFmtId` usado).
+    #[cfg(test)]
+    pub(crate) fn formatos_distintos(&self) -> usize {
+        self.formatos.len()
     }
 }
 
