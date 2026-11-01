@@ -920,7 +920,13 @@ fn xlsx_para_markdown_com_o() {
     let res = mdv(&[&sample("vendas.xlsx"), "-o", &out], "");
     assert!(res.status.success(), "{}", String::from_utf8_lossy(&res.stderr));
     let md = std::fs::read_to_string(&out).unwrap();
-    assert!(md.contains("# ") && md.contains(" | "), "{md}");
+    // Título da aba, cabeçalho, separador com alinhamento (números à direita) e a primeira linha de dados.
+    // O `_` do nome da coluna sai escapado (`\_`), como em qualquer Markdown gerado pelo mdv.
+    let esperado = "# vendas\n\n\
+        | id | produto | categoria | quantidade | preco\\_unitario | data |\n\
+        | ---: | --- | --- | ---: | ---: | --- |\n\
+        | 1 | Caneta azul | Papelaria | 10 | 2.5 | 2026-01-05 |\n";
+    assert!(md.starts_with(esperado), "{md}");
     // Sem --force, repetir o comando recusa sobrescrever.
     let res = mdv(&[&sample("vendas.xlsx"), "-o", &out], "");
     assert!(!res.status.success());
