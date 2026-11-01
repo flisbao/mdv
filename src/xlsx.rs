@@ -48,9 +48,7 @@ pub(crate) fn read_xlsx_file(path: &Path) -> io::Result<String> {
 mod tests {
     use super::*;
     use mdv_xlsx::testutil::XlsxBuilder;
-    use mdv_xlsx::MAX_XLSX_BYTES;
-    use std::fs::{self, File};
-    use std::path::Path;
+    use std::fs::File;
 
     /// Texto das linhas renderizadas, uma por linha, sem estilos.
     fn texto_renderizado(md: &str) -> String {
@@ -136,14 +134,13 @@ mod tests {
         let texto = "a|b *c* [d](e) &lt;b&gt;";
         let linhas = format!(r#"<row r="1"><c r="A1" t="inlineStr"><is><t>{texto}</t></is></c></row>"#);
         let md = mdv_xlsx::to_markdown(&XlsxBuilder::novo().aba("P", &linhas).construir(), &mdv_xlsx::Unlimited).unwrap();
-        let r = crate::render::render(&md, 60);
-        let todo: String = r
-            .lines
-            .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let todo = texto_renderizado(&md);
         assert!(todo.contains("a|b *c* [d](e) <b>"), "{todo}");
+        // Uma só coluna: a linha com o texto tem exatamente duas barras verticais de caixa (bordas).
+        assert!(
+            todo.lines().any(|l| l.contains("a|b *c* [d](e) <b>") && l.matches('│').count() == 2),
+            "{todo}"
+        );
     }
 
     #[test]
@@ -154,10 +151,12 @@ mod tests {
         );
         let arquivo = XlsxBuilder::novo().aba("", linhas).aba("#", linhas).construir();
         let md = mdv_xlsx::to_markdown(&arquivo, &mdv_xlsx::Unlimited).unwrap();
+        // Título vazio sai como `# ` (uma vez); o `#` vira `\#`, para não ser lido como cabeçalho.
+        assert_eq!(md.lines().filter(|l| *l == "# ").count(), 1, "{md}");
+        assert!(md.lines().any(|l| l == "# \\#"), "{md}");
         let todo = texto_renderizado(&md);
         // A TUI desenha a tabela com caixas: a célula aparece entre `│`.
         assert!(todo.contains("│ x │"), "{todo}");
         assert!(todo.contains("│ y │"), "{todo}");
-        assert!(todo.contains("#"), "{todo}");
     }
 }

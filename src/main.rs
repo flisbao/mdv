@@ -30,9 +30,7 @@ mod syntax_error;
 mod yaml_view;
 mod yamldoc;
 mod render;
-use std::io::{self, IsTerminal};
-use std::path::Path;
-use std::process::ExitCode;
+use std::{io::{self, IsTerminal}, path::Path, process::ExitCode};
 
 use app::{run_tui, App};
 use load::{load_source, reads_stdin, Source, MAX_INPUT_BYTES};
