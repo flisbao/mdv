@@ -6,7 +6,7 @@ use quick_xml::Reader;
 
 use crate::{Budget, MAX_PROFUNDIDADE_XML};
 
-/// Teto de atributos por elemento; o Word usa poucas dezenas (o raiz, com `xmlns:*`, é o maior).
+/// Teto de atributos por elemento; o Office usa poucas dezenas (o raiz, com `xmlns:*`, é o maior).
 const MAX_ATRIBUTOS: usize = 256;
 
 /// Um evento do documento: abre elemento, fecha elemento ou texto já sem entidades.
@@ -28,18 +28,6 @@ impl Tag {
     /// Valor do atributo pelo nome local (`"val"` acha `w:val`).
     pub(crate) fn attr(&self, nome: &str) -> Option<&str> {
         self.atributos.iter().find(|(n, _)| n == nome).map(|(_, v)| v.as_str())
-    }
-
-    /// Atalho de `attr("val")`.
-    #[cfg(test)]
-    pub(crate) fn val(&self) -> Option<&str> {
-        self.attr("val")
-    }
-
-    /// Propriedade booleana do Word: sem `val` vale ligada; `0`, `false` e `off` desligam.
-    #[cfg(test)]
-    pub(crate) fn ligado(&self) -> bool {
-        !matches!(self.val(), Some("0" | "false" | "off"))
     }
 }
 
@@ -217,7 +205,7 @@ mod tests {
     #[test]
     fn atributos_por_nome_local() {
         let t = primeira_tag(r#"<w:pStyle w:val="Heading1"/>"#);
-        assert_eq!(t.val(), Some("Heading1"));
+        assert_eq!(t.attr("val"), Some("Heading1"));
         let t = primeira_tag(r#"<w:hyperlink r:id="rId5">"#);
         assert_eq!(t.attr("id"), Some("rId5"));
         assert_eq!(t.attr("nada"), None);
@@ -306,17 +294,6 @@ mod tests {
     fn documento_truncado_da_erro() {
         let e = todos("<a><b>").unwrap_err();
         assert!(e.contains("XML inválido"), "{e}");
-    }
-
-    #[test]
-    fn ligado_entende_val_falso() {
-        assert!(primeira_tag("<w:b/>").ligado());
-        for v in ["0", "false", "off"] {
-            assert!(!primeira_tag(&format!(r#"<w:b w:val="{v}"/>"#)).ligado(), "{v}");
-        }
-        for v in ["1", "true", "on"] {
-            assert!(primeira_tag(&format!(r#"<w:b w:val="{v}"/>"#)).ligado(), "{v}");
-        }
     }
 
     fn com_atributos(n: usize) -> String {

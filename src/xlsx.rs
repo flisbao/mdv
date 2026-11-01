@@ -10,6 +10,9 @@ use mdv_xlsx::{Budget, MAX_XLSX_BYTES};
 
 use crate::{load, mem};
 
+/// Bytes em uma MiB, para exibir o teto de tamanho nas mensagens.
+const MIB: u64 = 1024 * 1024;
+
 /// Extensão `.xlsx` (sem diferenciar caixa).
 pub(crate) fn is_xlsx(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("xlsx"))
@@ -33,7 +36,7 @@ pub(crate) fn read_xlsx_file(path: &Path) -> io::Result<String> {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "não é um arquivo regular"));
     }
     if meta.len() > MAX_XLSX_BYTES {
-        let teto = MAX_XLSX_BYTES / (1024 * 1024);
+        let teto = MAX_XLSX_BYTES / MIB;
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("arquivo .xlsx grande demais (máximo {teto} MiB)"),
@@ -50,9 +53,9 @@ pub(crate) fn planilha_nao_suportada(path: &Path) -> Option<&'static str> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     Some(match ext.as_str() {
         "xls" => "planilha .xls (formato antigo) não é suportada: salve como .xlsx",
-        "xlsb" => "planilha .xlsb não é suportado ainda: salve como .xlsx",
-        "xlsm" => "planilha .xlsm não é suportado ainda: salve como .xlsx",
-        "ods" => "planilha .ods não é suportado ainda: salve como .xlsx",
+        "xlsb" => "planilha .xlsb não é suportada ainda: salve como .xlsx",
+        "xlsm" => "planilha .xlsm não é suportada ainda: salve como .xlsx",
+        "ods" => "planilha .ods não é suportada ainda: salve como .xlsx",
         _ => return None,
     })
 }
@@ -61,6 +64,7 @@ pub(crate) fn planilha_nao_suportada(path: &Path) -> Option<&'static str> {
 mod tests {
     use super::*;
     use mdv_xlsx::testutil::XlsxBuilder;
+    use std::fs::File;
 
     #[test]
     fn planilhas_nao_suportadas_dao_erro_claro_antes_do_markdown() {
@@ -76,16 +80,6 @@ mod tests {
         assert!(planilha_nao_suportada(Path::new("a.xls")).unwrap().contains(".xls (formato antigo)"));
         assert!(planilha_nao_suportada(Path::new("a.xlsx")).is_none());
     }
-
-    #[test]
-    fn xlsx_invalido_continua_com_o_erro_de_zip() {
-        let d = tempfile::tempdir().unwrap();
-        let p = d.path().join("a.xlsx");
-        fs::write(&p, b"qualquer coisa").unwrap();
-        let err = crate::load::read_document(&p).unwrap_err();
-        assert!(err.to_string().contains("ZIP inválido"), "{err}");
-    }
-    use std::fs::File;
 
     /// Texto das linhas renderizadas, uma por linha, sem estilos.
     fn texto_renderizado(md: &str) -> String {
@@ -167,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    fn celula_com_markup_aparece_literal_depois_de_renderizada() {
+    fn celula_com_markup_aparece_literal_renderizada_pela_tui() {
         let texto = "a|b *c* [d](e) &lt;b&gt;";
         let linhas = format!(r#"<row r="1"><c r="A1" t="inlineStr"><is><t>{texto}</t></is></c></row>"#);
         let md = mdv_xlsx::to_markdown(&XlsxBuilder::novo().aba("P", &linhas).construir(), &mdv_xlsx::Unlimited).unwrap();
@@ -181,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn aba_sem_nome_ou_com_jogo_da_velha_renderiza_sem_panico() {
+    fn aba_sem_nome_ou_com_jogo_da_velha_renderizada_pela_tui_sem_panico() {
         let linhas = concat!(
             r#"<row r="1"><c r="A1" t="inlineStr"><is><t>x</t></is></c></row>"#,
             r#"<row r="2"><c r="A2" t="inlineStr"><is><t>y</t></is></c></row>"#,

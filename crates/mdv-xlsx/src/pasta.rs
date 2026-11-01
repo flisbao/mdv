@@ -44,7 +44,7 @@ pub(crate) fn abrir_com_teto(
     let principal = parte_principal(pacote, budget)?;
     let xml = pacote
         .parte(&principal)?
-        .ok_or_else(|| format!("o arquivo não tem {} (não é uma planilha .xlsx)", mdv_text::sanitize(&principal)))?;
+        .ok_or_else(|| format!("o arquivo não tem {} (não é uma planilha .xlsx)", sanitize(&principal)))?;
     let relacoes = match pacote.parte(&rels_de(&principal))? {
         Some(rels) => Relacoes::ler(&rels, budget)?,
         None => Relacoes::vazias(),
@@ -91,7 +91,3 @@ fn parte_principal(pacote: &mut Pacote<'_>, budget: &dyn Budget) -> Result<Strin
     }
     Ok("xl/workbook.xml".to_string())
 }
-
-#[cfg(test)]
-#[path = "pasta_tests.rs"]
-mod pasta_tests;

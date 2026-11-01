@@ -27,7 +27,7 @@ pub(crate) fn serie_para_hora(serie: f64) -> (u32, u32, u32) {
     if !serie.is_finite() {
         return (0, 0, 0);
     }
-    let segundos = (serie.rem_euclid(1.0) * SEGUNDOS_NO_DIA).round() as u64 % 86_400;
+    let segundos = (serie.rem_euclid(1.0) * SEGUNDOS_NO_DIA).round() as u64 % SEGUNDOS_NO_DIA as u64;
     ((segundos / 3600) as u32, ((segundos % 3600) / 60) as u32, (segundos % 60) as u32)
 }
 

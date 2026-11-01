@@ -2,12 +2,12 @@
 //! Biblioteca pura: recebe bytes e devolve texto; a leitura do arquivo fica com o chamador.
 //! O limite de trabalho vem por `Budget`; os tetos de tamanho e contagem são as constantes abaixo.
 
+mod celula;
 mod conversao;
 mod data;
 mod escape;
 mod estilos;
 mod formato;
-mod celula;
 mod formato_codigo;
 mod formato_literais;
 mod le;
@@ -40,6 +40,8 @@ mod referencia_tests;
 #[cfg(test)]
 mod celula_tests;
 #[cfg(test)]
+mod pasta_tests;
+#[cfg(test)]
 mod planilha_tests;
 #[cfg(test)]
 mod escape_tests;
@@ -63,7 +65,7 @@ pub const MAX_MARKDOWN_BYTES: usize = 16 * 1024 * 1024;
 
 /// Orçamento de trabalho consultado pelos laços de conversão.
 pub trait Budget {
-    /// Confirma que ainda há orçamento; chamado por evento XML, por entrada do ZIP e por bloco.
+    /// Confirma que ainda há orçamento; chamado por evento XML, por entrada do ZIP e por aba.
     fn check(&self) -> Result<(), String>;
 }
 

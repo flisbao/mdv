@@ -23,12 +23,6 @@ impl<'a> Pacote<'a> {
         })
     }
 
-    /// Diz se existe uma parte com este nome (sem diferenciar caixa).
-    #[cfg(test)]
-    pub(crate) fn tem(&self, nome: &str) -> bool {
-        self.entradas.iter().any(|e| e.nome.eq_ignore_ascii_case(nome))
-    }
-
     /// Extrai a parte pelo nome; `None` se ela não existe. O teto total vale para a soma de todas
     /// as partes lidas, inclusive a mesma parte pedida de novo: cada leitura conta contra o limite.
     pub(crate) fn parte(&mut self, nome: &str) -> Result<Option<Vec<u8>>, String> {
@@ -38,7 +32,7 @@ impl<'a> Pacote<'a> {
         let dados = extrair(self.bytes, e)?;
         let total = self.usado.saturating_add(dados.len());
         if total > self.teto_total {
-            return Err("documento descomprimido grande demais".into());
+            return Err("planilha descomprimida grande demais".into());
         }
         self.usado = total;
         Ok(Some(dados))
@@ -69,7 +63,6 @@ mod tests {
     fn nome_sem_diferenciar_caixa() {
         let bytes = zip(&[("word/document.xml", b"<x/>")], false);
         let mut pacote = Pacote::abrir(&bytes).expect("abre");
-        assert!(pacote.tem("WORD/Document.XML"));
         assert_eq!(pacote.parte("WORD/Document.XML"), Ok(Some(b"<x/>".to_vec())));
     }
 

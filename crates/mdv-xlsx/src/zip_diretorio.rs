@@ -58,7 +58,7 @@ pub(crate) fn listar(bytes: &[u8]) -> Result<Vec<Entrada>, String> {
         if entrada.nome.ends_with('/') {
             continue;
         }
-        // O Word trata "A.xml" e "a.XML" como o mesmo arquivo; duplicata sem diferenciar caixa é ambígua.
+        // O Office trata "A.xml" e "a.XML" como o mesmo arquivo; duplicata sem diferenciar caixa é ambígua.
         if !nomes.insert(entrada.nome.to_lowercase()) {
             return Err(format!("ZIP com entrada duplicada: {}", mdv_text::sanitize(&entrada.nome)));
         }

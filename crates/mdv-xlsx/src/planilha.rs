@@ -98,7 +98,9 @@ fn ler_valor(leitor: &mut Leitor, max_chars: usize) -> Result<(String, bool), St
     let mut cortado = false;
     let (mut em_v, mut em_t) = (false, false);
     loop {
-        let evento = leitor.proximo()?.ok_or_else(|| "fim inesperado do documento".to_string())?;
+        // Defensivo: o `Leitor` já recusa o fim truncado (erro "XML inválido") com `<c>` aberta,
+        // então este `None` não deveria ocorrer; a mensagem existe só para não haver `unwrap`.
+        let evento = leitor.proximo()?.ok_or_else(|| "XML inválido: célula sem fechamento".to_string())?;
         match evento {
             Evento::Abre(tag) => match tag.nome.as_str() {
                 "v" => em_v = true,

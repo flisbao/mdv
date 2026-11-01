@@ -3,14 +3,11 @@
 //! Os dois trabalham sobre os 15 dígitos significativos do valor (como o Excel), então nada cresce
 //! com o tamanho do número: `decimais` é limitado a 15 e o texto de saída fica em poucas centenas de bytes.
 
-const MAX_DECIMAIS: u8 = 15;
+pub(crate) const MAX_DECIMAIS: u8 = 15;
 
 /// Regra *Geral*: até 15 dígitos significativos sem zeros à direita; notação científica
 /// quando o expoente é 15 ou mais, ou menor que -4. Não finito vira texto vazio.
 pub(crate) fn geral(v: f64) -> String {
-    if !v.is_finite() {
-        return String::new();
-    }
     if v == 0.0 {
         return "0".to_string();
     }
@@ -45,9 +42,6 @@ pub(crate) fn geral(v: f64) -> String {
 /// Número com `decimais` casas (no máximo 15), arredondamento meia para longe de zero sobre os
 /// 15 dígitos significativos e separador de milhar opcional. Zero não ganha sinal de menos.
 pub(crate) fn fixo(v: f64, decimais: u8, milhar: bool) -> String {
-    if !v.is_finite() {
-        return String::new();
-    }
     let d = usize::from(decimais.min(MAX_DECIMAIS));
     let Some((dig, expo)) = quinze_digitos(v.abs()) else {
         return String::new();
@@ -77,12 +71,10 @@ pub(crate) fn fixo(v: f64, decimais: u8, milhar: bool) -> String {
     if v < 0.0 && n.iter().any(|b| *b != b'0') {
         s.push('-');
     }
-    let tam = inteiro.len();
-    for (i, b) in inteiro.iter().enumerate() {
-        if milhar && i > 0 && (tam - i) % 3 == 0 {
-            s.push(',');
-        }
-        s.push(char::from(*b));
+    if milhar {
+        s.push_str(&agrupar_milhar(&inteiro));
+    } else {
+        s.extend(inteiro.iter().map(|b| char::from(*b)));
     }
     if d > 0 {
         s.push('.');
@@ -91,8 +83,25 @@ pub(crate) fn fixo(v: f64, decimais: u8, milhar: bool) -> String {
     s
 }
 
-/// Os 15 dígitos significativos de um valor positivo finito e o expoente decimal dele.
+/// Dígitos da parte inteira com `,` a cada três casas, da direita para a esquerda.
+fn agrupar_milhar(inteiro: &[u8]) -> String {
+    let tam = inteiro.len();
+    let mut s = String::with_capacity(tam + tam / 3);
+    for (i, b) in inteiro.iter().enumerate() {
+        if i > 0 && (tam - i).is_multiple_of(3) {
+            s.push(',');
+        }
+        s.push(char::from(*b));
+    }
+    s
+}
+
+/// Os 15 dígitos significativos do valor absoluto e o expoente decimal dele; `None` se não for
+/// finito. É a única checagem de finitude de `geral` e `fixo` (as bordas são `Celula` e `Formato::aplicar`).
 fn quinze_digitos(abs: f64) -> Option<(Vec<u8>, i64)> {
+    if !abs.is_finite() {
+        return None;
+    }
     let texto = format!("{abs:.14e}");
     let (mantissa, expo) = texto.split_once('e')?;
     let dig: Vec<u8> = mantissa.bytes().filter(u8::is_ascii_digit).collect();

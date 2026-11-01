@@ -1,4 +1,4 @@
-use super::{abrir, abrir_com_teto};
+use crate::pasta::{abrir, abrir_com_teto};
 use crate::pacote::Pacote;
 use crate::testutil::{zip, XlsxBuilder};
 use crate::Unlimited;

@@ -148,7 +148,7 @@ impl XlsxBuilder {
             arquivos.push((format!("xl/worksheets/sheet{}.xml", i + 1), xml));
         }
         if let Some(textos) = &self.textos {
-            let itens: String = textos.iter().map(|t| format!("<si><t>{}</t></si>", escapar(t))).collect();
+            let itens: String = textos.iter().map(|t| format!("<si><t>{}</t></si>", escapar_xml(t))).collect();
             let xml = format!(r#"<?xml version="1.0" encoding="UTF-8"?><sst xmlns="{NS_SHEET}">{itens}</sst>"#);
             arquivos.push(("xl/sharedStrings.xml".into(), xml));
         }
@@ -176,7 +176,7 @@ impl XlsxBuilder {
             let n = i + 1;
             sheets.push_str(&format!(
                 r#"<sheet name="{}" sheetId="{n}"{estado} r:id="rId{n}"/>"#,
-                escapar(&aba.nome)
+                escapar_xml(&aba.nome)
             ));
         }
         format!(
@@ -204,7 +204,7 @@ impl XlsxBuilder {
 }
 
 /// Escapa `&`, `<`, `>` e `"` para texto e atributo XML.
-fn escapar(texto: &str) -> String {
+fn escapar_xml(texto: &str) -> String {
     texto
         .replace('&', "&amp;")
         .replace('<', "&lt;")

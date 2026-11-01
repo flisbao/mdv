@@ -5,6 +5,7 @@
 
 use crate::formato::Formato;
 use crate::formato_literais::{tokenizar, Peca};
+use crate::numero::MAX_DECIMAIS;
 
 pub(crate) fn classificar(id_embutido: u32, codigo: Option<&str>) -> Formato {
     match codigo {
@@ -84,7 +85,7 @@ fn decimais(pecas: &[Peca]) -> u8 {
         .skip(1)
         .take_while(|p| matches!(p, Peca::Marcador(_)))
         .count();
-    depois_do_ponto.min(15) as u8
+    depois_do_ponto.min(usize::from(MAX_DECIMAIS)) as u8
 }
 
 /// Prefixo e sufixo são o literal antes do primeiro marcador e depois do último; milhar é a

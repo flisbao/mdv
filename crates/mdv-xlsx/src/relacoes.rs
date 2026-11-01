@@ -44,7 +44,7 @@ impl Relacoes {
             else {
                 continue;
             };
-            // `TargetMode` pode vir em qualquer caixa; o Word grava `External`.
+            // `TargetMode` pode vir em qualquer caixa; o Office grava `External`.
             let externo = tag.attr("TargetMode").is_some_and(|m| m.eq_ignore_ascii_case("External"));
             let tipo = tipo.rsplit_once('/').map_or(tipo, |(_, ultimo)| ultimo).to_string();
             let relacao = Relacao { tipo, alvo: alvo.to_string(), externo };
