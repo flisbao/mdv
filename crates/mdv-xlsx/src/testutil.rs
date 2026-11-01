@@ -75,6 +75,143 @@ fn comprimir(dados: &[u8]) -> Vec<u8> {
     enc.finish().expect("deflate em memória")
 }
 
+const NS_SHEET: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+const NS_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const NS_PKG: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
+
+/// Aba montada pelo `XlsxBuilder`: nome, conteúdo cru de `<sheetData>` e se está oculta.
+struct AbaTeste {
+    nome: String,
+    linhas: String,
+    oculta: bool,
+}
+
+/// Montador de `.xlsx` mínimo para testes: abas com `<sheetData>` cru, textos compartilhados,
+/// estilos e a flag de data de 1904. Os textos são escapados; o `<sheetData>` é XML do chamador.
+#[derive(Default)]
+pub struct XlsxBuilder {
+    abas: Vec<AbaTeste>,
+    textos: Option<Vec<String>>,
+    estilos: Option<String>,
+    data_1904: bool,
+}
+
+impl XlsxBuilder {
+    /// Pasta sem abas, textos nem estilos.
+    pub fn novo() -> Self {
+        Self::default()
+    }
+
+    /// Acrescenta uma aba visível; `linhas_xml` vai dentro de `<sheetData>`.
+    pub fn aba(self, nome: &str, linhas_xml: &str) -> Self {
+        self.com_aba(nome, linhas_xml, false)
+    }
+
+    /// Acrescenta uma aba com `state="hidden"`.
+    pub fn aba_oculta(self, nome: &str, linhas_xml: &str) -> Self {
+        self.com_aba(nome, linhas_xml, true)
+    }
+
+    fn com_aba(mut self, nome: &str, linhas_xml: &str, oculta: bool) -> Self {
+        self.abas.push(AbaTeste { nome: nome.to_string(), linhas: linhas_xml.to_string(), oculta });
+        self
+    }
+
+    /// Define `xl/sharedStrings.xml` com estes textos, na ordem dada.
+    pub fn textos(mut self, textos: &[&str]) -> Self {
+        self.textos = Some(textos.iter().map(|t| t.to_string()).collect());
+        self
+    }
+
+    /// Define `xl/styles.xml`; `xml_filhos` são os filhos de `<styleSheet>`.
+    pub fn estilos(mut self, xml_filhos: &str) -> Self {
+        self.estilos = Some(xml_filhos.to_string());
+        self
+    }
+
+    /// Liga o sistema de datas de 1904 em `workbookPr`.
+    pub fn data_1904(mut self) -> Self {
+        self.data_1904 = true;
+        self
+    }
+
+    /// Monta o `.xlsx` inteiro como ZIP com compressão.
+    pub fn construir(&self) -> Vec<u8> {
+        let mut arquivos: Vec<(String, String)> = vec![
+            ("[Content_Types].xml".into(), r#"<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>"#.into()),
+            ("_rels/.rels".into(), self.rels_raiz()),
+            ("xl/workbook.xml".into(), self.workbook()),
+            ("xl/_rels/workbook.xml.rels".into(), self.rels_workbook()),
+        ];
+        for (i, aba) in self.abas.iter().enumerate() {
+            let xml = format!(r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="{NS_SHEET}"><sheetData>{}</sheetData></worksheet>"#, aba.linhas);
+            arquivos.push((format!("xl/worksheets/sheet{}.xml", i + 1), xml));
+        }
+        if let Some(textos) = &self.textos {
+            let itens: String = textos.iter().map(|t| format!("<si><t>{}</t></si>", escapar(t))).collect();
+            let xml = format!(r#"<?xml version="1.0" encoding="UTF-8"?><sst xmlns="{NS_SHEET}">{itens}</sst>"#);
+            arquivos.push(("xl/sharedStrings.xml".into(), xml));
+        }
+        if let Some(estilos) = &self.estilos {
+            let xml = format!(r#"<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="{NS_SHEET}">{estilos}</styleSheet>"#);
+            arquivos.push(("xl/styles.xml".into(), xml));
+        }
+        let refs: Vec<(&str, &[u8])> = arquivos.iter().map(|(n, c)| (n.as_str(), c.as_bytes())).collect();
+        zip(&refs, true)
+    }
+
+    /// `_rels/.rels`: aponta o `officeDocument` para `xl/workbook.xml`.
+    fn rels_raiz(&self) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="{NS_PKG}"><Relationship Id="rId1" Type="{NS_REL}/officeDocument" Target="xl/workbook.xml"/></Relationships>"#
+        )
+    }
+
+    /// `xl/workbook.xml`: `workbookPr` (se 1904) e uma `<sheet>` por aba, com `r:id` = `rIdN`.
+    fn workbook(&self) -> String {
+        let pr = if self.data_1904 { r#"<workbookPr date1904="1"/>"# } else { "" };
+        let mut sheets = String::new();
+        for (i, aba) in self.abas.iter().enumerate() {
+            let estado = if aba.oculta { r#" state="hidden""# } else { "" };
+            let n = i + 1;
+            sheets.push_str(&format!(
+                r#"<sheet name="{}" sheetId="{n}"{estado} r:id="rId{n}"/>"#,
+                escapar(&aba.nome)
+            ));
+        }
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="{NS_SHEET}" xmlns:r="{NS_REL}">{pr}<sheets>{sheets}</sheets></workbook>"#
+        )
+    }
+
+    /// `xl/_rels/workbook.xml.rels`: uma relação `worksheet` por aba, mais textos e estilos.
+    fn rels_workbook(&self) -> String {
+        let mut itens = String::new();
+        for i in 0..self.abas.len() {
+            let n = i + 1;
+            itens.push_str(&format!(
+                r#"<Relationship Id="rId{n}" Type="{NS_REL}/worksheet" Target="worksheets/sheet{n}.xml"/>"#
+            ));
+        }
+        if self.textos.is_some() {
+            itens.push_str(&format!(r#"<Relationship Id="rIdT" Type="{NS_REL}/sharedStrings" Target="sharedStrings.xml"/>"#));
+        }
+        if self.estilos.is_some() {
+            itens.push_str(&format!(r#"<Relationship Id="rIdE" Type="{NS_REL}/styles" Target="styles.xml"/>"#));
+        }
+        format!(r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="{NS_PKG}">{itens}</Relationships>"#)
+    }
+}
+
+/// Escapa `&`, `<`, `>` e `"` para texto e atributo XML.
+fn escapar(texto: &str) -> String {
+    texto
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 #[cfg(test)]
 mod tests {
     use super::zip;

@@ -6,6 +6,7 @@
 
 mod le;
 mod pacote;
+mod pasta;
 mod relacoes;
 mod xml_leitor;
 mod zip_diretorio;
