@@ -48,3 +48,20 @@ fn titulo_com_hash_e_espaco_final_nao_vira_fechamento_de_cabecalho() {
     let md = to_markdown(&bytes, &Unlimited).unwrap();
     assert!(md.starts_with("# Vendas \\#\n"), "{md}");
 }
+
+#[test]
+fn aba_cuja_parte_nao_existe_no_pacote_tem_aviso_proprio() {
+    // Pasta que aponta `Sumida` para uma parte que não está no ZIP: não é aba vazia.
+    let ns_sheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    let ns_rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    let ns_pkg = "http://schemas.openxmlformats.org/package/2006/relationships";
+    let raiz = format!(r#"<Relationships xmlns="{ns_pkg}"><Relationship Id="rId1" Type="{ns_rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>"#);
+    let wb = format!(r#"<workbook xmlns="{ns_sheet}" xmlns:r="{ns_rel}"><sheets><sheet name="Sumida" sheetId="1" r:id="rId1"/></sheets></workbook>"#);
+    let rels = format!(r#"<Relationships xmlns="{ns_pkg}"><Relationship Id="rId1" Type="{ns_rel}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#);
+    let bytes = crate::testutil::zip(
+        &[("_rels/.rels", raiz.as_bytes()), ("xl/workbook.xml", wb.as_bytes()), ("xl/_rels/workbook.xml.rels", rels.as_bytes())],
+        true,
+    );
+    let md = to_markdown(&bytes, &Unlimited).unwrap();
+    assert_eq!(md, "# Sumida\n\n_(aba não encontrada no arquivo)_\n\n", "{md}");
+}

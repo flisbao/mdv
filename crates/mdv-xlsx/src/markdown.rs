@@ -31,6 +31,13 @@ pub(crate) fn escrever_aba(nome: &str, aba: &Aba, limites: &Limites, saida: &mut
     saida.push('\n');
 }
 
+/// Aba cujo arquivo não está no pacote: título e aviso, sem tabela (não é uma aba vazia).
+pub(crate) fn escrever_ausente(nome: &str, saida: &mut String) {
+    saida.push_str("# ");
+    saida.push_str(&escapar_titulo(nome));
+    saida.push_str("\n\n_(aba não encontrada no arquivo)_\n\n");
+}
+
 /// Aviso em linha própria, separado do que vem antes por uma linha em branco (senão vira linha da tabela).
 fn aviso(saida: &mut String, texto: &str) {
     saida.push('\n');

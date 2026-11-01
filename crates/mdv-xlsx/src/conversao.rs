@@ -3,7 +3,7 @@
 
 use crate::estilos::Estilos;
 use crate::limites::Limites;
-use crate::markdown::escrever_aba;
+use crate::markdown::{escrever_ausente, escrever_aba};
 use crate::pacote::Pacote;
 use crate::pasta::{self, AbaRef};
 use crate::planilha;
@@ -44,9 +44,13 @@ pub fn converter(bytes: &[u8], budget: &dyn Budget, limites: &Limites) -> Result
     let mut orcamento = limites.max_bytes_celulas;
     for aba_ref in &visiveis[..mostradas] {
         budget.check()?;
-        let xml = pacote.parte(&aba_ref.parte)?.unwrap_or_default();
-        let aba = planilha::ler(&xml, &textos, &estilos, pasta.data_1904, limites, &mut orcamento, budget)?;
-        escrever_aba(&aba_ref.nome, &aba, limites, &mut saida);
+        match pacote.parte(&aba_ref.parte)? {
+            Some(xml) => {
+                let aba = planilha::ler(&xml, &textos, &estilos, pasta.data_1904, limites, &mut orcamento, budget)?;
+                escrever_aba(&aba_ref.nome, &aba, limites, &mut saida);
+            }
+            None => escrever_ausente(&aba_ref.nome, &mut saida),
+        }
         if saida.len() > MAX_MARKDOWN_BYTES {
             return Err("planilha convertida grande demais".to_string());
         }
