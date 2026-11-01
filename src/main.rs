@@ -25,6 +25,7 @@ mod picker;
 mod plain;
 mod stats;
 mod stream;
+mod xlsx;
 mod syntax_error;
 mod yaml_view;
 mod yamldoc;

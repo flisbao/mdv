@@ -1,4 +1,4 @@
-//! Seletor de arquivos (`mdv <pasta>`): lista os `.md`, `.msg`, `.docx`, `.yaml`/`.yml` e `.html`/`.htm` da pasta por mtime, com filtro fuzzy.
+//! Seletor de arquivos (`mdv <pasta>`): lista os `.md`, `.msg`, `.docx`, `.xlsx`, `.yaml`/`.yml` e `.html`/`.htm` da pasta por mtime, com filtro fuzzy.
 
 use std::fs;
 use std::io;
@@ -27,13 +27,14 @@ pub struct Picker {
     pub truncated: bool,
 }
 
-/// Arquivos listados no seletor: Markdown, e-mails `.msg`, `.docx`, YAML e HTML (JSON e CSV/TSV ficam de fora).
+/// Arquivos listados no seletor: Markdown, e-mails `.msg`, `.docx`, planilhas `.xlsx`, YAML e HTML (JSON e CSV/TSV ficam de fora).
 fn is_listed(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     n.ends_with(".md")
         || n.ends_with(".markdown")
         || n.ends_with(".msg")
         || n.ends_with(".docx")
+        || n.ends_with(".xlsx")
         || n.ends_with(".yaml")
         || n.ends_with(".yml")
         || n.ends_with(".html")
@@ -185,13 +186,13 @@ mod tests {
     #[test]
     fn lista_docx_junto_com_os_demais() {
         let d = tempfile::tempdir().unwrap();
-        for nome in ["a.docx", "b.md", "c.txt"] {
+        for nome in ["a.docx", "b.md", "c.txt", "d.xlsx"] {
             fs::write(d.path().join(nome), "x").unwrap();
         }
         let p = Picker::scan(d.path()).unwrap();
         let mut names: Vec<_> = p.entries.iter().map(|e| e.name.as_str()).collect();
         names.sort();
-        assert_eq!(names, ["a.docx", "b.md"]);
+        assert_eq!(names, ["a.docx", "b.md", "d.xlsx"]);
     }
 
     #[test]

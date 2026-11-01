@@ -950,6 +950,7 @@ dependencies = [
  "mdv-html",
  "mdv-msg",
  "mdv-text",
+ "mdv-xlsx",
  "mermaid-rs-renderer",
  "pulldown-cmark",
  "ratatui",

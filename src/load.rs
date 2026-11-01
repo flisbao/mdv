@@ -88,12 +88,14 @@ pub(crate) fn read_stdin() -> io::Result<String> {
     read_limited(io::stdin().lock(), MAX_INPUT_BYTES)
 }
 
-/// Lê o documento de um caminho: `.msg` vira Markdown pelo `mdv-msg`, `.docx` pelo `mdv-docx`; HTML vai para `html`; o resto é Markdown puro.
+/// Lê o documento de um caminho: `.msg` vira Markdown pelo `mdv-msg`, `.docx` pelo `mdv-docx`, `.xlsx` pelo `mdv-xlsx`; HTML vai para `html`; o resto é Markdown puro.
 pub(crate) fn read_document(path: &Path) -> io::Result<String> {
     if crate::msg::is_msg(path) {
         crate::msg::read_msg_file(path)
     } else if crate::docx::is_docx(path) {
         crate::docx::read_docx_file(path)
+    } else if crate::xlsx::is_xlsx(path) {
+        crate::xlsx::read_xlsx_file(path)
     } else if crate::html::is_html(path) {
         crate::html::read_html_file(path)
     } else {
@@ -149,6 +151,10 @@ mod tests {
         let corpo = "<w:p><w:r><w:t>Olá docx</w:t></w:r></w:p>";
         fs::write(&docx, mdv_docx::testutil::DocxBuilder::novo().corpo(corpo).construir()).unwrap();
         assert!(read_document(&docx).unwrap().contains("Olá docx"));
+        let xlsx = d.path().join("planilha.xlsx");
+        let linha = r#"<row r="1"><c r="A1" t="inlineStr"><is><t>Olá planilha</t></is></c></row>"#;
+        fs::write(&xlsx, mdv_xlsx::testutil::XlsxBuilder::novo().aba("P", linha).construir()).unwrap();
+        assert!(read_document(&xlsx).unwrap().contains("Olá planilha"));
         let md = d.path().join("nota.md");
         fs::write(&md, "# Nota\n\ntexto *puro*\n").unwrap();
         assert_eq!(read_document(&md).unwrap(), "# Nota\n\ntexto *puro*\n");
