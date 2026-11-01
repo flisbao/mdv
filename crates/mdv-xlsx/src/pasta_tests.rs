@@ -1,4 +1,4 @@
-use super::abrir;
+use super::{abrir, abrir_com_teto};
 use crate::pacote::Pacote;
 use crate::testutil::{zip, XlsxBuilder};
 use crate::Unlimited;
@@ -38,4 +38,19 @@ fn zip_sem_workbook_e_xlsb_dao_erro_claro() {
     let mut pacote = Pacote::abrir(&bytes).unwrap();
     let erro = abrir(&mut pacote, &Unlimited).unwrap_err();
     assert!(erro.contains("xl/workbook.xml"), "{erro}");
+}
+
+#[test]
+fn abas_demais_dao_erro_claro() {
+    let bytes = XlsxBuilder::novo().aba("A", "").aba("B", "").aba("C", "").construir();
+    let mut pacote = Pacote::abrir(&bytes).unwrap();
+    let erro = abrir_com_teto(&mut pacote, &Unlimited, 2).unwrap_err();
+    assert!(erro.contains("abas demais"), "{erro}");
+}
+
+#[test]
+fn exatamente_no_teto_de_abas_passa() {
+    let bytes = XlsxBuilder::novo().aba("A", "").aba("B", "").aba("C", "").construir();
+    let mut pacote = Pacote::abrir(&bytes).unwrap();
+    assert_eq!(abrir_com_teto(&mut pacote, &Unlimited, 3).unwrap().abas.len(), 3);
 }

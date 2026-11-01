@@ -25,9 +25,22 @@ pub(crate) struct Pasta {
     pub estilos: Option<String>,
 }
 
+/// Teto de abas aceitas na leitura; um `workbook.xml` hostil não enche a memória com `<sheet>` sem fim.
+const MAX_ABAS_LEITURA: usize = 1000;
+
 /// Lê o workbook do pacote: abas na ordem do arquivo, sistema de datas e as partes ligadas.
 /// Aba cuja relação não existe ou não é de planilha (ex.: gráfico) é descartada.
 pub(crate) fn abrir(pacote: &mut Pacote<'_>, budget: &dyn Budget) -> Result<Pasta, String> {
+    abrir_com_teto(pacote, budget, MAX_ABAS_LEITURA)
+}
+
+/// Como `abrir`, com o teto de abas explícito (os testes usam um teto pequeno).
+/// Passar de `max_abas` abas é erro, não corte: a planilha inteira seria enganosa sem algumas abas.
+pub(crate) fn abrir_com_teto(
+    pacote: &mut Pacote<'_>,
+    budget: &dyn Budget,
+    max_abas: usize,
+) -> Result<Pasta, String> {
     let principal = parte_principal(pacote, budget)?;
     let xml = pacote
         .parte(&principal)?
@@ -50,6 +63,9 @@ pub(crate) fn abrir(pacote: &mut Pacote<'_>, budget: &dyn Budget) -> Result<Past
                 let Some(relacao) = relacoes.por_id(id) else { continue };
                 if relacao.tipo != "worksheet" {
                     continue;
+                }
+                if abas.len() >= max_abas {
+                    return Err(format!("planilha com abas demais (máximo {max_abas})"));
                 }
                 abas.push(AbaRef {
                     nome: sanitize(nome).into_owned(),
