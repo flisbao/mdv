@@ -2,9 +2,9 @@
 //! Biblioteca pura: recebe bytes e devolve texto; a leitura do arquivo fica com o chamador.
 //! O limite de trabalho vem por `Budget`; os tetos de tamanho e contagem são as constantes abaixo.
 
-#![allow(dead_code)] // removido na Task 5
-
+mod conversao;
 mod data;
+mod escape;
 mod estilos;
 mod formato;
 mod celula;
@@ -12,6 +12,7 @@ mod formato_codigo;
 mod formato_literais;
 mod le;
 mod limites;
+mod markdown;
 mod numero;
 mod pacote;
 mod pasta;
@@ -22,6 +23,7 @@ mod textos;
 mod xml_leitor;
 mod zip_diretorio;
 mod zip_entrada;
+pub use conversao::{converter, to_markdown};
 pub use limites::Limites;
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
@@ -39,6 +41,12 @@ mod referencia_tests;
 mod celula_tests;
 #[cfg(test)]
 mod planilha_tests;
+#[cfg(test)]
+mod escape_tests;
+#[cfg(test)]
+mod markdown_tests;
+#[cfg(test)]
+mod conversao_tests;
 
 /// Tamanho máximo aceito para um arquivo `.xlsx` inteiro.
 pub const MAX_XLSX_BYTES: u64 = 32 * 1024 * 1024;
@@ -50,6 +58,8 @@ pub const MAX_TOTAL_BYTES: usize = 40 * 1024 * 1024;
 pub const MAX_ENTRADAS: usize = 5000;
 /// Profundidade máxima da árvore XML analisada.
 pub const MAX_PROFUNDIDADE_XML: usize = 100;
+/// Tamanho máximo do Markdown produzido para uma planilha.
+pub const MAX_MARKDOWN_BYTES: usize = 16 * 1024 * 1024;
 
 /// Orçamento de trabalho consultado pelos laços de conversão.
 pub trait Budget {

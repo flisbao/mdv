@@ -31,11 +31,13 @@ impl Tag {
     }
 
     /// Atalho de `attr("val")`.
+    #[cfg(test)]
     pub(crate) fn val(&self) -> Option<&str> {
         self.attr("val")
     }
 
     /// Propriedade booleana do Word: sem `val` vale ligada; `0`, `false` e `off` desligam.
+    #[cfg(test)]
     pub(crate) fn ligado(&self) -> bool {
         !matches!(self.val(), Some("0" | "false" | "off"))
     }
