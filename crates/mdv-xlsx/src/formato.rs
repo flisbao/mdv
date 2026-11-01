@@ -9,7 +9,8 @@ pub(crate) enum Formato {
     Geral,
     Numero { decimais: u8, milhar: bool, prefixo: String, sufixo: String },
     Percentual { decimais: u8 },
-    Data { data: bool, hora: bool, segundos: bool },
+    /// Campos de data presentes (`ano`, `mes`, `dia`) e de hora (`hora`, com `segundos`).
+    Data { ano: bool, mes: bool, dia: bool, hora: bool, segundos: bool },
     Texto,
 }
 
@@ -29,23 +30,32 @@ impl Formato {
                 }
             }
             Formato::Percentual { decimais } => format!("{}%", fixo(valor * 100.0, *decimais, false)),
-            Formato::Data { data, hora, segundos } => {
-                formatar_data(valor, data_1904, *data, *hora, *segundos)
+            Formato::Data { ano, mes, dia, hora, segundos } => {
+                formatar_data(valor, data_1904, (*ano, *mes, *dia), *hora, *segundos)
             }
         }
     }
 }
 
-/// `AAAA-MM-DD`, `HH:MM`, `HH:MM:SS` ou `AAAA-MM-DD HH:MM[:SS]`, conforme os campos pedidos.
-/// Data fora da faixa do Excel cai na regra *Geral*.
-fn formatar_data(serie: f64, data_1904: bool, data: bool, hora: bool, segundos: bool) -> String {
+/// Só os campos de data que o formato tem, em ordem, separados por `-` (`AAAA-MM-DD`, `AAAA-MM`,
+/// `MM-DD`, `AAAA`, `DD`); com hora, `<data> HH:MM[:SS]`. Data fora da faixa do Excel cai em *Geral*.
+fn formatar_data(serie: f64, data_1904: bool, (ano, mes, dia): (bool, bool, bool), hora: bool, segundos: bool) -> String {
     let base = if hora { arredondar_segundo(serie) } else { serie };
+    let data = ano || mes || dia;
     let mut texto = String::new();
     if data {
-        match serie_para_data(base, data_1904) {
-            Some((ano, mes, dia)) => texto.push_str(&format!("{ano:04}-{mes:02}-{dia:02}")),
-            None => return geral(serie),
-        }
+        let Some((a, m, d)) = serie_para_data(base, data_1904) else {
+            return geral(serie);
+        };
+        let campos: Vec<String> = [
+            ano.then(|| format!("{a:04}")),
+            mes.then(|| format!("{m:02}")),
+            dia.then(|| format!("{d:02}")),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        texto.push_str(&campos.join("-"));
     }
     if hora {
         let (h, m, s) = serie_para_hora(base);

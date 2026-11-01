@@ -99,3 +99,13 @@ fn codigo_de_300_caracteres_e_ignorado_e_o_de_255_vale() {
     assert_eq!(*ignorado.formato(0), Formato::Geral);
     assert_eq!(ignorado.formato(0).aplicar(1.0, false), "1");
 }
+
+#[test]
+fn data_parcial_mostra_so_os_campos_do_formato() {
+    assert_eq!(classificar(164, Some("mm/yyyy")).aplicar(45000.0, false), "2023-03");
+    assert_eq!(classificar(165, Some("mmm/yy")).aplicar(45000.0, false), "2023-03");
+    assert_eq!(classificar(166, Some("dd/mm")).aplicar(45000.0, false), "03-15");
+    assert_eq!(classificar(167, Some("yyyy")).aplicar(45000.0, false), "2023");
+    assert_eq!(classificar(168, Some("dd")).aplicar(45000.0, false), "15");
+    assert_eq!(classificar(169, Some("dd/mm/yyyy hh:mm")).aplicar(45000.5, false), "2023-03-15 12:00");
+}

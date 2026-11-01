@@ -29,10 +29,10 @@ fn embutido(id: u32) -> Formato {
         7 | 8 | 39 | 40 | 43 | 44 => numero(2, true),
         9 => Formato::Percentual { decimais: 0 },
         10 => Formato::Percentual { decimais: 2 },
-        14..=17 | 27..=36 | 50..=58 => Formato::Data { data: true, hora: false, segundos: false },
-        18 | 20 => Formato::Data { data: false, hora: true, segundos: false },
-        19 | 21 | 45..=47 => Formato::Data { data: false, hora: true, segundos: true },
-        22 => Formato::Data { data: true, hora: true, segundos: false },
+        14..=17 | 27..=36 | 50..=58 => Formato::Data { ano: true, mes: true, dia: true, hora: false, segundos: false },
+        18 | 20 => Formato::Data { ano: false, mes: false, dia: false, hora: true, segundos: false },
+        19 | 21 | 45..=47 => Formato::Data { ano: false, mes: false, dia: false, hora: true, segundos: true },
+        22 => Formato::Data { ano: true, mes: true, dia: true, hora: true, segundos: false },
         49 => Formato::Texto,
         _ => Formato::Geral,
     }
@@ -64,12 +64,16 @@ fn tem_fracao(pecas: &[Peca]) -> bool {
     pecas.windows(2).any(|w| matches!(w, [Peca::Marcador(_), Peca::Barra]))
 }
 
-/// Data se há `y`, `d` ou `m` (que sem hora é mês); hora se há `h` ou `s` (e `m` é minuto).
+/// Campos de data: `y` é ano, `d` é dia e `m` é mês, salvo com hora sem ano nem dia (aí é minuto).
+/// Hora se há `h` ou `s`.
 fn data_de(pecas: &[Peca]) -> Option<Formato> {
     let tem = |c: char| pecas.contains(&Peca::Data(c));
     let hora = tem('h') || tem('s');
-    let data = tem('y') || tem('d') || (tem('m') && !hora);
-    (data || hora).then_some(Formato::Data { data, hora, segundos: tem('s') })
+    let ano = tem('y');
+    let dia = tem('d');
+    let mes = tem('m') && (!hora || ano || dia);
+    let data = ano || mes || dia;
+    (data || hora).then_some(Formato::Data { ano, mes, dia, hora, segundos: tem('s') })
 }
 
 /// Marcadores depois do ponto decimal, no máximo 15.
