@@ -32,7 +32,7 @@ pub(crate) fn ler(
     budget: &dyn Budget,
 ) -> Result<Aba, String> {
     let mut leitor = Leitor::novo(xml, budget);
-    let mut montagem = Montagem::novo(limites.max_linhas);
+    let mut montagem = Montagem::novo(limites.max_linhas, limites.max_celulas);
     let mut linha = Linha::default();
     let mut em_linha = false;
     let mut proxima = 0usize;
@@ -148,11 +148,12 @@ struct Montagem {
     menor: usize,
     maior: usize,
     max_linhas: usize,
+    max_celulas: usize,
 }
 
 impl Montagem {
-    fn novo(max_linhas: usize) -> Self {
-        Montagem { aba: Aba::default(), retidas: Vec::new(), menor: usize::MAX, maior: 0, max_linhas }
+    fn novo(max_linhas: usize, max_celulas: usize) -> Self {
+        Montagem { aba: Aba::default(), retidas: Vec::new(), menor: usize::MAX, maior: 0, max_linhas, max_celulas }
     }
 
     /// Fecha a linha: sem célula não vazia, descarta; senão conta e guarda até `max_linhas`.
@@ -172,12 +173,19 @@ impl Montagem {
         self.retidas.push(celulas);
     }
 
+    /// Monta a grade. Passado `max_celulas / largura` linhas (pelo menos uma), corta as de baixo;
+    /// `linhas_total` continua contando todas.
     fn finalizar(self) -> Aba {
-        let Montagem { mut aba, retidas, menor, maior, .. } = self;
+        let Montagem { mut aba, mut retidas, menor, maior, max_celulas, .. } = self;
         if retidas.is_empty() {
             return aba;
         }
         let largura = maior - menor + 1;
+        let couberam = (max_celulas / largura).max(1);
+        if retidas.len() > couberam {
+            retidas.truncate(couberam);
+            aba.cortada = true;
+        }
         aba.linhas = retidas
             .into_iter()
             .map(|celulas| {

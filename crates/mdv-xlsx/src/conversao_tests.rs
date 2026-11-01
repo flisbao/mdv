@@ -34,3 +34,10 @@ fn arquivos_que_nao_sao_xlsx_dao_erro_em_portugues() {
     assert!(to_markdown(&ole2, &Unlimited).unwrap_err().contains("antigo"));
     assert!(to_markdown(b"texto qualquer", &Unlimited).unwrap_err().contains("ZIP inválido"));
 }
+
+#[test]
+fn titulo_com_hash_final_nao_vira_fechamento_de_cabecalho() {
+    let bytes = XlsxBuilder::novo().aba("Vendas #", "").construir();
+    let md = to_markdown(&bytes, &Unlimited).unwrap();
+    assert!(md.starts_with("# Vendas \\#\n"), "{md}");
+}

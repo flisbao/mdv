@@ -78,6 +78,20 @@ fn teto_de_linhas_corta_e_conta_o_total() {
     assert_eq!((a.linhas.len(), a.linhas_total), (2, 3));
 }
 #[test]
+fn teto_de_celulas_da_grade_corta_linhas() {
+    let linhas: String = (1..=5)
+        .map(|r| format!(r#"<row r="{r}"><c r="A{r}"><v>1</v></c><c r="B{r}"><v>2</v></c><c r="C{r}"><v>3</v></c></row>"#))
+        .collect();
+    let a = aba_com(&Limites { max_celulas: 6, ..Limites::default() }, &linhas);
+    assert_eq!(a.linhas.len(), 2);
+    assert_eq!(a.linhas_total, 5);
+    assert!(a.cortada);
+    let inteira = aba_com(&Limites { max_celulas: 15, ..Limites::default() }, &linhas);
+    assert_eq!(inteira.linhas.len(), 5);
+    assert!(!inteira.cortada);
+}
+
+#[test]
 fn teto_de_bytes_para_a_leitura() {
     let mut orc = 5usize;
     let a = ler_com_orcamento(r#"<row r="1"><c r="A1" t="inlineStr"><is><t>abcdef</t></is></c></row><row r="2"><c r="A2"><v>1</v></c></row>"#, &mut orc);

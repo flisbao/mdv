@@ -15,6 +15,8 @@ pub struct Limites {
     pub max_textos: usize,
     /// Bytes de célula que a planilha inteira pode consumir (célula vazia conta 1).
     pub max_bytes_celulas: usize,
+    /// Teto de células (linhas × colunas) da grade de uma aba; passou, cortam-se linhas.
+    pub max_celulas: usize,
 }
 
 impl Default for Limites {
@@ -26,6 +28,7 @@ impl Default for Limites {
             max_celula_chars: 2000,
             max_textos: 500_000,
             max_bytes_celulas: 8 * 1024 * 1024,
+            max_celulas: 500_000,
         }
     }
 }
