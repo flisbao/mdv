@@ -904,3 +904,62 @@ fn html_em_plain() {
     // Saída em pipe não tem cor (só em TTY); a cor do HTML é coberta em `src/html.rs`.
     assert!(saida.contains("Oi") && saida.contains('x') && !saida.contains('\x1b'), "{saida}");
 }
+
+#[test]
+fn xlsx_vira_tabelas_no_plain() {
+    let out = mdv(&["-p", &sample("vendas.xlsx")], "");
+    let (so, se) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(out.status.success(), "{se}");
+    assert!(so.contains("┌") && so.contains("preco_unitario") && so.contains("Caneta azul"), "{so}");
+    assert!(!so.contains("\x1b]") && !so.contains("=SUM"), "{so}");
+}
+
+#[test]
+fn xlsx_para_markdown_com_o() {
+    let (_d, out) = tmp_out("v.md");
+    let res = mdv(&[&sample("vendas.xlsx"), "-o", &out], "");
+    assert!(res.status.success(), "{}", String::from_utf8_lossy(&res.stderr));
+    let md = std::fs::read_to_string(&out).unwrap();
+    assert!(md.contains("# ") && md.contains(" | "), "{md}");
+    // Sem --force, repetir o comando recusa sobrescrever.
+    let res = mdv(&[&sample("vendas.xlsx"), "-o", &out], "");
+    assert!(!res.status.success());
+    assert!(String::from_utf8_lossy(&res.stderr).contains("--force"));
+}
+
+#[test]
+fn xlsx_invalido_sai_com_erro_em_portugues() {
+    let d = tempfile::tempdir().unwrap();
+    let p = d.path().join("ruim.xlsx");
+    std::fs::write(&p, "isto não é zip").unwrap();
+    let out = mdv(&["-p", p.to_str().unwrap()], "");
+    let se = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "{se}");
+    assert!(se.contains("ZIP inválido") && !se.contains("panicked"), "{se}");
+}
+
+/// Bomba de células: uma aba com 200 000 linhas de uma célula de texto cada (~14 MiB de XML, dentro
+/// do teto de 16 MiB por parte). O teto de 10 000 linhas por aba corta a leitura.
+/// Pior caso no processo de teste: a string da aba e suas cópias (`to_string`, `format!`, zip)
+/// somam ~4 × 14 MiB ≈ 56 MiB; o `mdv` lê a parte (14 MiB) e guarda só 10 000 linhas (~1 MiB).
+#[cfg(target_os = "linux")] // `ulimit -v` não é confiável no macOS nem existe no Windows
+#[test]
+fn xlsx_zip_bomba_de_celulas_respeita_o_limite_de_memoria() {
+    use mdv_xlsx::testutil::XlsxBuilder;
+    const LINHAS: usize = 200_000;
+    let mut sheet = String::with_capacity(LINHAS * 72);
+    for n in 1..=LINHAS {
+        sheet.push_str(&format!(r#"<row r="{n}"><c r="A{n}" t="inlineStr"><is><t>x</t></is></c></row>"#));
+    }
+    assert!(sheet.len() <= 15 << 20, "a planilha passa de 15 MiB");
+    let bytes = XlsxBuilder::novo().aba("Bomba", &sheet).construir();
+    drop(sheet);
+    let d = tempfile::tempdir().unwrap();
+    let p = d.path().join("bomba.xlsx");
+    std::fs::write(&p, &bytes).unwrap();
+    let out = mdv_com_teto(&["-p", p.to_str().unwrap()], "");
+    let (so, se) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(!se.contains("panicked") && !so.contains("panicked"), "{se}");
+    assert!(out.status.success(), "{se}");
+    assert!(so.contains("mostrando as primeiras"), "{so}");
+}

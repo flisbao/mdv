@@ -25,6 +25,7 @@ const FILES: &[&str] = &[
     "samples/eventos.jsonl",
     "samples/email.msg",
     "samples/relatorio.docx",
+    "samples/vendas.xlsx",
     "samples/config.yaml",
     "samples/k8s.yaml",
     "samples/github-actions.yml",
