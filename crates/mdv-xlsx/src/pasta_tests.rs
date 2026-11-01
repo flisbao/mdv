@@ -41,6 +41,17 @@ fn zip_sem_workbook_e_xlsb_dao_erro_claro() {
 }
 
 #[test]
+fn nome_de_parte_com_controle_nao_vai_cru_para_o_erro() {
+    // A raiz aponta o officeDocument para uma parte que não existe, com ESC no nome.
+    let rels = "<?xml version=\"1.0\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/\u{1b}[2Jw.xml\"/></Relationships>";
+    let bytes = zip(&[("_rels/.rels", rels.as_bytes())], false);
+    let mut pacote = Pacote::abrir(&bytes).unwrap();
+    let erro = abrir(&mut pacote, &Unlimited).unwrap_err();
+    assert!(!erro.contains('\u{1b}'), "{erro:?}");
+    assert!(erro.contains("não tem"), "{erro}");
+}
+
+#[test]
 fn abas_demais_dao_erro_claro() {
     let bytes = XlsxBuilder::novo().aba("A", "").aba("B", "").aba("C", "").construir();
     let mut pacote = Pacote::abrir(&bytes).unwrap();

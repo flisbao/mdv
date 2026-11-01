@@ -87,4 +87,16 @@ mod tests {
     fn lixo_vira_erro_de_zip() {
         assert!(Pacote::abrir(b"xx").is_err());
     }
+
+    #[test]
+    fn nome_de_entrada_com_controle_nao_vai_cru_para_o_erro() {
+        // Tamanho original do diretório central trocado para 5 (o guardado tem 3 bytes): erro com o nome.
+        let mut bytes = zip(&[("a\u{1b}b", b"abc")], false);
+        let central = bytes.windows(4).position(|w| w == b"PK\x01\x02").expect("diretório central");
+        bytes[central + 24..central + 28].copy_from_slice(&5u32.to_le_bytes());
+        let mut pacote = Pacote::abrir(&bytes).expect("abre");
+        let erro = pacote.parte("a\u{1b}b").unwrap_err();
+        assert!(!erro.contains('\u{1b}'), "{erro:?}");
+        assert!(erro.contains("tamanho inconsistente"), "{erro}");
+    }
 }

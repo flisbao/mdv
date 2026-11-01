@@ -163,7 +163,7 @@ impl<'a> Leitor<'a> {
 
     /// Mensagem de erro padrão, com a posição em bytes.
     fn erro(&self, detalhe: impl std::fmt::Display) -> String {
-        format!("XML inválido (byte {}): {detalhe}", self.xml.error_position())
+        mdv_text::sanitize(&format!("XML inválido (byte {}): {detalhe}", self.xml.error_position())).into_owned()
     }
 }
 

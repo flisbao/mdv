@@ -44,7 +44,7 @@ pub(crate) fn abrir_com_teto(
     let principal = parte_principal(pacote, budget)?;
     let xml = pacote
         .parte(&principal)?
-        .ok_or_else(|| format!("o arquivo não tem {principal} (não é uma planilha .xlsx)"))?;
+        .ok_or_else(|| format!("o arquivo não tem {} (não é uma planilha .xlsx)", mdv_text::sanitize(&principal)))?;
     let relacoes = match pacote.parte(&rels_de(&principal))? {
         Some(rels) => Relacoes::ler(&rels, budget)?,
         None => Relacoes::vazias(),
