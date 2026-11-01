@@ -41,3 +41,10 @@ fn titulo_com_hash_final_nao_vira_fechamento_de_cabecalho() {
     let md = to_markdown(&bytes, &Unlimited).unwrap();
     assert!(md.starts_with("# Vendas \\#\n"), "{md}");
 }
+
+#[test]
+fn titulo_com_hash_e_espaco_final_nao_vira_fechamento_de_cabecalho() {
+    let bytes = XlsxBuilder::novo().aba("Vendas # ", "").construir();
+    let md = to_markdown(&bytes, &Unlimited).unwrap();
+    assert!(md.starts_with("# Vendas \\#\n"), "{md}");
+}

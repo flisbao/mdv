@@ -17,10 +17,11 @@ pub(crate) fn escapar(texto: &str) -> String {
     saida
 }
 
-/// Escapa um título de aba: como `escapar`, e um `#` no início ou no fim também vira literal
-/// (senão `# Vendas #` teria o `#` final lido como fechamento do cabeçalho).
+/// Escapa um título de aba: como `escapar`, sem espaço nas pontas, e um `#` no início ou no fim
+/// também vira literal (senão `# Vendas #` teria o `#` final lido como fechamento do cabeçalho).
 pub(crate) fn escapar_titulo(texto: &str) -> String {
     let base = escapar(texto);
+    let base = base.trim();
     let ultimo = base.len().saturating_sub(1);
     let mut saida = String::with_capacity(base.len() + 2);
     for (i, c) in base.char_indices() {

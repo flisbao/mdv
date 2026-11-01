@@ -14,3 +14,13 @@ fn titulo_escapa_hash_inicial_e_final() {
     assert_eq!(escapar_titulo("#"), "\\#");
     assert_eq!(escapar_titulo("##"), "\\#\\#");
 }
+
+#[test]
+fn titulo_ignora_espaco_nas_pontas_antes_de_escapar_hash() {
+    use crate::escape::escapar_titulo;
+    assert_eq!(escapar_titulo("Vendas # "), "Vendas \\#");
+    assert_eq!(escapar_titulo("Vendas #\t"), "Vendas \\#");
+    assert_eq!(escapar_titulo("  A  "), "A");
+    assert_eq!(escapar_titulo("  "), "");
+    assert_eq!(escapar_titulo("Ação #"), "Ação \\#");
+}
