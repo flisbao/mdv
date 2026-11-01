@@ -44,10 +44,47 @@ pub(crate) fn read_xlsx_file(path: &Path) -> io::Result<String> {
     mdv_xlsx::to_markdown(&bytes, &XlsxBudget).map_err(io::Error::other)
 }
 
+/// Planilha que o `mdv` não lê (`.xls` antigo, `.xlsb`, `.xlsm`, `.ods`): a mensagem em português
+/// que manda salvar como `.xlsx`. `None` para os outros arquivos.
+pub(crate) fn planilha_nao_suportada(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "xls" => "planilha .xls (formato antigo) não é suportada: salve como .xlsx",
+        "xlsb" => "planilha .xlsb não é suportado ainda: salve como .xlsx",
+        "xlsm" => "planilha .xlsm não é suportado ainda: salve como .xlsx",
+        "ods" => "planilha .ods não é suportado ainda: salve como .xlsx",
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use mdv_xlsx::testutil::XlsxBuilder;
+
+    #[test]
+    fn planilhas_nao_suportadas_dao_erro_claro_antes_do_markdown() {
+        let d = tempfile::tempdir().unwrap();
+        for nome in ["a.xls", "a.XLSB", "a.xlsm", "a.ods"] {
+            let p = d.path().join(nome);
+            fs::write(&p, b"qualquer coisa").unwrap();
+            let err = crate::load::read_document(&p).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::InvalidInput, "{nome}");
+            assert!(err.to_string().contains("salve como .xlsx"), "{nome}: {err}");
+            assert!(!err.to_string().contains("UTF-8"), "{nome}: {err}");
+        }
+        assert!(planilha_nao_suportada(Path::new("a.xls")).unwrap().contains(".xls (formato antigo)"));
+        assert!(planilha_nao_suportada(Path::new("a.xlsx")).is_none());
+    }
+
+    #[test]
+    fn xlsx_invalido_continua_com_o_erro_de_zip() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("a.xlsx");
+        fs::write(&p, b"qualquer coisa").unwrap();
+        let err = crate::load::read_document(&p).unwrap_err();
+        assert!(err.to_string().contains("ZIP inválido"), "{err}");
+    }
     use std::fs::File;
 
     /// Texto das linhas renderizadas, uma por linha, sem estilos.

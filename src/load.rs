@@ -96,6 +96,8 @@ pub(crate) fn read_document(path: &Path) -> io::Result<String> {
         crate::docx::read_docx_file(path)
     } else if crate::xlsx::is_xlsx(path) {
         crate::xlsx::read_xlsx_file(path)
+    } else if let Some(recusa) = crate::xlsx::planilha_nao_suportada(path) {
+        Err(io::Error::new(io::ErrorKind::InvalidInput, recusa))
     } else if crate::html::is_html(path) {
         crate::html::read_html_file(path)
     } else {
