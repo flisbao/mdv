@@ -40,6 +40,36 @@ pub(crate) fn texto_seguro(bruto: &str, max: usize) -> String {
     cortar(&mdv_text::sanitize(bruto), max)
 }
 
+/// Acrescenta `trecho` a `destino` sem passar de `max_chars + 1` caracteres; o caractere extra
+/// marca o corte. O conteúdo é o que `sanitize` daria ao texto inteiro: caractere a caractere, e um
+/// `\r` no fim fica pendente (vira `\n` se vier `\n` a seguir, senão U+FFFD). Quem usa
+/// `destino` passa por `texto_seguro`, que sanitiza de novo e corta. Devolve `true` se passou de `max_chars`.
+pub(crate) fn acumular_limitado(destino: &mut String, trecho: &str, max_chars: usize) -> bool {
+    let limite = max_chars + 1;
+    let mut contagem = destino.chars().count();
+    for c in trecho.chars() {
+        if contagem >= limite {
+            break;
+        }
+        if destino.ends_with('\r') {
+            destino.pop();
+            if c == '\n' {
+                destino.push('\n');
+                continue;
+            }
+            destino.push('\u{FFFD}');
+        }
+        if c == '\r' {
+            destino.push('\r');
+        } else {
+            let mut buf = [0u8; 4];
+            destino.push_str(&mdv_text::sanitize(c.encode_utf8(&mut buf)));
+        }
+        contagem += 1;
+    }
+    contagem > max_chars
+}
+
 fn cortar(texto: &str, max: usize) -> String {
     match texto.char_indices().nth(max) {
         Some((fim, _)) => format!("{}…", &texto[..fim]),

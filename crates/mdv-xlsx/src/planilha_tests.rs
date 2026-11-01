@@ -1,6 +1,7 @@
 use crate::estilos::Estilos;
 use crate::limites::Limites;
-use crate::planilha::{ler, Aba};
+use crate::celula::Celula;
+use crate::planilha::{guardar, ler, Aba};
 use crate::Unlimited;
 
 /// Monta a aba a partir das linhas de `sheetData`, com os tetos dados.
@@ -81,4 +82,42 @@ fn teto_de_bytes_para_a_leitura() {
     let mut orc = 5usize;
     let a = ler_com_orcamento(r#"<row r="1"><c r="A1" t="inlineStr"><is><t>abcdef</t></is></c></row><row r="2"><c r="A2"><v>1</v></c></row>"#, &mut orc);
     assert!(a.cortada);
+}
+fn cel(texto: &str) -> Celula {
+    Celula { texto: texto.into(), numerica: false }
+}
+#[test]
+fn guardar_mantem_uma_celula_por_coluna() {
+    let mut celulas = Vec::new();
+    for i in 1..=50 {
+        guardar(&mut celulas, 0, cel(&i.to_string()));
+    }
+    assert_eq!(celulas.len(), 1);
+    assert_eq!(celulas[0].1.texto, "50");
+}
+#[test]
+fn guardar_celula_vazia_apaga_a_anterior() {
+    let mut celulas = Vec::new();
+    guardar(&mut celulas, 2, cel("x"));
+    guardar(&mut celulas, 2, Celula::default());
+    assert!(celulas.is_empty());
+}
+#[test]
+fn celula_repetida_na_mesma_coluna_fica_a_ultima() {
+    let l = Limites { max_colunas: 4, ..Limites::default() };
+    let celulas: String = (1..=50).map(|i| format!(r#"<c r="A1"><v>{i}</v></c>"#)).collect();
+    let a = aba_com(&l, &format!(r#"<row r="1">{celulas}</row>"#));
+    assert_eq!(textos(&a), [["50"]]);
+}
+#[test]
+fn texto_longo_de_celula_e_cortado() {
+    let l = Limites { max_celula_chars: 3, ..Limites::default() };
+    let longo = "x".repeat(10_000);
+    let linhas = format!(r#"<row r="1"><c r="A1" t="inlineStr"><is><t>{longo}</t></is></c><c r="B1" t="str"><v>{longo}</v></c></row>"#);
+    assert_eq!(textos(&aba_com(&l, &linhas)), [["xxx…", "xxx…"]]);
+}
+#[test]
+fn indice_de_texto_fora_da_lista_vira_celula_vazia() {
+    let a = aba(r#"<row r="1"><c r="A1" t="s"><v>5</v></c><c r="B1"><v>1</v></c></row>"#, &["a"], None);
+    assert_eq!(textos(&a), [["", "1"]]);
 }

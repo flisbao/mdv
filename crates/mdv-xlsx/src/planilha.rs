@@ -3,7 +3,7 @@
 //! colunas além de `max_colunas` são descartadas e cada texto gasta do orçamento de bytes.
 //! Fórmula: só o `<v>` (valor em cache) é lido; `<f>` é pulado sem ser interpretado.
 
-use crate::celula::{converter, texto_seguro, Celula};
+use crate::celula::{acumular_limitado, converter, texto_seguro, Celula};
 use crate::estilos::Estilos;
 use crate::limites::Limites;
 use crate::referencia::coluna_de;
@@ -46,13 +46,18 @@ pub(crate) fn ler(
                 // Sem `r` a coluna é a seguinte à anterior, como o Excel faz.
                 let coluna = tag.attr("r").and_then(coluna_de).unwrap_or(proxima);
                 proxima = coluna.saturating_add(1);
-                let bruto = ler_valor(&mut leitor)?;
+                let (bruto, cortado) = ler_valor(&mut leitor, limites.max_celula_chars)?;
                 if coluna >= limites.max_colunas {
                     montagem.aba.colunas_omitidas = true;
                     continue;
                 }
                 let estilo = tag.attr("s").and_then(|s| s.parse().ok()).unwrap_or(0);
-                let celula = converter(tag.attr("t"), &bruto, estilos.formato(estilo), textos, data_1904);
+                // Número cortado não é lido como número: o prefixo daria outro valor.
+                let celula = if cortado && matches!(tag.attr("t"), None | Some("n")) {
+                    Celula { texto: bruto, numerica: false }
+                } else {
+                    converter(tag.attr("t"), &bruto, estilos.formato(estilo), textos, data_1904)
+                };
                 let texto = texto_seguro(&celula.texto, limites.max_celula_chars);
                 let custo = texto.len().max(1);
                 if custo > *orcamento {
@@ -62,9 +67,7 @@ pub(crate) fn ler(
                 *orcamento -= custo;
                 // A faixa de colunas inclui as células vazias (fórmula sem valor ocupa a coluna).
                 linha.faixa = alarga(linha.faixa, coluna);
-                if !texto.is_empty() {
-                    linha.celulas.push((coluna, Celula { texto, numerica: celula.numerica }));
-                }
+                guardar(&mut linha.celulas, coluna, Celula { texto, numerica: celula.numerica });
             }
             Evento::Fecha(nome) if nome == "row" => {
                 em_linha = false;
@@ -79,9 +82,11 @@ pub(crate) fn ler(
 }
 
 /// Conteúdo de uma `<c>` já aberta, até o `Fecha` dela: `f` é pulado; `v`, o texto de `is` e o
-/// `t` dentro dele formam o valor bruto. Célula sem `v` devolve vazio.
-fn ler_valor(leitor: &mut Leitor) -> Result<String, String> {
+/// `t` dentro dele formam o valor bruto, limitado a `max_chars`. Célula sem `v` devolve vazio.
+/// O segundo item diz se o valor foi cortado.
+fn ler_valor(leitor: &mut Leitor, max_chars: usize) -> Result<(String, bool), String> {
     let mut valor = String::new();
+    let mut cortado = false;
     let (mut em_v, mut em_t) = (false, false);
     loop {
         let evento = leitor.proximo()?.ok_or_else(|| "fim inesperado do documento".to_string())?;
@@ -95,16 +100,30 @@ fn ler_valor(leitor: &mut Leitor) -> Result<String, String> {
             },
             Evento::Texto(trecho) => {
                 if em_v || em_t {
-                    valor.push_str(&trecho);
+                    cortado |= acumular_limitado(&mut valor, &trecho, max_chars);
                 }
             }
             Evento::Fecha(nome) => match nome.as_str() {
-                "c" => return Ok(valor),
+                "c" => return Ok((valor, cortado)),
                 "v" => em_v = false,
                 "t" => em_t = false,
                 _ => {}
             },
         }
+    }
+}
+
+/// Guarda uma célula na linha: uma por coluna, a última vence no lugar; uma vazia apaga a anterior.
+/// Assim a linha guarda no máximo uma entrada por coluna, mesmo com a coluna repetida no XML.
+pub(crate) fn guardar(celulas: &mut Vec<(usize, Celula)>, coluna: usize, celula: Celula) {
+    let posicao = celulas.iter().position(|(c, _)| *c == coluna);
+    match (posicao, celula.texto.is_empty()) {
+        (Some(i), true) => {
+            celulas.swap_remove(i);
+        }
+        (Some(i), false) => celulas[i].1 = celula,
+        (None, true) => {}
+        (None, false) => celulas.push((coluna, celula)),
     }
 }
 
