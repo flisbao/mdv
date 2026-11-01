@@ -2,7 +2,7 @@
 
 **Leia Markdown no terminal como deveria ser: com cor, estrutura e sem sair do teclado.** E converta para PDF, Word, LibreOffice e planilhas quando precisar.
 
-`mdv` transforma qualquer `.md` numa página bem formatada direto no terminal e abre num leitor interativo com busca, navegação por títulos e recarga com `r`. Também abre **JSON, YAML, CSV, TSV, HTML, documentos do Word (`.docx`) e planilhas (`.xlsx`)** (tabelas, esquema ou texto, com o erro de sintaxe apontado na linha), desenha **imagens e diagramas Mermaid**, acompanha a saída de **agentes e LLMs** (`--follow`) e **exporta** para PDF, DOCX, ODT, XLSX e ODS. Dois binários pequenos e independentes (`mdv` e `mdv-tools`), sem runtime, sem navegador.
+`mdv` transforma qualquer `.md` numa página bem formatada direto no terminal e abre num leitor interativo com busca, navegação por títulos e recarga com `r`. Também abre **JSON, YAML, CSV e TSV** (em tabela, esquema ou texto, com o erro de sintaxe apontado na linha), **HTML, documentos do Word (`.docx`) e planilhas (`.xlsx`)**, desenha **imagens e diagramas Mermaid**, acompanha a saída de **agentes e LLMs** (`--follow`) e **exporta** para PDF, DOCX, ODT, XLSX e ODS. Dois binários pequenos e independentes (`mdv` e `mdv-tools`), sem runtime, sem navegador.
 
 [![release](https://img.shields.io/github/v/release/flisbao/mdv)](https://github.com/flisbao/mdv/releases/latest)
 [![ci](https://github.com/flisbao/mdv/actions/workflows/ci.yml/badge.svg)](https://github.com/flisbao/mdv/actions/workflows/ci.yml)
@@ -161,7 +161,7 @@ USO:
     mdv [opções] <arquivo.md> -o <saída.pdf|docx|odt|xlsx|ods>
     mdv [opções] <email.msg> [-o <saída.md|pdf|docx|odt>]
     mdv [opções] <documento.docx> [-o <saída.md|pdf|docx|odt>]
-    mdv [opções] <planilha.xlsx> [-o <saída.md|pdf|docx|odt>]
+    mdv [opções] <planilha.xlsx> [-o <saída.md|pdf|docx|odt|xlsx|ods>]
     mdv csv|tsv [opções] <arquivo|-> -o <saída.xlsx|ods>
     mdv <pasta>            (seletor: .md, .msg, .docx, .xlsx, .yaml/.yml e .html/.htm da pasta por data, filtro ao digitar)
     (o formato também é deduzido da extensão: .json, .jsonl, .yaml, .yml, .csv, .tsv, .html, .htm)
@@ -296,7 +296,7 @@ mdv relatorio.docx -o relatorio.pdf        # também .docx, .odt, .xlsx e .ods
 
 `samples/relatorio.docx` foi gerada pelo próprio exportador do `mdv`; por isso os marcadores de lista dela são texto literal (`• `), e não uma lista do Word.
 
-**Limites:** arquivo de até 32 MiB, ZIP com no máximo 5000 entradas, XML com até 100 níveis de profundidade e Markdown de até 16 MiB. Um arquivo inválido sai com erro e código 1.
+**Limites:** arquivo de até 32 MiB, até 64 abas visíveis, 10 000 linhas e 200 colunas por aba, 2000 caracteres por célula e 8 MiB de texto de célula no total. Os cortes saem com aviso em itálico, sem erro: `mostrando as primeiras N de M linhas` quando passa de 10 000 linhas; `planilha cortada: limite de 500000 células por aba atingido` quando passa de 500 000 células por aba (com 200 colunas, só 2 500 linhas aparecem); abas além de 64 saem com aviso. Uma pasta com mais de 1000 abas é recusada com erro, não cortada. Um arquivo inválido sai com erro e código 1.
 
 **Fora do escopo:** `.doc` antigo e `.docx` criptografado (só um erro claro), imagens (só o texto alternativo), cabeçalho e rodapé de página, comentários, caixas de texto, campos como o sumário, equações, `.docm`/`.dotx`, leitura pelo stdin, numeração automática de títulos e a continuação de numeração entre listas diferentes que compartilham o mesmo modelo.
 
@@ -307,8 +307,10 @@ mdv relatorio.docx -o relatorio.pdf        # também .docx, .odt, .xlsx e .ods
 - **Só valores:** a célula mostra o valor guardado no arquivo. Uma fórmula aparece como o resultado, nunca como `=SOMA(...)`. Um arquivo que nunca foi calculado pelo Excel (por exemplo, gerado por uma biblioteca) não guarda esse resultado, então a célula sai vazia.
 - **Uma tabela por aba:** a primeira linha não vazia da aba é o cabeçalho. `]` e `[` pulam de aba, `t` amplia a tabela e `--table N` abre direto na N-ésima tabela. Abas ocultas (`hidden` ou `veryHidden`) não aparecem; linhas e colunas ocultas aparecem. Colunas só de números saem alinhadas à direita, e aba vazia sai com `_(planilha vazia)_`.
 - **Números e datas:** o formato da célula é entendido: casas decimais, separador de milhar, percentual, prefixo e sufixo literais (`"R$" #,##0.00` vira `R$ 1,234.50`), data e hora. O separador decimal é `.` e o de milhar é `,`, porque o `.xlsx` não guarda o idioma. O formato Geral mostra até 15 dígitos significativos (`0.30000000000000004` vira `0.3`) e usa notação científica para números muito grandes ou muito pequenos. Frações e científico do Excel caem em Geral; uma seção de negativo ou zero do formato é ignorada. Os sistemas de data de 1900 (com o defeito do Excel) e de 1904 são respeitados.
+- **Datas:** saem em ISO e só com os campos que o formato da célula tem: `AAAA-MM-DD`, `AAAA-MM` (`mm/yyyy`), `MM-DD` (`dd/mm`), `AAAA` (`yyyy`), `HH:MM` ou `HH:MM:SS`, e `AAAA-MM-DD HH:MM` com data e hora.
+- **Moeda:** os formatos de moeda embutidos do Excel (ids 5 a 8 e 41 a 44) saem sem o símbolo; formato personalizado, como `"R$"`, mantém o símbolo.
 - **Textos e erros:** booleanos saem como `VERDADEIRO` e `FALSO`; erros de célula (`#DIV/0!`) saem como o texto do erro. Texto com sintaxe Markdown (`*`, `|`, `[...]()`) aparece literal.
-- **Mescladas e vazias:** o valor de uma célula mesclada fica no canto superior esquerdo; as outras saem vazias. Linhas totalmente vazias são descartadas e colunas vazias nas bordas são aparadas.
+- **Mescladas e vazias:** o valor de uma célula mesclada fica no canto superior esquerdo; as outras saem vazias. Linhas totalmente vazias são descartadas. Uma coluna só some nas bordas se nenhuma `<c>` do arquivo a ocupa: uma célula declarada, mesmo vazia (formatada sem conteúdo, ou fórmula sem valor em cache), mantém a sua coluna.
 
 ```bash
 mdv samples/vendas.xlsx                # lê a amostra no terminal (uma tabela por aba)
@@ -318,7 +320,9 @@ mdv vendas.xlsx -o vendas.pdf          # também .docx, .odt, .xlsx e .ods
 
 `samples/vendas.xlsx` foi gerada pelo próprio exportador do `mdv`, a partir de `samples/vendas.csv`; não tem fórmulas.
 
-**Limites:** arquivo de até 32 MiB, até 64 abas visíveis, 10 000 linhas e 200 colunas por aba, 500 000 células por aba, 2000 caracteres por célula e 8 MiB de texto de célula no total. Quando um teto é atingido, a tabela é cortada com um aviso em itálico (`mostrando as primeiras N de M linhas`), sem erro. Um arquivo inválido sai com erro e código 1.
+**Limites:** arquivo de até 32 MiB, até 64 abas visíveis, 10 000 linhas e 200 colunas por aba, 2000 caracteres por célula e 8 MiB de texto de célula no total. Os cortes saem com aviso em itálico, sem erro: `mostrando as primeiras N de M linhas` quando passa de 10 000 linhas; `planilha cortada: limite de 500000 células por aba atingido` quando passa de 500 000 células por aba (com 200 colunas, só 2 500 linhas aparecem); abas além de 64 saem com aviso. Uma pasta com mais de 1000 abas é recusada com erro, não cortada. Um arquivo inválido sai com erro e código 1.
+
+**Formatos recusados:** `.xls` (formato antigo), `.xlsb`, `.xlsm` e `.ods` saem com uma mensagem pedindo para salvar como `.xlsx`.
 
 **Fora do escopo:** `.xls` antigo, `.xlsb`, `.xlsm`, `.ods`, planilha protegida por senha (só um erro claro), gráficos, imagens, comentários, formatação condicional, tabelas dinâmicas, nomes definidos e leitura pelo stdin.
 
