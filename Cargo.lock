@@ -1018,6 +1018,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mdv-xlsx"
+version = "0.9.0"
+dependencies = [
+ "flate2",
+ "mdv-text",
+ "quick-xml",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

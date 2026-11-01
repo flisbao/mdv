@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/mdv-text", "crates/mdv-tools", "crates/mdv-export", "crates/mdv-msg", "crates/mdv-html", "crates/mdv-docx"]
+members = [".", "crates/mdv-text", "crates/mdv-tools", "crates/mdv-export", "crates/mdv-msg", "crates/mdv-html", "crates/mdv-docx", "crates/mdv-xlsx"]
 resolver = "2"
 
 [workspace.package]
@@ -15,6 +15,7 @@ mdv-export = { path = "crates/mdv-export" }
 mdv-msg = { path = "crates/mdv-msg" }
 mdv-html = { path = "crates/mdv-html" }
 mdv-docx = { path = "crates/mdv-docx" }
+mdv-xlsx = { path = "crates/mdv-xlsx" }
 
 [package]
 name = "mdv"
