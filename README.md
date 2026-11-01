@@ -296,7 +296,7 @@ mdv relatorio.docx -o relatorio.pdf        # também .docx, .odt, .xlsx e .ods
 
 `samples/relatorio.docx` foi gerada pelo próprio exportador do `mdv`; por isso os marcadores de lista dela são texto literal (`• `), e não uma lista do Word.
 
-**Limites:** arquivo de até 32 MiB, até 64 abas visíveis, 10 000 linhas e 200 colunas por aba, 2000 caracteres por célula e 8 MiB de texto de célula no total. Os cortes saem com aviso em itálico, sem erro: `mostrando as primeiras N de M linhas` quando passa de 10 000 linhas; `planilha cortada: limite de 500000 células por aba atingido` quando passa de 500 000 células por aba (com 200 colunas, só 2 500 linhas aparecem); abas além de 64 saem com aviso. Uma pasta com mais de 1000 abas é recusada com erro, não cortada. Um arquivo inválido sai com erro e código 1.
+**Limites:** arquivo de até 32 MiB, ZIP com no máximo 5000 entradas, XML com até 100 níveis de profundidade e Markdown de até 16 MiB. Um arquivo inválido sai com erro e código 1.
 
 **Fora do escopo:** `.doc` antigo e `.docx` criptografado (só um erro claro), imagens (só o texto alternativo), cabeçalho e rodapé de página, comentários, caixas de texto, campos como o sumário, equações, `.docm`/`.dotx`, leitura pelo stdin, numeração automática de títulos e a continuação de numeração entre listas diferentes que compartilham o mesmo modelo.
 
@@ -320,7 +320,7 @@ mdv vendas.xlsx -o vendas.pdf          # também .docx, .odt, .xlsx e .ods
 
 `samples/vendas.xlsx` foi gerada pelo próprio exportador do `mdv`, a partir de `samples/vendas.csv`; não tem fórmulas.
 
-**Limites:** arquivo de até 32 MiB, até 64 abas visíveis, 10 000 linhas e 200 colunas por aba, 2000 caracteres por célula e 8 MiB de texto de célula no total. Os cortes saem com aviso em itálico, sem erro: `mostrando as primeiras N de M linhas` quando passa de 10 000 linhas; `planilha cortada: limite de 500000 células por aba atingido` quando passa de 500 000 células por aba (com 200 colunas, só 2 500 linhas aparecem); abas além de 64 saem com aviso. Uma pasta com mais de 1000 abas é recusada com erro, não cortada. Um arquivo inválido sai com erro e código 1.
+**Limites:** arquivo de até 32 MiB, ZIP com no máximo 5000 entradas, XML com até 100 níveis de profundidade, Markdown de até 16 MiB, até 64 abas visíveis, 10 000 linhas e 200 colunas por aba, 2000 caracteres por célula, 8 MiB de texto de célula no total e 500 000 textos compartilhados (além disso, as células que apontam para eles saem vazias, sem aviso). Os cortes saem com aviso em itálico, sem erro: `mostrando as primeiras N de M linhas` quando passa de 10 000 linhas; `planilha cortada: limite de 500000 células por aba atingido` quando passa de 500 000 células por aba (com 200 colunas, só 2 500 linhas aparecem); abas além de 64 saem com aviso. Uma pasta com mais de 1000 abas é recusada com erro, não cortada. Um arquivo inválido sai com erro e código 1.
 
 **Formatos recusados:** `.xls` (formato antigo), `.xlsb`, `.xlsm` e `.ods` saem com uma mensagem pedindo para salvar como `.xlsx`.
 
