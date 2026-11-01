@@ -10,6 +10,15 @@ use crate::referencia::coluna_de;
 use crate::xml_leitor::{Evento, Leitor};
 use crate::Budget;
 
+/// Qual teto cortou a leitura da aba (o primeiro que disparou).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Corte {
+    /// Orçamento de bytes de texto de células (compartilhado entre as abas).
+    Bytes,
+    /// `max_celulas`: células guardadas ou tamanho da grade.
+    Celulas,
+}
+
 /// Uma aba lida: linhas já com a mesma largura, mais o que foi cortado.
 #[derive(Debug, Default)]
 pub(crate) struct Aba {
@@ -17,11 +26,11 @@ pub(crate) struct Aba {
     /// Linhas não vazias lidas, inclusive as que passaram de `max_linhas` (não guardadas).
     pub linhas_total: usize,
     pub colunas_omitidas: bool,
-    pub cortada: bool,
+    pub corte: Option<Corte>,
 }
 
 /// Lê uma aba (`sheetData` de um `worksheet`). `orcamento` são os bytes de célula ainda
-/// disponíveis, compartilhados entre as abas; esgotado, a leitura para com `cortada = true`.
+/// disponíveis, compartilhados entre as abas; esgotado, a leitura para com `corte = Some(Corte::Bytes)`.
 pub(crate) fn ler(
     xml: &[u8],
     textos: &[String],
@@ -61,7 +70,7 @@ pub(crate) fn ler(
                 let texto = texto_seguro(&celula.texto, limites.max_celula_chars);
                 let custo = texto.len().max(1);
                 if custo > *orcamento {
-                    montagem.aba.cortada = true;
+                    montagem.aba.corte.get_or_insert(Corte::Bytes);
                     break;
                 }
                 *orcamento -= custo;
@@ -142,9 +151,14 @@ fn alarga(faixa: Option<(usize, usize)>, coluna: usize) -> Option<(usize, usize)
 }
 
 /// Guarda as linhas (esparsas) e, no fim, monta a grade com a largura da faixa usada.
+/// Guardar para de crescer ao passar de `max_linhas` linhas ou de `max_celulas` células guardadas
+/// (a conta é das células guardadas, não da grade), então a memória não depende da largura.
 struct Montagem {
     aba: Aba,
     retidas: Vec<Vec<(usize, Celula)>>,
+    celulas_retidas: usize,
+    /// Já cortou por `max_celulas`: as linhas seguintes não entram, para o que sobra ser um prefixo.
+    cheia: bool,
     menor: usize,
     maior: usize,
     max_linhas: usize,
@@ -153,19 +167,34 @@ struct Montagem {
 
 impl Montagem {
     fn novo(max_linhas: usize, max_celulas: usize) -> Self {
-        Montagem { aba: Aba::default(), retidas: Vec::new(), menor: usize::MAX, maior: 0, max_linhas, max_celulas }
+        Montagem {
+            aba: Aba::default(),
+            retidas: Vec::new(),
+            celulas_retidas: 0,
+            cheia: false,
+            menor: usize::MAX,
+            maior: 0,
+            max_linhas,
+            max_celulas,
+        }
     }
 
-    /// Fecha a linha: sem célula não vazia, descarta; senão conta e guarda até `max_linhas`.
+    /// Fecha a linha: sem célula não vazia, descarta; senão conta e guarda até os tetos.
     fn fechar(&mut self, linha: &mut Linha) {
         let Linha { celulas, faixa } = std::mem::take(linha);
         if celulas.is_empty() {
             return;
         }
         self.aba.linhas_total += 1;
-        if self.retidas.len() >= self.max_linhas {
+        if self.retidas.len() >= self.max_linhas || self.cheia {
             return;
         }
+        if self.celulas_retidas + celulas.len() > self.max_celulas {
+            self.cheia = true;
+            self.aba.corte.get_or_insert(Corte::Celulas);
+            return;
+        }
+        self.celulas_retidas += celulas.len();
         if let Some((menor, maior)) = faixa {
             self.menor = self.menor.min(menor);
             self.maior = self.maior.max(maior);
@@ -184,7 +213,7 @@ impl Montagem {
         let couberam = (max_celulas / largura).max(1);
         if retidas.len() > couberam {
             retidas.truncate(couberam);
-            aba.cortada = true;
+            aba.corte.get_or_insert(Corte::Celulas);
         }
         aba.linhas = retidas
             .into_iter()

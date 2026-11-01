@@ -3,7 +3,7 @@
 
 use crate::escape::{escapar, escapar_titulo};
 use crate::limites::Limites;
-use crate::planilha::Aba;
+use crate::planilha::{Aba, Corte};
 
 /// Escreve a aba em `saida`: `# nome`, tabela (ou `_(planilha vazia)_`), avisos e linha em branco.
 pub(crate) fn escrever_aba(nome: &str, aba: &Aba, limites: &Limites, saida: &mut String) {
@@ -21,8 +21,12 @@ pub(crate) fn escrever_aba(nome: &str, aba: &Aba, limites: &Limites, saida: &mut
     if aba.colunas_omitidas {
         aviso(saida, &format!("_(colunas além de {} omitidas)_", limites.max_colunas));
     }
-    if aba.cortada {
-        aviso(saida, "_(planilha cortada: limite de tamanho das células atingido)_");
+    match aba.corte {
+        Some(Corte::Celulas) => {
+            aviso(saida, &format!("_(planilha cortada: limite de {} células por aba atingido)_", limites.max_celulas));
+        }
+        Some(Corte::Bytes) => aviso(saida, "_(planilha cortada: limite de tamanho das células atingido)_"),
+        None => {}
     }
     saida.push('\n');
 }

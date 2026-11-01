@@ -1,7 +1,7 @@
 use crate::celula::Celula;
 use crate::limites::Limites;
 use crate::markdown::escrever_aba;
-use crate::planilha::Aba;
+use crate::planilha::{Aba, Corte};
 
 /// Monta uma aba com os textos dados; `numericas[j]` marca a coluna `j` das linhas de dados (a partir da 2ª).
 fn aba_de(linhas: &[&[&str]], numericas: &[bool]) -> Aba {
@@ -51,6 +51,21 @@ fn avisos_de_corte() {
     let md = escrever_cortada();
     assert!(md.contains("_(mostrando as primeiras 2 de 5 linhas)_"), "{md}");
     assert!(md.contains("_(colunas além de 200 omitidas)_"), "{md}");
+}
+
+#[test]
+fn aviso_de_corte_diz_qual_teto_foi_atingido() {
+    let l = Limites { max_celulas: 4000, ..Limites::default() };
+    let mut aba = aba_de(&[&["a"], &["b"]], &[]);
+    let mut saida = String::new();
+    aba.corte = Some(Corte::Celulas);
+    escrever_aba("X", &aba, &l, &mut saida);
+    assert!(saida.contains("_(planilha cortada: limite de 4000 células por aba atingido)_"), "{saida}");
+    let mut saida = String::new();
+    aba.corte = Some(Corte::Bytes);
+    escrever_aba("X", &aba, &l, &mut saida);
+    assert!(saida.contains("_(planilha cortada: limite de tamanho das células atingido)_"), "{saida}");
+    assert!(!saida.contains("4000"), "{saida}");
 }
 
 #[test]
