@@ -109,3 +109,17 @@ fn data_parcial_mostra_so_os_campos_do_formato() {
     assert_eq!(classificar(168, Some("dd")).aplicar(45000.0, false), "15");
     assert_eq!(classificar(169, Some("dd/mm/yyyy hh:mm")).aplicar(45000.5, false), "2023-03-15 12:00");
 }
+
+#[test]
+fn numfmt_de_dxfs_nao_vale_nem_conta_no_teto() {
+    // `dxfs` (formatação condicional) tem `numFmt` com o mesmo id: só o de `numFmts` define o formato.
+    let xml = "<dxfs><dxf><numFmt numFmtId=\"164\" formatCode=\"0.0%\"/></dxf></dxfs>\
+               <cellXfs><xf numFmtId=\"164\"/></cellXfs>";
+    let so_dxfs = estilos(xml);
+    assert_eq!(*so_dxfs.formato(0), Formato::Geral);
+    // Com os dois, vale o de `numFmts`.
+    let ambos = estilos(&format!(
+        "<numFmts><numFmt numFmtId=\"164\" formatCode=\"0.00\"/></numFmts>{xml}"
+    ));
+    assert_eq!(ambos.formato(0).aplicar(1.0, false), "1.00");
+}

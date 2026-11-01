@@ -39,11 +39,14 @@ impl Estilos {
         let mut posicao_do_id: HashMap<u32, usize> = HashMap::new();
         let mut formatos: Vec<Formato> = Vec::new();
         let mut indices: Vec<usize> = Vec::new();
-        let mut em_xfs = false;
+        // O esquema do Excel grava `numFmts` antes de `cellXfs`; cada `xf` é classificado na hora em
+        // que aparece e depende disso. `numFmt` só vale dentro de `numFmts` (o de `dxfs` é outra coisa).
+        let (mut em_numfmts, mut em_xfs) = (false, false);
         while let Some(evento) = leitor.proximo()? {
             match evento {
                 Evento::Abre(tag) => match tag.nome.as_str() {
-                    "numFmt" => guarda_codigo(&mut codigos, &tag),
+                    "numFmts" => em_numfmts = true,
+                    "numFmt" if em_numfmts => guarda_codigo(&mut codigos, &tag),
                     "cellXfs" => em_xfs = true,
                     "xf" if em_xfs && indices.len() < MAX_XF => {
                         let id = id_de(&tag, "numFmtId");
@@ -55,6 +58,7 @@ impl Estilos {
                     }
                     _ => {}
                 },
+                Evento::Fecha(nome) if nome == "numFmts" => em_numfmts = false,
                 Evento::Fecha(nome) if nome == "cellXfs" => em_xfs = false,
                 _ => {}
             }
