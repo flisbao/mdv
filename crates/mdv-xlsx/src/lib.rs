@@ -7,16 +7,22 @@
 mod data;
 mod estilos;
 mod formato;
+mod celula;
 mod formato_codigo;
 mod formato_literais;
 mod le;
+mod limites;
 mod numero;
 mod pacote;
 mod pasta;
+mod planilha;
+mod referencia;
 mod relacoes;
+mod textos;
 mod xml_leitor;
 mod zip_diretorio;
 mod zip_entrada;
+pub use limites::Limites;
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
 #[cfg(test)]
@@ -25,6 +31,14 @@ mod data_tests;
 mod formato_tests;
 #[cfg(test)]
 mod numero_tests;
+#[cfg(test)]
+mod textos_tests;
+#[cfg(test)]
+mod referencia_tests;
+#[cfg(test)]
+mod celula_tests;
+#[cfg(test)]
+mod planilha_tests;
 
 /// Tamanho máximo aceito para um arquivo `.xlsx` inteiro.
 pub const MAX_XLSX_BYTES: u64 = 32 * 1024 * 1024;
