@@ -4,7 +4,13 @@
 
 #![allow(dead_code)] // removido na Task 5
 
+mod data;
+mod estilos;
+mod formato;
+mod formato_codigo;
+mod formato_literais;
 mod le;
+mod numero;
 mod pacote;
 mod pasta;
 mod relacoes;
@@ -13,6 +19,12 @@ mod zip_diretorio;
 mod zip_entrada;
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
+#[cfg(test)]
+mod data_tests;
+#[cfg(test)]
+mod formato_tests;
+#[cfg(test)]
+mod numero_tests;
 
 /// Tamanho máximo aceito para um arquivo `.xlsx` inteiro.
 pub const MAX_XLSX_BYTES: u64 = 32 * 1024 * 1024;
