@@ -33,32 +33,27 @@ fn percorrer(
     trechos: &mut Vec<Trecho>,
     fim: &str,
 ) -> Result<(), String> {
-    loop {
-        match l.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == fim => return Ok(()),
-            Some(Evento::Abre(tag)) => match tag.nome.as_str() {
-                "pPr" => *props = ler_ppr(l)?,
-                "r" => ler_run(l, ctx, link, trechos)?,
-                "hyperlink" => {
-                    // Só destino externo vira link; `anchor` aponta para dentro do documento.
-                    let url = tag
-                        .attr("id")
-                        .and_then(|id| ctx.relacoes.por_id(id))
-                        .filter(|r| r.externo && r.alvo.len() <= MAX_URL_BYTES)
-                        .map(|r| Rc::from(r.alvo.as_str()));
-                    percorrer(l, ctx, url.as_ref(), props, trechos, "hyperlink")?;
-                }
-                // `oMath` e `oMathPara` têm runs `m:r`/`m:t` com o mesmo nome local dos de texto.
-                "del" | "moveFrom" | "Fallback" | "drawing" | "pict" | "txbxContent" | "rPr" | "oMath"
-                | "oMathPara" => {
-                    l.pular()?
-                }
-                _ => {}
-            },
-            Some(_) => {}
+    while let Some(evento) = l.dentro(fim)? {
+        let Evento::Abre(tag) = evento else { continue };
+        match tag.nome.as_str() {
+            "pPr" => *props = ler_ppr(l)?,
+            "r" => ler_run(l, ctx, link, trechos)?,
+            "hyperlink" => {
+                // Só destino externo vira link; `anchor` aponta para dentro do documento.
+                let url = tag
+                    .attr("id")
+                    .and_then(|id| ctx.relacoes.por_id(id))
+                    .filter(|r| r.externo && r.alvo.len() <= MAX_URL_BYTES)
+                    .map(|r| Rc::from(r.alvo.as_str()));
+                percorrer(l, ctx, url.as_ref(), props, trechos, "hyperlink")?;
+            }
+            // `oMath` e `oMathPara` têm runs `m:r`/`m:t` com o mesmo nome local dos de texto.
+            "del" | "moveFrom" | "Fallback" | "drawing" | "pict" | "txbxContent" | "rPr" | "oMath"
+            | "oMathPara" => l.pular()?,
+            _ => {}
         }
     }
+    Ok(())
 }
 
 /// Lê o primeiro `w:p` do XML e o classifica; ajuda os testes de parágrafo e de classificação.
