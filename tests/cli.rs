@@ -244,6 +244,76 @@ fn yaml_com_aliases_em_excesso_nao_estoura() {
 }
 
 #[test]
+fn xml_valido_em_modo_plain_nao_mostra_tags() {
+    // A vista automática mostra a tabela dos dois `det`; a árvore (`--as text`) mostra o resto.
+    let auto = mdv(&["-p", &sample("nfe.xml")], "");
+    let auto = String::from_utf8_lossy(&auto.stdout);
+    assert!(auto.contains("registros em infNFe › det") && !auto.contains("xmlns"), "{auto}");
+    let out = mdv(&["-p", "--as", "text", &sample("nfe.xml")], "");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("xNome") && text.contains("ACME"), "{text}");
+    assert!(text.contains("Indústria"), "acento perdido: {text}");
+    assert!(!text.contains("<xNome>") && !text.contains("xmlns"), "{text}");
+}
+
+#[test]
+fn xml_lista_de_registros_sai_em_tabela() {
+    let out = mdv(&["-p", "-w", "80", &sample("catalogo.xml")], "");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains('│') && text.contains("@id") && text.contains("registros em produto"), "{text}");
+}
+
+#[test]
+fn xml_quebrado_mostra_a_linha_do_erro() {
+    let out = mdv(&["-p", &sample("quebrado.xml")], "");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("✗ linha 4"), "{text}");
+}
+
+#[test]
+fn xml_via_stdin_com_subcomando() {
+    let out = mdv(&["xml", "-p", "-"], "<a><b>1</b></a>");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("b: 1"), "{text}");
+}
+
+#[test]
+fn xml_com_doctype_e_recusado() {
+    let xml = "<!DOCTYPE a [<!ENTITY e SYSTEM \"file:///etc/passwd\">]><a>&e;</a>";
+    let out = mdv(&["xml", "-p", "-"], xml);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("DOCTYPE") && !text.contains("root:"), "{text}");
+}
+
+#[cfg(target_os = "linux")] // `ulimit -v` não é confiável no macOS nem existe no Windows
+#[test]
+fn xml_com_aninhamento_absurdo_nao_estoura() {
+    // 200 000 aberturas = 600 KB: bem abaixo do teto de bytes, muito acima do de profundidade.
+    let fundo = "<a>".repeat(200_000);
+    let out = mdv_com_teto(&["xml", "-p", "-"], &fundo);
+    let (so, se) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(!se.contains("panicked") && !so.contains("panicked"), "{se}");
+    assert!(out.status.success(), "{se}");
+    assert!(so.contains("aninhamento fundo demais"), "{}", &so[..so.len().min(500)]);
+}
+
+#[test]
+fn xml_nao_exporta() {
+    let dir = tempfile::tempdir().unwrap();
+    let saida = dir.path().join("x.csv");
+    let out = mdv(&["-p", &sample("nfe.xml"), "-o", saida.to_str().unwrap()], "");
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("XML ainda não exporta"), "{err}");
+    assert!(!saida.exists());
+}
+
+#[test]
 fn csv_subcomando_mostra_tabela_com_rodape() {
     let out = mdv(&["csv", "-p", "-"], "id,nome,nota\n1,Ana,9.5\n2,Bia,10\n");
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));

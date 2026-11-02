@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+  <infNFe Id="NFe35240112345678000190550010000001231000001234" versao="4.00">
+    <ide>
+      <cUF>35</cUF>
+      <nNF>123</nNF>
+      <natOp>Venda de mercadoria</natOp>
+      <dhEmi>2024-01-15T10:30:00-03:00</dhEmi>
+    </ide>
+    <emit>
+      <CNPJ>12345678000190</CNPJ>
+      <xNome>Indústria ACME Ltda</xNome>
+      <enderEmit>
+        <xLgr>Avenida São João</xLgr>
+        <nro>1200</nro>
+        <xMun>São Paulo</xMun>
+        <UF>SP</UF>
+        <CEP>01046001</CEP>
+      </enderEmit>
+    </emit>
+    <dest>
+      <CPF>12345678909</CPF>
+      <xNome>José da Conceição</xNome>
+      <enderDest>
+        <xLgr>Rua das Acácias</xLgr>
+        <nro>45</nro>
+        <xMun>Belo Horizonte</xMun>
+        <UF>MG</UF>
+        <CEP>00123000</CEP>
+      </enderDest>
+    </dest>
+    <det nItem="1">
+      <prod>
+        <cProd>00017</cProd>
+        <xProd>Parafuso sextavado M8</xProd>
+        <qCom>100.0000</qCom>
+        <vUnCom>0.4500</vUnCom>
+        <vProd>45.00</vProd>
+      </prod>
+    </det>
+    <det nItem="2">
+      <prod>
+        <cProd>00230</cProd>
+        <xProd>Porca autotravante M8</xProd>
+        <qCom>100.0000</qCom>
+        <vUnCom>0.3000</vUnCom>
+        <vProd>30.00</vProd>
+      </prod>
+    </det>
+    <total>
+      <vNF>75.00</vNF>
+    </total>
+  </infNFe>
+</NFe>

@@ -1,0 +1,11 @@
+╭─ xml
+│ <!-- Tag sem fechar: o <item> da linha
+│  3 não fecha; o erro vem na linha 4. -
+│ ->                                    
+│ <pedido numero="42" cliente="Ana">    
+│   <item>Caderno <quantidade>3</quantid
+│ ade>                                  
+│ </pedido>                             
+✗ linha 4, coluna 1: esperava </item>
+  mas veio </pedido>
+╰─

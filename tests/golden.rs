@@ -33,6 +33,9 @@ const FILES: &[&str] = &[
     "samples/ancoras.yaml",
     "samples/quebrado.yaml",
     "samples/quebrado.json",
+    "samples/nfe.xml",
+    "samples/catalogo.xml",
+    "samples/quebrado.xml",
 ];
 
 const WIDTHS: [usize; 2] = [40, 80];
@@ -48,6 +51,9 @@ const EXTRAS: &[(&str, &[&str])] = &[
     ("yaml-table.config", &["yaml", "-p", "-w", "80", "samples/config.yaml", "--as", "table"]),
     ("yaml-schema.config", &["yaml", "-p", "-w", "80", "samples/config.yaml", "--as", "schema"]),
     ("yaml-schema.k8s", &["yaml", "-p", "-w", "80", "samples/k8s.yaml", "--as", "schema"]),
+    ("xml-table.nfe", &["xml", "-p", "-w", "80", "samples/nfe.xml", "--as", "table"]),
+    ("xml-text.nfe", &["xml", "-p", "-w", "80", "samples/nfe.xml", "--as", "text"]),
+    ("xml-schema.nfe", &["xml", "-p", "-w", "80", "samples/nfe.xml", "--as", "schema"]),
 ];
 
 fn root() -> PathBuf {

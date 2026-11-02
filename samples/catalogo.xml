@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<catalogo>
+  <produto id="1">
+    <nome>Caderno universitário</nome>
+    <preco>18.90</preco>
+    <categoria>Papelaria</categoria>
+  </produto>
+  <produto id="2">
+    <nome>Caneta esferográfica azul</nome>
+    <preco>2.50</preco>
+    <categoria>Papelaria</categoria>
+  </produto>
+  <produto id="3">
+    <nome>Mochila escolar</nome>
+    <preco>129.00</preco>
+    <categoria>Acessórios</categoria>
+  </produto>
+  <produto id="4">
+    <nome>Calculadora científica</nome>
+    <preco>79.90</preco>
+    <categoria>Eletrônicos</categoria>
+  </produto>
+  <produto id="5">
+    <nome>Lápis de cor (24 cores)</nome>
+    <preco>34.00</preco>
+    <categoria>Papelaria</categoria>
+  </produto>
+</catalogo>

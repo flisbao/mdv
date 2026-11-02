@@ -1,0 +1,25 @@
+registros em produto · 5 itens
+┌─────┬───────────┬────────┬───────────┐
+│ @id │ nome      │  preco │ categoria │
+├─────┼───────────┼────────┼───────────┤
+│   1 │ Caderno   │  18.90 │ Papelaria │
+│     │ universit │        │           │
+│     │ ário      │        │           │
+├─────┼───────────┼────────┼───────────┤
+│   2 │ Caneta    │   2.50 │ Papelaria │
+│     │ esferográ │        │           │
+│     │ fica azul │        │           │
+├─────┼───────────┼────────┼───────────┤
+│   3 │ Mochila   │ 129.00 │ Acessório │
+│     │ escolar   │        │ s         │
+├─────┼───────────┼────────┼───────────┤
+│   4 │ Calculado │  79.90 │ Eletrônic │
+│     │ ra        │        │ os        │
+│     │ científic │        │           │
+│     │ a         │        │           │
+├─────┼───────────┼────────┼───────────┤
+│   5 │ Lápis de  │  34.00 │ Papelaria │
+│     │ cor (24   │        │           │
+│     │ cores)    │        │           │
+└─────┴───────────┴────────┴───────────┘
+5 de 5 itens · 4 colunas

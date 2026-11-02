@@ -1,0 +1,39 @@
+╭─
+│ objeto                                                                        
+│   infNFe: objeto                                                              
+│     @Id: texto                                                                
+│     @versao: texto                                                            
+│     ide: objeto                                                               
+│       cUF: texto                                                              
+│       nNF: texto                                                              
+│       natOp: texto                                                            
+│       dhEmi: texto                                                            
+│     emit: objeto                                                              
+│       CNPJ: texto                                                             
+│       xNome: texto                                                            
+│       enderEmit: objeto                                                       
+│         xLgr: texto                                                           
+│         nro: texto                                                            
+│         xMun: texto                                                           
+│         UF: texto                                                             
+│         CEP: texto                                                            
+│     dest: objeto                                                              
+│       CPF: texto                                                              
+│       xNome: texto                                                            
+│       enderDest: objeto                                                       
+│         xLgr: texto                                                           
+│         nro: texto                                                            
+│         xMun: texto                                                           
+│         UF: texto                                                             
+│         CEP: texto                                                            
+│     det: lista · 2 × objeto                                                   
+│       @nItem: texto                                                           
+│       prod: objeto                                                            
+│         cProd: texto                                                          
+│         xProd: texto                                                          
+│         qCom: texto                                                           
+│         vUnCom: texto                                                         
+│         vProd: texto                                                          
+│     total: objeto                                                             
+│       vNF: texto                                                              
+╰─

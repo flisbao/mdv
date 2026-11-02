@@ -14,6 +14,7 @@ agente | mdv --follow                  # acompanha um texto que ainda está cheg
 mdv csv vendas.csv --cols produto,total
 mdv json dados.json --path .itens[0]
 mdv config.yaml                        # YAML: cor por tipo e erro de sintaxe na linha certa
+mdv nota.xml                           # XML: lista de registros vira tabela, o resto uma árvore sem tags
 mdv relatorio.docx                     # Word vira Markdown (também -o relatorio.md)
 mdv vendas.xlsx                        # planilha vira tabelas (uma por aba), com os valores no lugar das fórmulas
 mdv relatorio.md -o relatorio.pdf      # exporta (também .docx e .odt)
@@ -25,7 +26,7 @@ mdv vendas.csv -o vendas.xlsx          # CSV/TSV para planilha (também .ods)
 - **Renderização completa:** títulos, listas (inclusive de tarefas), tabelas alinhadas que cabem na tela, citações, alertas GFM, notas de rodapé, `<details>` e código com realce de sintaxe. Acentos, emojis e CJK não desalinham.
 - **Leitor interativo:** rolagem, busca com `/`, `]`/`[` entre títulos, zoom de tabela (`t`) e de diagrama (`i`), `m` para ver a fonte crua, `r` para recarregar. Redesenha ao redimensionar.
 - **Imagens e Mermaid** no próprio terminal. [Imagens](#imagens) · [Mermaid](#mermaid)
-- **JSON, YAML, CSV e TSV** como tabela, esquema ou texto, com erro de sintaxe apontado na linha. [Detalhes](#json-yaml-csv-e-tsv)
+- **JSON, YAML, XML, CSV e TSV** como tabela, esquema ou texto, com erro de sintaxe apontado na linha. [Detalhes](#json-yaml-xml-csv-e-tsv)
 - **Exporta** Markdown para PDF/DOCX/ODT, e tabelas (do CSV, TSV ou do próprio Markdown) para XLSX/ODS. [Detalhes](#exportar)
 - **Feito para agentes e LLMs:** `--follow`, `--toc`, `--stats` e as ferramentas do `mdv-tools`. [Detalhes](#markdown-de-agentes-e-llms)
 - **Funciona em pipe:** com `-p`, ou quando a saída não é um terminal, imprime ANSI (serve em scripts, `less -R` e CI).
@@ -114,7 +115,7 @@ Cada release traz dois executáveis. Eles não dependem um do outro: instale só
 
 ### `mdv`: o leitor
 
-Abre Markdown, JSON, YAML, CSV, TSV, HTML, e-mails `.msg`, documentos `.docx` e planilhas `.xlsx` num leitor interativo (busca, títulos, links, zoom de tabela e de diagrama), imprime ANSI com `-p`, acompanha texto que ainda está chegando (`--follow`), mostra índice e estatísticas (`--toc`, `--stats`) e exporta com `-o`.
+Abre Markdown, JSON, YAML, XML, CSV, TSV, HTML, e-mails `.msg`, documentos `.docx` e planilhas `.xlsx` num leitor interativo (busca, títulos, links, zoom de tabela e de diagrama), imprime ANSI com `-p`, acompanha texto que ainda está chegando (`--follow`), mostra índice e estatísticas (`--toc`, `--stats`) e exporta com `-o`.
 
 ```bash
 mdv README.md                      # leitor interativo
@@ -158,6 +159,7 @@ USO:
     cat arquivo.md | mdv
     mdv json [opções] <arquivo|->
     mdv yaml [opções] <arquivo|->
+    mdv xml [opções] <arquivo|->
     mdv csv|tsv [opções] <arquivo|->
     mdv [opções] <arquivo.md> -o <saída.pdf|docx|odt|xlsx|ods>
     mdv [opções] <email.msg> [-o <saída.md|pdf|docx|odt>]
@@ -165,7 +167,7 @@ USO:
     mdv [opções] <planilha.xlsx> [-o <saída.md|pdf|docx|odt|xlsx|ods>]
     mdv csv|tsv [opções] <arquivo|-> -o <saída.xlsx|ods>
     mdv <pasta>            (seletor: .md, .msg, .docx, .xlsx, .yaml/.yml, .xml e .html/.htm da pasta por data, filtro ao digitar)
-    (o formato também é deduzido da extensão: .json, .jsonl, .yaml, .yml, .csv, .tsv, .html, .htm)
+    (o formato também é deduzido da extensão: .json, .jsonl, .yaml, .yml, .xml, .csv, .tsv, .html, .htm)
     HTML (.html, .htm): páginas com cores do CSS, sem JavaScript; é uma aproximação, não um navegador
 
 OPÇÕES:
@@ -188,7 +190,7 @@ OPÇÕES:
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
-OPÇÕES DE JSON E YAML (só valem para estes formatos):
+OPÇÕES DE JSON, YAML E XML (só valem para estes formatos):
         --path <p>     mostra só um trecho, ex.: .itens[0].nome
         --as <vista>   auto (padrão), text, table ou schema
 
@@ -210,7 +212,7 @@ TECLAS (modo interativo):
     Backspace / H      volta ao documento anterior (pilha de até 100)
     m                  alterna entre renderizado e fonte crua
     w                  código sem quebra: h/l (ou ←/→) rolam 8 colunas, 0/$ início/fim; w de novo volta a quebrar
-    v                  (JSON/YAML) alterna tabela / esquema / texto
+    v                  (JSON/YAML/XML) alterna tabela / esquema / texto
     t                  zoom da tabela mais visível na tela (h/l colunas, n/p troca de tabela, Esc volta)
     i                  zoom do diagrama Mermaid mais visível na tela: n/p troca de diagrama, +/- zoom, h/j/k/l movem, espaço/b página, g/G topo/fim, 0 ajusta, Esc volta
     y / Y              copia o bloco de código da tela / o Markdown da seção (OSC 52, até 64 KiB)
@@ -331,7 +333,7 @@ mdv vendas.xlsx -o vendas.pdf          # também .docx, .odt, .xlsx e .ods
 
 **Limitações conhecidas:** durações (formatos `[h]:mm:ss` e os ids de formato 45 a 47) mostram HH:MM:SS, que volta a zero a cada 24 horas; AM/PM não aparece (as horas saem em 24 horas); folhas de gráfico e de diálogo são ignoradas; uma aba sem nome vira um título vazio.
 
-## JSON, YAML, CSV e TSV
+## JSON, YAML, XML, CSV e TSV
 
 ```bash
 mdv json itens.json                    # lista de objetos (e JSONL) vira tabela
@@ -340,18 +342,22 @@ mdv json dados.json --path .itens[0]   # só um trecho
 mdv yaml deploy.yaml                   # YAML com cor por tipo (também: mdv deploy.yml)
 mdv yaml deploy.yaml --as schema       # esquema do YAML
 mdv yaml deploy.yaml --path .spec.replicas
+mdv xml nota.xml                       # XML: sem tags, atributos como @nome (também: mdv nota.xml)
+mdv xml nota.xml --as schema           # esquema do XML
 mdv csv vendas.csv --head 20 --cols produto,total
 mdv tsv planilha.tsv --no-header
 mdv csv dados.txt --delimiter ';'
 ```
 
-O formato também é deduzido da extensão (`.json`, `.jsonl`, `.yaml`, `.yml`, `.csv`, `.tsv`) e aceita `-` (stdin). JSON em lista de objetos vira tabela (objetos aninhados achatados como `endereco.cidade`); na TUI, `v` alterna tabela, esquema e texto (JSON e YAML). Tabelas mostram até 200 colunas e cortam células com mais de 500 caracteres (use `t` para o zoom ou `--cols`). A entrada é limitada a 5 MiB. `--path` e `--as` valem para JSON e YAML (com `--path`, o trecho do YAML aparece escrito como JSON); as opções de CSV/TSV (`--head`, `--cols`, `--no-header`, `--delimiter`) só para CSV/TSV.
+O formato também é deduzido da extensão (`.json`, `.jsonl`, `.yaml`, `.yml`, `.xml`, `.csv`, `.tsv`) e aceita `-` (stdin). JSON em lista de objetos vira tabela (objetos aninhados achatados como `endereco.cidade`); na TUI, `v` alterna tabela, esquema e texto (JSON, YAML e XML). Tabelas mostram até 200 colunas e cortam células com mais de 500 caracteres (use `t` para o zoom ou `--cols`). A entrada é limitada a 5 MiB. `--path` e `--as` valem para JSON, YAML e XML (com `--path`, o trecho do YAML aparece escrito como JSON); as opções de CSV/TSV (`--head`, `--cols`, `--no-header`, `--delimiter`) só para CSV/TSV.
 
 **YAML.** A vista padrão (`auto`) é o texto original, com comentários e ordem preservados e cor por tipo (chaves, textos, números, `true`/`false`/`null`); só uma lista de objetos (como vários documentos `---`) abre como tabela, igual ao JSON, e `v` ou `--as text` mostram o texto. As vistas de tabela e de esquema leem o documento como dados: âncoras (`&`), aliases (`*`) e merge keys (`<<`) são resolvidos, tags como `!Ref` e `!Sub` (CloudFormation) são aceitas, vários documentos separados por `---` viram uma lista (como um manifesto Kubernetes com Deployment e Service) e chave repetida vale a última. O YAML 1.1 (`yes`/`no` como booleano) não é aplicado: só o esquema core do YAML 1.2 (a cor da vista de texto vem do realce de código e ainda pinta `yes`/`no` como booleano, mas a tabela e o esquema os tratam como texto). `mdv samples/` lista `.yaml` e `.yml` no seletor, junto com `.md`, `.msg`, `.docx`, `.html` e `.htm`. YAML ainda não exporta (`-o`).
 
-**Erros de sintaxe (JSON e YAML).** Arquivo inválido não vira uma tela de erro vazia: o `mdv` mostra o texto original com a **linha do erro em fundo vermelho** e logo abaixo `✗ linha N, coluna M: mensagem` em português (por exemplo, `vírgula sobrando antes de fechar` no JSON ou `esperava uma chave nesta linha (verifique a indentação)` no YAML). Na TUI o documento abre já rolado até o erro, com algumas linhas de contexto acima; `m` mostra a fonte crua. Só erros de sintaxe são apontados, nunca estilo. Experimente `mdv samples/quebrado.yaml` e `mdv samples/quebrado.json`.
+**XML.** `mdv nota.xml` mostra o **conteúdo**, não as tags: o elemento raiz some (o nome dele aparece só no resumo da primeira linha), os prefixos e declarações de namespace (`xmlns`, `xmlns:x`) são descartados, atributos viram chaves `@nome` e o texto solto de um elemento que também tem filhos vai para `#text`. O texto das folhas perde os espaços das pontas e nada é convertido em número: `00123`, CEPs e chaves de acesso ficam exatamente como no arquivo. Elemento repetido vira lista. A vista padrão (`auto`) abre como **tabela** quando existe uma lista de registros (o `Array` de objetos mais raso, como os `<produto>` de um catálogo ou os `<det>` de uma NF-e), com a primeira linha `registros em infNFe › det · 2 itens`; senão mostra uma árvore recuada (`chave: valor`, `- ` para itens de lista), e `v`, `--as text|table|schema` e `--path` funcionam como no JSON. `m` mostra o XML original. Comentários e instruções de processamento são ignorados. Arquivos com `encoding="ISO-8859-1"` ou `windows-1252` na declaração (ou com BOM UTF-16) saem com os acentos certos. **`<!DOCTYPE>` é recusado** com erro na linha: nenhuma DTD é lida e entidades externas ou definidas pelo documento nunca são expandidas (só as cinco predefinidas e as referências numéricas), o que barra XXE e a bomba de entidades. XML ainda não exporta (`-o`). Experimente `mdv samples/nfe.xml`, `mdv samples/catalogo.xml` e `mdv samples/quebrado.xml`.
 
-Para não estourar a máquina com entrada hostil, a leitura do YAML tem tetos: 2 milhões de nós vindos do próprio texto (folga para os 5 MiB de entrada), 1 milhão de nós criados por cópia (cada alias e cada âncora guardada, o que barra a "bomba de aliases"), 128 níveis de aninhamento e 32 MiB somados de chaves e textos. Passou de um teto, as vistas de tabela e de esquema avisam `estrutura grande demais: use a vista de texto`, e a vista de texto continua mostrando o original, com uma linha de aviso no topo (com `--path`, o aviso vira erro, pois o trecho não pode ser lido).
+**Erros de sintaxe (JSON, YAML e XML).** Arquivo inválido não vira uma tela de erro vazia: o `mdv` mostra o texto original com a **linha do erro em fundo vermelho** e logo abaixo `✗ linha N, coluna M: mensagem` em português (por exemplo, `vírgula sobrando antes de fechar` no JSON ou `esperava uma chave nesta linha (verifique a indentação)` no YAML). Na TUI o documento abre já rolado até o erro, com algumas linhas de contexto acima; `m` mostra a fonte crua. Só erros de sintaxe são apontados, nunca estilo. Experimente `mdv samples/quebrado.yaml`, `mdv samples/quebrado.json` e `mdv samples/quebrado.xml`.
+
+Para não estourar a máquina com entrada hostil, a leitura do YAML tem tetos: 2 milhões de nós vindos do próprio texto (folga para os 5 MiB de entrada), 1 milhão de nós criados por cópia (cada alias e cada âncora guardada, o que barra a "bomba de aliases"), 128 níveis de aninhamento e 32 MiB somados de chaves e textos. Passou de um teto, as vistas de tabela e de esquema avisam `estrutura grande demais: use a vista de texto`, e a vista de texto continua mostrando o original, com uma linha de aviso no topo (com `--path`, o aviso vira erro, pois o trecho não pode ser lido). O XML tem tetos próprios: 1 milhão de nós, 128 níveis de aninhamento e 32 MiB somados de nomes e textos; passou de um deles, o `mdv` mostra o XML original com o aviso (`aninhamento fundo demais`, `estrutura grande demais`) em vez de estourar a pilha ou a memória.
 
 ## HTML
 
