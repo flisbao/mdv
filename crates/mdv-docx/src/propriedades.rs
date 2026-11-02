@@ -21,28 +21,24 @@ pub(crate) struct Propriedades {
 /// Só os filhos diretos contam; `rPr` (marca de parágrafo) e `pPrChange` (versão antiga) são pulados.
 pub(crate) fn ler_ppr(l: &mut Leitor) -> Result<Propriedades, String> {
     let mut props = Propriedades::default();
-    loop {
-        match l.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "pPr" => break,
-            Some(Evento::Abre(tag)) => match tag.nome.as_str() {
-                "pStyle" => {
-                    props.estilo = tag.val().map(str::to_string);
-                    l.pular()?;
-                }
-                "outlineLvl" => {
-                    props.texto_comum = tag.val() == Some("9");
-                    props.nivel = tag
-                        .val()
-                        .and_then(|v| v.parse::<u8>().ok())
-                        .filter(|&v| v <= 8)
-                        .map(|v| (v + 1).min(MAX_NIVEL_TITULO));
-                    l.pular()?;
-                }
-                "numPr" => props.num = ler_lista(l)?,
-                _ => l.pular()?,
-            },
-            Some(_) => {}
+    while let Some(evento) = l.dentro("pPr")? {
+        let Evento::Abre(tag) = evento else { continue };
+        match tag.nome.as_str() {
+            "pStyle" => {
+                props.estilo = tag.val().map(str::to_string);
+                l.pular()?;
+            }
+            "outlineLvl" => {
+                props.texto_comum = tag.val() == Some("9");
+                props.nivel = tag
+                    .val()
+                    .and_then(|v| v.parse::<u8>().ok())
+                    .filter(|&v| v <= 8)
+                    .map(|v| (v + 1).min(MAX_NIVEL_TITULO));
+                l.pular()?;
+            }
+            "numPr" => props.num = ler_lista(l)?,
+            _ => l.pular()?,
         }
     }
     Ok(props)
@@ -52,26 +48,20 @@ pub(crate) fn ler_ppr(l: &mut Leitor) -> Result<Propriedades, String> {
 fn ler_lista(l: &mut Leitor) -> Result<Option<(u32, u8)>, String> {
     let mut num_id = None;
     let mut ilvl = 0u8;
-    loop {
-        match l.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "numPr" => break,
-            Some(Evento::Abre(tag)) => {
-                match tag.nome.as_str() {
-                    "numId" => num_id = tag.val().and_then(|v| v.parse::<u32>().ok()),
-                    // Valor enorme satura em vez de zerar; `classificar` limita ao teto de listas.
-                    "ilvl" => {
-                        ilvl = tag
-                            .val()
-                            .and_then(|v| v.parse::<u32>().ok())
-                            .map_or(0, |v| u8::try_from(v).unwrap_or(u8::MAX));
-                    }
-                    _ => {}
-                }
-                l.pular()?;
+    while let Some(evento) = l.dentro("numPr")? {
+        let Evento::Abre(tag) = evento else { continue };
+        match tag.nome.as_str() {
+            "numId" => num_id = tag.val().and_then(|v| v.parse::<u32>().ok()),
+            // Valor enorme satura em vez de zerar; `classificar` limita ao teto de listas.
+            "ilvl" => {
+                ilvl = tag
+                    .val()
+                    .and_then(|v| v.parse::<u32>().ok())
+                    .map_or(0, |v| u8::try_from(v).unwrap_or(u8::MAX));
             }
-            Some(_) => {}
+            _ => {}
         }
+        l.pular()?;
     }
     Ok(num_id.map(|n| (n, ilvl)))
 }
