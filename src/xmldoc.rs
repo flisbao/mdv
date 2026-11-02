@@ -6,6 +6,8 @@
 //! para `#text`; filho repetido vira lista. Sem inferência de tipo: `00123` continua texto.
 //! `<!DOCTYPE>` é recusado (sem DTD nem entidades externas: só as cinco predefinidas e as numéricas).
 
+use std::collections::HashSet;
+
 use quick_xml::errors::{Error as QxError, IllFormedError, SyntaxError as QxSyntax};
 use quick_xml::escape::EscapeError;
 use quick_xml::events::attributes::AttrError;
@@ -160,14 +162,25 @@ impl Builder<'_> {
             children: Map::new(),
             texts: Vec::new(),
         };
-        for attr in e.attributes() {
+        // A checagem de repetidos do `quick-xml` é quadrática no número de atributos: desligada,
+        // com a nossa em O(n) (conjunto das chaves brutas).
+        let mut seen = HashSet::new();
+        let mut attrs = e.attributes();
+        attrs.with_checks(false);
+        for attr in attrs {
+            if mem::exceeded() {
+                return Err(limit(TOO_BIG));
+            }
             let attr = attr.map_err(|err| syntax(text, start, traduz_attr(&err)))?;
+            if !seen.insert(attr.key.into_inner()) {
+                return Err(syntax(text, start, traduz_attr(&AttrError::Duplicated(0, 0))));
+            }
             let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
             if key == "xmlns" || key.starts_with("xmlns:") {
                 continue;
             }
             let value = attr.unescape_value().map_err(|err| syntax(text, start, traduz(&err)))?;
-            let key = format!("@{}", sanitize(key.rsplit(':').next().unwrap_or(key)));
+            let key = format!("@{}", sanitize(local_str(key)));
             self.charge(1, key.len() + value.len())?;
             // Nomes locais iguais de namespaces diferentes: a última vence.
             frame.attrs.insert(key, Value::String(sanitize(&value).into_owned()));
@@ -242,8 +255,15 @@ fn add_child(children: &mut Map<String, Value>, name: String, value: Value) {
 
 /// Nome local (depois do último `:`).
 fn local(qname: &[u8]) -> String {
-    let name = String::from_utf8_lossy(qname);
-    name.rsplit(':').next().unwrap_or(&name).to_string()
+    local_str(&String::from_utf8_lossy(qname)).to_string()
+}
+
+/// Parte depois do último `:`; se ficar vazia (`a:`), vale o nome completo.
+fn local_str(name: &str) -> &str {
+    match name.rsplit(':').next() {
+        Some(l) if !l.is_empty() => l,
+        _ => name,
+    }
 }
 
 fn syntax(text: &str, byte: usize, message: String) -> XmlError {
@@ -438,7 +458,25 @@ mod tests {
     #[test]
     fn limite_de_bytes_de_texto() {
         let l = Limits { max_string_bytes: 4, ..Limits::default() };
-        assert!(matches!(parse("<a>abcdefgh</a>", &l), Err(XmlError::Limit(_))));
+        // O nome sozinho cabe (até 4 bytes); só o texto passa do teto.
+        assert!(parse("<abcd/>", &l).is_ok());
+        assert!(parse("<a>abc</a>", &l).is_ok());
+        assert!(matches!(parse("<a>abcdefgh</a>", &l), Err(XmlError::Limit(m)) if m == TOO_BIG));
+    }
+
+    #[test]
+    fn milhares_de_atributos_distintos_sao_rapidos() {
+        let attrs: String = (0..5000).map(|i| format!(" a{i}=\"\"")).collect();
+        let t = std::time::Instant::now();
+        let d = ok(&format!("<a{attrs}/>"));
+        assert_eq!(d.value.as_object().map(|m| m.len()), Some(5000));
+        assert!(t.elapsed().as_secs() < 5, "{:?}", t.elapsed());
+    }
+
+    #[test]
+    fn nome_local_vazio_usa_o_nome_completo() {
+        let d = ok(r#"<a x:="1"><b:/></a>"#);
+        assert_eq!(d.value, json!({"@x:": "1", "b:": null}));
     }
 
     #[test]
