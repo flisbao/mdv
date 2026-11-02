@@ -11,7 +11,7 @@ const MIB: usize = 1024 * 1024;
 pub(crate) fn escrever_aba(nome: &str, aba: &Aba, saida: &mut String) {
     titulo(nome, saida);
     if aba.linhas.is_empty() {
-        saida.push_str(&marca_aviso("planilha vazia"));
+        saida.push_str(&marcar_aviso("planilha vazia"));
         saida.push('\n');
     } else {
         escrever_tabela(&aba.linhas, saida);
@@ -35,19 +35,19 @@ pub(crate) fn escrever_aba(nome: &str, aba: &Aba, saida: &mut String) {
 /// Aba cujo arquivo não está no pacote: título e aviso, sem tabela (não é uma aba vazia).
 pub(crate) fn escrever_ausente(nome: &str, saida: &mut String) {
     titulo(nome, saida);
-    saida.push_str(&marca_aviso("aba não encontrada no arquivo"));
+    saida.push_str(&marcar_aviso("aba não encontrada no arquivo"));
     saida.push_str("\n\n");
 }
 
 /// Planilha sem nenhuma aba visível: a saída inteira é este aviso.
 pub(crate) fn escrever_sem_abas_visiveis(saida: &mut String) {
-    saida.push_str(&marca_aviso("a planilha não tem abas visíveis"));
+    saida.push_str(&marcar_aviso("a planilha não tem abas visíveis"));
     saida.push('\n');
 }
 
 /// Aviso de que só `mostradas` das `total` abas visíveis entraram (teto de abas).
 pub(crate) fn escrever_abas_cortadas(mostradas: usize, total: usize, saida: &mut String) {
-    saida.push_str(&marca_aviso(&format!("planilha cortada: {mostradas} de {total} abas mostradas")));
+    saida.push_str(&marcar_aviso(&format!("planilha cortada: {mostradas} de {total} abas mostradas")));
     saida.push('\n');
 }
 
@@ -55,7 +55,7 @@ pub(crate) fn escrever_abas_cortadas(mostradas: usize, total: usize, saida: &mut
 /// número inteiro deles (o de produção, 16 MiB); senão, em bytes.
 pub(crate) fn escrever_markdown_cortado(teto_bytes: usize, saida: &mut String) {
     let teto = if teto_bytes.is_multiple_of(MIB) { format!("{} MiB", teto_bytes / MIB) } else { format!("{teto_bytes} bytes") };
-    saida.push_str(&marca_aviso(&format!("planilha cortada: limite de {teto} de Markdown atingido")));
+    saida.push_str(&marcar_aviso(&format!("planilha cortada: limite de {teto} de Markdown atingido")));
     saida.push('\n');
 }
 
@@ -67,14 +67,14 @@ fn titulo(nome: &str, saida: &mut String) {
 }
 
 /// Avisos são em itálico entre parênteses: `_(texto)_`.
-fn marca_aviso(texto: &str) -> String {
+fn marcar_aviso(texto: &str) -> String {
     format!("_({texto})_")
 }
 
 /// Aviso em linha própria, separado do que vem antes por uma linha em branco (senão vira linha da tabela).
 fn aviso(saida: &mut String, texto: &str) {
     saida.push('\n');
-    saida.push_str(&marca_aviso(texto));
+    saida.push_str(&marcar_aviso(texto));
     saida.push('\n');
 }
 

@@ -53,7 +53,7 @@ pub(crate) fn fixo(v: f64, decimais: u8, milhar: bool) -> String {
         let k = k as usize;
         n.extend((0..k).map(|i| dig.get(i).copied().unwrap_or(b'0')));
         if dig.get(k).is_some_and(|b| *b >= b'5') {
-            incrementa(&mut n);
+            incrementar(&mut n);
         }
     }
     if n.is_empty() {
@@ -109,7 +109,7 @@ fn quinze_digitos(abs: f64) -> Option<(Vec<u8>, i64)> {
 }
 
 /// Soma 1 ao número escrito em dígitos, propagando o vai-um; se estourar, abre um dígito à frente.
-fn incrementa(n: &mut Vec<u8>) {
+fn incrementar(n: &mut Vec<u8>) {
     let mut vai_um = true;
     for b in n.iter_mut().rev() {
         if !vai_um {

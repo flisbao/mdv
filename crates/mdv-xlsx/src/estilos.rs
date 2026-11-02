@@ -46,7 +46,7 @@ impl Estilos {
             match evento {
                 Evento::Abre(tag) => match tag.nome.as_str() {
                     "numFmts" => em_numfmts = true,
-                    "numFmt" if em_numfmts => guarda_codigo(&mut codigos, &tag),
+                    "numFmt" if em_numfmts => guardar_codigo(&mut codigos, &tag),
                     "cellXfs" => em_xfs = true,
                     "xf" if em_xfs && indices.len() < MAX_XF => {
                         let id = id_de(&tag, "numFmtId");
@@ -81,7 +81,7 @@ impl Estilos {
     }
 }
 
-fn guarda_codigo(codigos: &mut HashMap<u32, String>, tag: &Tag) {
+fn guardar_codigo(codigos: &mut HashMap<u32, String>, tag: &Tag) {
     if codigos.len() >= MAX_NUMFMT {
         return;
     }

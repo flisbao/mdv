@@ -30,11 +30,11 @@ pub(crate) fn tokenizar(codigo: &str) -> Vec<Peca> {
             ';' => break,
             '"' => {
                 let texto: String = chars.by_ref().take_while(|x| *x != '"').collect();
-                empilha_literal(&mut pecas, &texto);
+                empilhar_literal(&mut pecas, &texto);
             }
             '\\' => {
                 if let Some(x) = chars.next() {
-                    empilha_literal(&mut pecas, &x.to_string());
+                    empilhar_literal(&mut pecas, &x.to_string());
                 }
             }
             '_' | '*' => {
@@ -62,7 +62,7 @@ pub(crate) fn tokenizar(codigo: &str) -> Vec<Peca> {
             'm' | 'M' => pecas.push(Peca::Data('m')),
             'h' | 'H' => pecas.push(Peca::Data('h')),
             's' | 'S' => pecas.push(Peca::Data('s')),
-            outro => empilha_literal(&mut pecas, &outro.to_string()),
+            outro => empilhar_literal(&mut pecas, &outro.to_string()),
         }
     }
     pecas
@@ -83,7 +83,7 @@ fn peca_de_colchete(conteudo: &str) -> Option<Peca> {
     }
 }
 
-fn empilha_literal(pecas: &mut Vec<Peca>, texto: &str) {
+fn empilhar_literal(pecas: &mut Vec<Peca>, texto: &str) {
     if texto.is_empty() {
         return;
     }
