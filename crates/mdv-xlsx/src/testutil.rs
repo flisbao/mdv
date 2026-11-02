@@ -94,6 +94,8 @@ pub struct XlsxBuilder {
     textos: Option<Vec<String>>,
     estilos: Option<String>,
     data_1904: bool,
+    /// Índices (base 0) das abas cuja parte `sheetN.xml` não vai para o ZIP.
+    sem_parte: Vec<usize>,
 }
 
 impl XlsxBuilder {
@@ -114,6 +116,12 @@ impl XlsxBuilder {
 
     fn com_aba(mut self, nome: &str, linhas_xml: &str, oculta: bool) -> Self {
         self.abas.push(AbaTeste { nome: nome.to_string(), linhas: linhas_xml.to_string(), oculta });
+        self
+    }
+
+    /// Faz a aba de índice `i` (base 0) continuar declarada na pasta, mas sem a parte `sheetN.xml` no ZIP.
+    pub fn sem_parte_da_aba(mut self, i: usize) -> Self {
+        self.sem_parte.push(i);
         self
     }
 
@@ -143,7 +151,7 @@ impl XlsxBuilder {
             ("xl/workbook.xml".into(), self.workbook()),
             ("xl/_rels/workbook.xml.rels".into(), self.rels_workbook()),
         ];
-        for (i, aba) in self.abas.iter().enumerate() {
+        for (i, aba) in self.abas.iter().enumerate().filter(|(i, _)| !self.sem_parte.contains(i)) {
             let xml = format!(r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="{NS_SHEET}"><sheetData>{}</sheetData></worksheet>"#, aba.linhas);
             arquivos.push((format!("xl/worksheets/sheet{}.xml", i + 1), xml));
         }

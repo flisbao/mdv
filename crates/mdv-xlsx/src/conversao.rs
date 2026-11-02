@@ -12,29 +12,17 @@ use crate::Budget;
 
 /// Converte com os tetos de produção (`Limites::default`).
 pub fn to_markdown(bytes: &[u8], budget: &dyn Budget) -> Result<String, String> {
-    converter(bytes, budget, &Limites::default())
+    to_markdown_com_limites(bytes, budget, &Limites::default())
 }
 
 /// Converte a planilha em Markdown: uma aba visível vira `# nome` + tabela. Abas ocultas não entram.
 /// Passar de algum teto (abas, células, bytes de célula ou `max_markdown_bytes`) corta a saída
 /// com um aviso em itálico; só o formato errado ou o pacote (ZIP/XML) quebrado dão erro.
-pub fn converter(bytes: &[u8], budget: &dyn Budget, limites: &Limites) -> Result<String, String> {
+pub(crate) fn to_markdown_com_limites(bytes: &[u8], budget: &dyn Budget, limites: &Limites) -> Result<String, String> {
     let mut pacote = Pacote::abrir(bytes)?;
     let pasta = pasta::abrir(&mut pacote, budget)?;
-    let textos = match pasta.textos.as_deref() {
-        Some(nome) => match pacote.parte(nome)? {
-            Some(xml) => textos::ler(&xml, limites, budget)?,
-            None => Vec::new(),
-        },
-        None => Vec::new(),
-    };
-    let estilos = match pasta.estilos.as_deref() {
-        Some(nome) => match pacote.parte(nome)? {
-            Some(xml) => Estilos::carregar(&xml, budget)?,
-            None => Estilos::vazio(),
-        },
-        None => Estilos::vazio(),
-    };
+    let textos = ler_parte_opcional(&mut pacote, pasta.textos.as_deref(), Vec::new, |xml| textos::ler(xml, limites, budget))?;
+    let estilos = ler_parte_opcional(&mut pacote, pasta.estilos.as_deref(), Estilos::vazio, |xml| Estilos::carregar(xml, budget))?;
     let visiveis: Vec<&AbaRef> = pasta.abas.iter().filter(|a| !a.oculta).collect();
     if visiveis.is_empty() {
         let mut saida = String::new();
@@ -67,4 +55,21 @@ pub fn converter(bytes: &[u8], budget: &dyn Budget, limites: &Limites) -> Result
         escrever_abas_cortadas(mostradas, visiveis.len(), &mut saida);
     }
     Ok(saida)
+}
+
+/// Lê uma parte que a pasta pode não declarar ou que pode faltar no pacote: nos dois casos
+/// o resultado é `vazio()`, não erro.
+fn ler_parte_opcional<T>(
+    pacote: &mut Pacote,
+    nome: Option<&str>,
+    vazio: impl FnOnce() -> T,
+    ler: impl FnOnce(&[u8]) -> Result<T, String>,
+) -> Result<T, String> {
+    match nome {
+        Some(nome) => match pacote.parte(nome)? {
+            Some(xml) => ler(&xml),
+            None => Ok(vazio()),
+        },
+        None => Ok(vazio()),
+    }
 }

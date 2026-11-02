@@ -1,6 +1,8 @@
 //! Conversão de planilhas `.xlsx` do Excel em Markdown.
 //! Biblioteca pura: recebe bytes e devolve texto; a leitura do arquivo fica com o chamador.
 //! O limite de trabalho vem por `Budget`; os tetos de tamanho e contagem são as constantes abaixo.
+//! A API pública é só `to_markdown`, `Budget`, `Unlimited`, as constantes de teto e `testutil`;
+//! `Limites` (tetos que cortam com aviso) e `to_markdown_com_limites` são internos à crate.
 
 mod celula;
 mod conversao;
@@ -25,8 +27,7 @@ mod textos;
 mod xml_leitor;
 mod zip_diretorio;
 mod zip_entrada;
-pub use conversao::{converter, to_markdown};
-pub use limites::Limites;
+pub use conversao::to_markdown;
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
 #[cfg(test)]

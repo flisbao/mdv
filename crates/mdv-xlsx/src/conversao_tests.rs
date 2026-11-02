@@ -1,5 +1,7 @@
 use crate::testutil::XlsxBuilder;
-use crate::{converter, to_markdown, Limites, Unlimited};
+use crate::conversao::to_markdown_com_limites;
+use crate::limites::Limites;
+use crate::{to_markdown, Unlimited};
 
 #[test]
 fn converte_planilha_com_formula_e_aba_oculta() {
@@ -25,7 +27,7 @@ fn so_abas_ocultas_ou_nenhuma_aba_da_aviso() {
 fn teto_de_abas_corta_com_aviso() {
     let l = Limites { max_abas: 1, ..Limites::default() };
     let bytes = XlsxBuilder::novo().aba("A", "").aba("B", "").construir();
-    assert!(converter(&bytes, &Unlimited, &l).unwrap().contains("_(planilha cortada: 1 de 2 abas mostradas)_"));
+    assert!(to_markdown_com_limites(&bytes, &Unlimited, &l).unwrap().contains("_(planilha cortada: 1 de 2 abas mostradas)_"));
 }
 
 #[test]
@@ -51,17 +53,8 @@ fn titulo_com_hash_e_espaco_final_nao_vira_fechamento_de_cabecalho() {
 
 #[test]
 fn aba_cuja_parte_nao_existe_no_pacote_tem_aviso_proprio() {
-    // Pasta que aponta `Sumida` para uma parte que não está no ZIP: não é aba vazia.
-    let ns_sheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
-    let ns_rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
-    let ns_pkg = "http://schemas.openxmlformats.org/package/2006/relationships";
-    let raiz = format!(r#"<Relationships xmlns="{ns_pkg}"><Relationship Id="rId1" Type="{ns_rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>"#);
-    let wb = format!(r#"<workbook xmlns="{ns_sheet}" xmlns:r="{ns_rel}"><sheets><sheet name="Sumida" sheetId="1" r:id="rId1"/></sheets></workbook>"#);
-    let rels = format!(r#"<Relationships xmlns="{ns_pkg}"><Relationship Id="rId1" Type="{ns_rel}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#);
-    let bytes = crate::testutil::zip(
-        &[("_rels/.rels", raiz.as_bytes()), ("xl/workbook.xml", wb.as_bytes()), ("xl/_rels/workbook.xml.rels", rels.as_bytes())],
-        true,
-    );
+    // Pasta que declara `Sumida`, mas sem a parte da aba no ZIP: não é aba vazia.
+    let bytes = XlsxBuilder::novo().aba("Sumida", "").sem_parte_da_aba(0).construir();
     let md = to_markdown(&bytes, &Unlimited).unwrap();
     assert_eq!(md, "# Sumida\n\n_(aba não encontrada no arquivo)_\n\n", "{md}");
 }
@@ -74,7 +67,7 @@ fn teto_de_markdown_corta_a_aba_que_passa_e_nao_le_as_seguintes() {
     let l = Limites { max_markdown_bytes: 30, ..Limites::default() };
     // A 3ª aba tem XML quebrado: se fosse lida, a conversão falharia.
     let bytes = XlsxBuilder::novo().aba("A", CELULA).aba("B", CELULA).aba("C", "<row><c r=\"A1\"><v>").construir();
-    let md = converter(&bytes, &Unlimited, &l).unwrap();
+    let md = to_markdown_com_limites(&bytes, &Unlimited, &l).unwrap();
     assert_eq!(md, "# A\n\n| x |\n| --- |\n\n_(planilha cortada: limite de 30 bytes de Markdown atingido)_\n");
 }
 
@@ -82,7 +75,7 @@ fn teto_de_markdown_corta_a_aba_que_passa_e_nao_le_as_seguintes() {
 fn teto_de_markdown_exatamente_no_limite_nao_corta() {
     let l = Limites { max_markdown_bytes: 40, ..Limites::default() };
     let bytes = XlsxBuilder::novo().aba("A", CELULA).aba("B", CELULA).construir();
-    let md = converter(&bytes, &Unlimited, &l).unwrap();
+    let md = to_markdown_com_limites(&bytes, &Unlimited, &l).unwrap();
     assert_eq!(md, "# A\n\n| x |\n| --- |\n\n# B\n\n| x |\n| --- |\n\n");
 }
 
@@ -90,7 +83,7 @@ fn teto_de_markdown_exatamente_no_limite_nao_corta() {
 fn primeira_aba_maior_que_o_teto_sai_so_com_o_aviso() {
     let l = Limites { max_markdown_bytes: 10, ..Limites::default() };
     let bytes = XlsxBuilder::novo().aba("A", CELULA).construir();
-    let md = converter(&bytes, &Unlimited, &l).unwrap();
+    let md = to_markdown_com_limites(&bytes, &Unlimited, &l).unwrap();
     assert_eq!(md, "_(planilha cortada: limite de 10 bytes de Markdown atingido)_\n");
 }
 
@@ -106,6 +99,6 @@ fn texto_compartilhado_longo_e_sanitizado_e_cortado_so_na_leitura_da_aba() {
         .textos(&["abcdef\u{1}", "a\u{1}b"])
         .aba("A", r#"<row r="1"><c r="A1" t="s"><v>0</v></c></row><row r="2"><c r="A2" t="s"><v>1</v></c></row>"#)
         .construir();
-    let md = converter(&bytes, &Unlimited, &l).unwrap();
+    let md = to_markdown_com_limites(&bytes, &Unlimited, &l).unwrap();
     assert_eq!(md, "# A\n\n| abc… |\n| --- |\n| a\u{FFFD}b |\n\n");
 }
