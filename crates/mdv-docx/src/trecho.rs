@@ -6,7 +6,7 @@ use crate::estilo_run::ler_rpr;
 use crate::modelo::Trecho;
 use crate::xml_leitor::Leitor;
 
-use crate::modelo::{chave_nota, Marcas};
+use crate::modelo::{chave_nota, Marcas, TipoNota};
 use crate::xml_leitor::Evento;
 use mdv_text::sanitize;
 use std::rc::Rc;
@@ -42,8 +42,8 @@ pub(crate) fn ler_run(
                 }
                 "footnoteReference" | "endnoteReference" => {
                     esvaziar(&mut pendente, link, saida);
-                    let fim = tag.nome == "endnoteReference";
-                    saida.push(Trecho::NotaRef(chave_nota(fim, tag.attr("id").unwrap_or(""))));
+                    let tipo = TipoNota::da_referencia(&tag.nome);
+                    saida.push(Trecho::NotaRef(chave_nota(tipo, tag.attr("id").unwrap_or(""))));
                 }
                 // Desenho é consumido inteiro só para ler o `descr`; o que há dentro (caixas de
                 // texto, formas) é descartado, pois a conversão não trata caixas de texto.

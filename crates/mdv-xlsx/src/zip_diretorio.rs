@@ -1,6 +1,6 @@
 //! Leitura do diretório central do ZIP: lista nomes, métodos e tamanhos sem extrair nada.
 
-use crate::le::{fatia, u16_em, u32_em};
+use crate::little_endian::{fatia, u16_em, u32_em};
 use crate::MAX_ENTRADAS;
 use std::collections::HashSet;
 

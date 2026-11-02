@@ -231,9 +231,8 @@ impl Contador {
         Contador { contagens: HashMap::new(), parado: false }
     }
 
-    /// Para ou retoma a contagem e devolve o estado anterior, para restaurá-lo depois.
-    /// Um item numerado dentro de célula ou de nota sai sem marcador; se contasse, deslocaria
-    /// a numeração da lista do corpo que usa o mesmo `numId`.
+    /// Para ou retoma a contagem e devolve o estado anterior. Só `Contexto::sem_contar` a usa, para
+    /// restaurar o estado ao sair do trecho em que a contagem fica parada.
     pub(crate) fn parar(&mut self, parar: bool) -> bool {
         std::mem::replace(&mut self.parado, parar)
     }

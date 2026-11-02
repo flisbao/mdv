@@ -1,6 +1,6 @@
 //! Extração de uma entrada do ZIP: confere o tamanho declarado e descomprime com teto.
 
-use crate::le::u16_em;
+use crate::little_endian::u16_em;
 use crate::zip_diretorio::Entrada;
 use crate::MAX_PARTE_BYTES;
 use flate2::read::DeflateDecoder;

@@ -50,10 +50,7 @@ fn ler_linha(l: &mut Leitor, ctx: &mut Contexto) -> Result<Vec<Celula>, String> 
 /// absurdo não gerar milhares de colunas na saída; `vMerge` sem `val` ou diferente de `restart`
 /// marca a continuação de uma mesclagem vertical. Outros elementos (`sdt`...) são transparentes.
 fn ler_celula(l: &mut Leitor, ctx: &mut Contexto) -> Result<Celula, String> {
-    let antes = ctx.contador.parar(true);
-    let celula = ler_conteudo(l, ctx);
-    ctx.contador.parar(antes);
-    celula
+    ctx.sem_contar(|ctx| ler_conteudo(l, ctx))
 }
 
 /// Lê o conteúdo da célula até o `Fecha("tc")`; `ler_celula` cuida de parar a numeração.

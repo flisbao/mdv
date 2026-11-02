@@ -13,7 +13,7 @@ pub(crate) struct Partes {
     pub estilos: Option<Vec<u8>>,
     pub numeracao: Option<Vec<u8>>,
     pub notas: Option<Vec<u8>>,
-    pub fim: Option<Vec<u8>>,
+    pub notas_fim: Option<Vec<u8>>,
 }
 
 impl Partes {
@@ -33,8 +33,8 @@ impl Partes {
         let estilos = ligada(pacote, &relacoes, &nome_principal, "styles")?;
         let numeracao = ligada(pacote, &relacoes, &nome_principal, "numbering")?;
         let notas = ligada(pacote, &relacoes, &nome_principal, "footnotes")?;
-        let fim = ligada(pacote, &relacoes, &nome_principal, "endnotes")?;
-        Ok(Partes { principal, relacoes, estilos, numeracao, notas, fim })
+        let notas_fim = ligada(pacote, &relacoes, &nome_principal, "endnotes")?;
+        Ok(Partes { principal, relacoes, estilos, numeracao, notas, notas_fim })
     }
 }
 
@@ -120,7 +120,7 @@ mod tests {
         assert!(partes.estilos.is_none());
         assert!(partes.numeracao.is_none());
         assert!(partes.notas.is_none());
-        assert!(partes.fim.is_none());
+        assert!(partes.notas_fim.is_none());
     }
 
     #[test]
@@ -137,6 +137,6 @@ mod tests {
         assert!(partes.estilos.is_some());
         assert!(partes.numeracao.is_some());
         assert!(partes.notas.is_some());
-        assert!(partes.fim.is_some());
+        assert!(partes.notas_fim.is_some());
     }
 }

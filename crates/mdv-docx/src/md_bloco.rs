@@ -9,6 +9,7 @@ use crate::md_inline::{inline, Modo};
 use crate::md_notas::Notas;
 use crate::md_tabela;
 use crate::modelo::{Bloco, Trecho};
+use crate::MAX_NIVEL_TITULO;
 
 /// Escreve o grupo como Markdown, sem quebra de linha no fim.
 ///
@@ -35,9 +36,9 @@ fn avulso(bloco: &Bloco, notas: &mut Notas, limite: &mut Limite) -> Result<Strin
     })
 }
 
-/// Título ATX; o nível é limitado a 1..=6.
+/// Título ATX; o nível é limitado a 1..=`MAX_NIVEL_TITULO`.
 fn titulo(nivel: u8, texto: &[Trecho], notas: &mut Notas) -> String {
-    let marcas = "#".repeat(nivel.clamp(1, 6) as usize);
+    let marcas = "#".repeat(nivel.clamp(1, MAX_NIVEL_TITULO) as usize);
     let mut corpo = inline(texto, notas, Modo::Titulo);
     // Um `#` final depois de espaço seria a sequência de fecho do título e sumiria.
     if corpo.ends_with('#') {

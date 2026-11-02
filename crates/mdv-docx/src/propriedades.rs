@@ -2,6 +2,7 @@
 //! Só lê o que o parágrafo declara; quem decide o que isso vira fica em `classificar`.
 
 use crate::xml_leitor::{Evento, Leitor};
+use crate::MAX_NIVEL_TITULO;
 
 /// O que o `pPr` de um parágrafo declara diretamente (sem consultar estilos).
 #[derive(Default, Debug, PartialEq)]
@@ -35,7 +36,7 @@ pub(crate) fn ler_ppr(l: &mut Leitor) -> Result<Propriedades, String> {
                         .val()
                         .and_then(|v| v.parse::<u8>().ok())
                         .filter(|&v| v <= 8)
-                        .map(|v| (v + 1).min(6));
+                        .map(|v| (v + 1).min(MAX_NIVEL_TITULO));
                     l.pular()?;
                 }
                 "numPr" => props.num = ler_lista(l)?,

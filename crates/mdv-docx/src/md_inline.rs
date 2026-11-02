@@ -157,12 +157,12 @@ fn escapar(texto: &str, modo: Modo) -> String {
 fn escrever(peca: &Peca, modo: Modo, links: &mut usize) -> String {
     match peca {
         Peca::Pronta(s) => s.clone(),
-        Peca::Grupo { texto, marcas, link } => grupo(texto, *marcas, link.as_deref(), modo, links),
+        Peca::Grupo { texto, marcas, link } => escrever_grupo(texto, *marcas, link.as_deref(), modo, links),
     }
 }
 
 /// Escreve um grupo: espaços das bordas por fora, e por dentro marcadores e, se couber, link.
-fn grupo(texto: &str, marcas: Marcas, link: Option<&str>, modo: Modo, links: &mut usize) -> String {
+fn escrever_grupo(texto: &str, marcas: Marcas, link: Option<&str>, modo: Modo, links: &mut usize) -> String {
     let miolo = texto.trim();
     if miolo.is_empty() {
         return escapar(texto, modo);

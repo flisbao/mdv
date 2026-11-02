@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use crate::propriedades::ler_ppr;
 use crate::xml_leitor::{Evento, Leitor};
-use crate::{Budget, MAX_ESTILOS};
+use crate::{Budget, MAX_ESTILOS, MAX_NIVEL_TITULO};
 
 /// Limite de saltos em `basedOn`; cadeia mais longa, ou ciclo, para aqui.
 const MAX_SALTOS: usize = 16;
@@ -148,7 +148,7 @@ fn efeito_nome(nome: &str) -> EstiloDoc {
             .strip_prefix("heading ")
             .and_then(|n| n.parse::<u8>().ok())
             .filter(|n| (1..=9).contains(n))
-            .map(|n| n.min(6)),
+            .map(|n| n.min(MAX_NIVEL_TITULO)),
     };
     EstiloDoc {
         titulo,

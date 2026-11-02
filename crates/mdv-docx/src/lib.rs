@@ -13,9 +13,9 @@ mod conversao_tests;
 mod escape;
 mod estilo_run;
 mod estilos;
-mod le;
-mod limite;
 mod leitura;
+mod limite;
+mod little_endian;
 mod markdown;
 mod md_bloco;
 #[cfg(test)]
@@ -71,6 +71,8 @@ pub const MAX_COLUNAS: usize = 200;
 pub(crate) const MAX_ESTILOS: usize = 20_000;
 /// Número máximo de `abstractNum` (e, à parte, de `num`) lidos de `numbering.xml`.
 pub(crate) const MAX_LISTAS: usize = 20_000;
+/// Maior nível de título (`h6`); níveis acima disso são limitados a ele.
+pub(crate) const MAX_NIVEL_TITULO: u8 = 6;
 /// Nível máximo de recuo de uma lista.
 pub const MAX_NIVEL_LISTA: u8 = 8;
 /// Tamanho máximo do Markdown produzido.

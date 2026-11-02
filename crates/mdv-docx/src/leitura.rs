@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::contexto::Contexto;
 use crate::corpo::ler_corpo;
 use crate::estilos::Estilos;
-use crate::modelo::Documento;
+use crate::modelo::{Documento, TipoNota};
 use crate::notas::ler_notas;
 use crate::numeracao::Numeracao;
 use crate::partes::Partes;
@@ -27,10 +27,10 @@ pub(crate) fn ler_documento(partes: Partes, budget: &dyn Budget) -> Result<Docum
     let blocos = ler_corpo(&partes.principal, &mut ctx)?;
     let mut notas = HashMap::new();
     if let Some(xml) = &partes.notas {
-        ler_notas(xml, false, &mut ctx, &mut notas)?;
+        ler_notas(xml, TipoNota::Rodape, &mut ctx, &mut notas)?;
     }
-    if let Some(xml) = &partes.fim {
-        ler_notas(xml, true, &mut ctx, &mut notas)?;
+    if let Some(xml) = &partes.notas_fim {
+        ler_notas(xml, TipoNota::Fim, &mut ctx, &mut notas)?;
     }
     Ok(Documento { blocos, notas })
 }

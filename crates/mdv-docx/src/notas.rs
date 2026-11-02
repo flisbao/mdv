@@ -3,25 +3,25 @@
 use std::collections::HashMap;
 
 use crate::contexto::Contexto;
-use crate::modelo::{chave_nota, Marcas, Trecho};
+use crate::modelo::{chave_nota, Marcas, TipoNota, Trecho};
 use crate::paragrafo::ler_paragrafo;
 use crate::xml_leitor::{Evento, Leitor};
 
 /// Teto de notas guardadas, para um arquivo hostil não encher o mapa sem fim.
 const MAX_NOTAS: usize = 100_000;
 
-/// Lê as notas da parte e as guarda em `saida` sob `chave_nota(fim, id)`.
+/// Lê as notas da parte e as guarda em `saida` sob `chave_nota(tipo, id)`.
 /// O Word põe em cada parte notas especiais (`separator`, `continuationSeparator`,
 /// `continuationNotice`) que só desenham a linha de separação: são puladas, só `normal` ou sem tipo
 /// valem. A marca de referência dentro da própria nota é descartada, pois uma nota que cita outra
 /// poderia formar um ciclo na saída.
 pub(crate) fn ler_notas(
     xml: &[u8],
-    fim: bool,
+    tipo: TipoNota,
     ctx: &mut Contexto,
     saida: &mut HashMap<String, Vec<Trecho>>,
 ) -> Result<(), String> {
-    let elemento = if fim { "endnote" } else { "footnote" };
+    let elemento = tipo.elemento();
     let mut l = Leitor::novo(xml, ctx.budget);
     while let Some(evento) = l.proximo()? {
         let Evento::Abre(tag) = evento else { continue };
@@ -37,20 +37,17 @@ pub(crate) fn ler_notas(
         if saida.len() >= MAX_NOTAS {
             return Err("notas demais".into());
         }
-        saida.insert(chave_nota(fim, id), trechos);
+        saida.insert(chave_nota(tipo, id), trechos);
     }
     Ok(())
 }
 
 /// Lê os parágrafos de uma nota (depois do `Abre`) e os junta em uma só lista de trechos.
 fn ler_nota(l: &mut Leitor, ctx: &mut Contexto, elemento: &str) -> Result<Vec<Trecho>, String> {
-    let antes = ctx.contador.parar(true);
-    let trechos = ler_paragrafos(l, ctx, elemento);
-    ctx.contador.parar(antes);
-    trechos
+    ctx.sem_contar(|ctx| ler_paragrafos(l, ctx, elemento))
 }
 
-/// Lê os parágrafos da nota até o `Fecha(elemento)`; `ler_nota` cuida de parar a numeração.
+/// Lê os parágrafos da nota até o `Fecha(elemento)`; `ler_nota` para a contagem de listas.
 fn ler_paragrafos(l: &mut Leitor, ctx: &mut Contexto, elemento: &str) -> Result<Vec<Trecho>, String> {
     let mut trechos: Vec<Trecho> = Vec::new();
     let mut primeiro = true;
@@ -80,12 +77,12 @@ mod tests {
     use crate::contexto::com_contexto;
     use crate::testutil::NS;
 
-    fn ler(corpo: &str, fim: bool) -> HashMap<String, Vec<Trecho>> {
-        let raiz = if fim { "endnotes" } else { "footnotes" };
+    fn ler(corpo: &str, tipo: TipoNota) -> HashMap<String, Vec<Trecho>> {
+        let raiz = if tipo == TipoNota::Fim { "endnotes" } else { "footnotes" };
         let xml = format!("<w:{raiz} {NS}>{corpo}</w:{raiz}>");
         com_contexto("", "", |ctx| {
             let mut saida = HashMap::new();
-            ler_notas(xml.as_bytes(), fim, ctx, &mut saida).expect("notas");
+            ler_notas(xml.as_bytes(), tipo, ctx, &mut saida).expect("notas");
             saida
         })
     }
@@ -101,7 +98,7 @@ mod tests {
             <w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>
             <w:footnote w:id="1"><w:p><w:r><w:t>um</w:t></w:r></w:p></w:footnote>
             <w:footnote w:type="normal" w:id="2"><w:p><w:r><w:t>dois</w:t></w:r></w:p></w:footnote>"#,
-            false,
+            TipoNota::Rodape,
         );
         let mut chaves: Vec<_> = mapa.keys().cloned().collect();
         chaves.sort();
@@ -114,7 +111,7 @@ mod tests {
     fn varios_paragrafos_viram_um_texto_com_espaco() {
         let mapa = ler(
             r#"<w:footnote w:id="1"><w:p><w:r><w:t>a</w:t></w:r></w:p><w:p><w:r><w:t>b</w:t></w:r></w:p></w:footnote>"#,
-            false,
+            TipoNota::Rodape,
         );
         assert_eq!(mapa["n1"], vec![texto("a"), texto(" "), texto("b")]);
     }
@@ -124,7 +121,7 @@ mod tests {
         let mapa = ler(
             r#"<w:endnote w:id="1"><w:p><w:r><w:t>fim</w:t></w:r></w:p></w:endnote>
             <w:footnote w:id="9"><w:p><w:r><w:t>ignorada</w:t></w:r></w:p></w:footnote>"#,
-            true,
+            TipoNota::Fim,
         );
         assert_eq!(mapa.len(), 1);
         assert_eq!(mapa["e1"], vec![texto("fim")]);
@@ -134,7 +131,7 @@ mod tests {
     fn a_marca_de_referencia_dentro_da_nota_e_descartada() {
         let mapa = ler(
             r#"<w:footnote w:id="1"><w:p><w:r><w:footnoteRef/></w:r><w:r><w:t> texto</w:t></w:r><w:r><w:footnoteReference w:id="2"/></w:r></w:p></w:footnote>"#,
-            false,
+            TipoNota::Rodape,
         );
         assert_eq!(mapa["n1"], vec![texto(" texto")]);
     }
