@@ -3,7 +3,7 @@
 
 use crate::contexto::Contexto;
 use crate::modelo::Marcas;
-use crate::xml_leitor::{Evento, Leitor};
+use crate::xml_leitor::{Evento, Leitor, Tag};
 
 /// Fontes monoespaçadas que contam como código; o casamento ignora maiúsculas.
 /// Lista curta de propósito: as fontes do Word que não estão aqui continuam como texto comum.
@@ -28,30 +28,18 @@ pub(crate) fn ler_rpr(l: &mut Leitor, ctx: &Contexto) -> Result<Marcas, String> 
     let mut tachado = None;
     let mut codigo = None;
     let mut estilo_id = None;
-    loop {
-        match l.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "rPr" => break,
-            Some(Evento::Abre(tag)) => {
-                match tag.nome.as_str() {
-                    // `rStyle` só guarda o id: o estilo é consultado no fim, junto das diretas.
-                    "rStyle" => estilo_id = tag.val().map(str::to_string),
-                    "b" => negrito = Some(tag.ligado()),
-                    "i" => italico = Some(tag.ligado()),
-                    "strike" | "dstrike" => tachado = Some(tag.ligado()),
-                    // Com `ascii` ou `hAnsi` presente, a fonte decide o código, mesmo se não for mono.
-                    "rFonts" => {
-                        let nomes = [tag.attr("ascii"), tag.attr("hAnsi")];
-                        if nomes.iter().any(Option::is_some) {
-                            codigo = Some(nomes.into_iter().flatten().any(fonte_mono));
-                        }
-                    }
-                    _ => {}
-                }
-                l.pular()?;
-            }
-            Some(_) => {}
+    while let Some(evento) = l.dentro("rPr")? {
+        let Evento::Abre(tag) = evento else { continue };
+        match tag.nome.as_str() {
+            // `rStyle` só guarda o id: o estilo é consultado no fim, junto das diretas.
+            "rStyle" => estilo_id = tag.val().map(str::to_string),
+            "b" => negrito = Some(tag.ligado()),
+            "i" => italico = Some(tag.ligado()),
+            "strike" | "dstrike" => tachado = Some(tag.ligado()),
+            "rFonts" => codigo = fonte_declarada_e_mono(&tag).or(codigo),
+            _ => {}
         }
+        l.pular()?;
     }
     let estilo = estilo_id.map(|id| ctx.estilos.de(&id)).unwrap_or_default();
     Ok(Marcas {
@@ -60,6 +48,13 @@ pub(crate) fn ler_rpr(l: &mut Leitor, ctx: &Contexto) -> Result<Marcas, String> 
         tachado: tachado.unwrap_or(false),
         codigo: codigo.unwrap_or(estilo.codigo),
     })
+}
+
+/// Com `ascii` ou `hAnsi` presente, a fonte decide o código, mesmo se não for mono; sem nenhum
+/// dos dois, `rFonts` não opina (`None`).
+fn fonte_declarada_e_mono(tag: &Tag) -> Option<bool> {
+    let nomes = [tag.attr("ascii"), tag.attr("hAnsi")];
+    nomes.iter().any(Option::is_some).then(|| nomes.into_iter().flatten().any(fonte_mono))
 }
 
 /// Diz se o nome de fonte está na lista de monoespaçadas, sem diferenciar maiúsculas.
