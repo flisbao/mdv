@@ -3,7 +3,7 @@
 //! Ordem de decisão do personalizado: texto (`@`), científico e fração (viram Geral), data,
 //! percentual e número. Sem marcador nenhum, sobra Geral.
 
-use crate::formato::Formato;
+use crate::formato::{CamposData, Formato};
 use crate::formato_pecas::{tokenizar, Campo, Peca};
 use crate::numero::MAX_DECIMAIS;
 
@@ -30,10 +30,10 @@ fn embutido(id: u32) -> Formato {
         7 | 8 | 39 | 40 | 43 | 44 => numero(2, true),
         9 => Formato::Percentual { decimais: 0 },
         10 => Formato::Percentual { decimais: 2 },
-        14..=17 | 27..=36 | 50..=58 => Formato::Data { ano: true, mes: true, dia: true, hora: false, segundos: false },
-        18 | 20 => Formato::Data { ano: false, mes: false, dia: false, hora: true, segundos: false },
-        19 | 21 | 45..=47 => Formato::Data { ano: false, mes: false, dia: false, hora: true, segundos: true },
-        22 => Formato::Data { ano: true, mes: true, dia: true, hora: true, segundos: false },
+        14..=17 | 27..=36 | 50..=58 => Formato::Data(CamposData::DATA),
+        18 | 20 => Formato::Data(CamposData::HORA),
+        19 | 21 | 45..=47 => Formato::Data(CamposData::HORA_SEG),
+        22 => Formato::Data(CamposData::DATA_HORA),
         49 => Formato::Texto,
         _ => Formato::Geral,
     }
@@ -74,7 +74,8 @@ fn data_de(pecas: &[Peca]) -> Option<Formato> {
     let dia = tem(Campo::Dia);
     let mes = tem(Campo::Mes) && (!hora || ano || dia);
     let data = ano || mes || dia;
-    (data || hora).then_some(Formato::Data { ano, mes, dia, hora, segundos: tem(Campo::Segundo) })
+    let campos = CamposData { ano, mes, dia, hora, segundos: tem(Campo::Segundo) };
+    (data || hora).then_some(Formato::Data(campos))
 }
 
 /// Marcadores depois do ponto decimal, no máximo 15.

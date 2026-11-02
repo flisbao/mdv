@@ -4,13 +4,33 @@
 use crate::data::{arredondar_segundo, serie_para_data, serie_para_hora};
 use crate::numero::{fixo, geral};
 
+/// Quais campos de data e hora um formato mostra. `segundos` só vale junto de `hora`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct CamposData {
+    pub ano: bool,
+    pub mes: bool,
+    pub dia: bool,
+    pub hora: bool,
+    pub segundos: bool,
+}
+
+impl CamposData {
+    pub const DATA: Self = Self { ano: true, mes: true, dia: true, hora: false, segundos: false };
+    pub const HORA: Self = Self { ano: false, mes: false, dia: false, hora: true, segundos: false };
+    pub const HORA_SEG: Self = Self { ano: false, mes: false, dia: false, hora: true, segundos: true };
+    pub const DATA_HORA: Self = Self { ano: true, mes: true, dia: true, hora: true, segundos: false };
+
+    fn tem_data(self) -> bool {
+        self.ano || self.mes || self.dia
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Formato {
     Geral,
     Numero { decimais: u8, milhar: bool, prefixo: String, sufixo: String },
     Percentual { decimais: u8 },
-    /// Campos de data presentes (`ano`, `mes`, `dia`) e de hora (`hora`, com `segundos`).
-    Data { ano: bool, mes: bool, dia: bool, hora: bool, segundos: bool },
+    Data(CamposData),
     Texto,
 }
 
@@ -30,18 +50,17 @@ impl Formato {
                 }
             }
             Formato::Percentual { decimais } => format!("{}%", fixo(valor * 100.0, *decimais, false)),
-            Formato::Data { ano, mes, dia, hora, segundos } => {
-                formatar_data(valor, data_1904, (*ano, *mes, *dia), *hora, *segundos)
-            }
+            Formato::Data(campos) => formatar_data(valor, data_1904, *campos),
         }
     }
 }
 
 /// Só os campos de data que o formato tem, em ordem, separados por `-` (`AAAA-MM-DD`, `AAAA-MM`,
 /// `MM-DD`, `AAAA`, `DD`); com hora, `<data> HH:MM[:SS]`. Data fora da faixa do Excel cai em *Geral*.
-fn formatar_data(serie: f64, data_1904: bool, (ano, mes, dia): (bool, bool, bool), hora: bool, segundos: bool) -> String {
+fn formatar_data(serie: f64, data_1904: bool, campos: CamposData) -> String {
+    let CamposData { ano, mes, dia, hora, segundos } = campos;
     let base = if hora { arredondar_segundo(serie) } else { serie };
-    let data = ano || mes || dia;
+    let data = campos.tem_data();
     let mut texto = String::new();
     if data {
         let Some((a, m, d)) = serie_para_data(base, data_1904) else {
