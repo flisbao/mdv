@@ -1,7 +1,7 @@
 use crate::estilos::Estilos;
 use crate::limites::Limites;
-use crate::celula::Celula;
-use crate::planilha::{guardar, ler, Aba, Corte};
+use crate::modelo::{Aba, Celula, Corte};
+use crate::planilha::{guardar, ler};
 use crate::Unlimited;
 
 /// Monta a aba a partir das linhas de `sheetData`, com os tetos dados.
@@ -69,7 +69,7 @@ fn coordenada_gigante_nao_aloca_nem_vira_coluna() {
     let l = Limites { max_colunas: 4, ..Limites::default() };
     let a = aba_com(&l, r#"<row r="1048576"><c r="A1048576"><v>1</v></c><c r="XFD1048576"><v>9</v></c></row>"#);
     assert_eq!(textos(&a), [["1"]]);
-    assert!(a.colunas_omitidas);
+    assert_eq!(a.colunas_omitidas, Some(4));
 }
 #[test]
 fn teto_de_linhas_corta_e_conta_o_total() {
@@ -85,7 +85,7 @@ fn teto_de_celulas_da_grade_corta_linhas() {
     let a = aba_com(&Limites { max_celulas: 6, ..Limites::default() }, &linhas);
     assert_eq!(a.linhas.len(), 2);
     assert_eq!(a.linhas_total, 5);
-    assert_eq!(a.corte, Some(Corte::Celulas));
+    assert_eq!(a.corte, Some(Corte::Celulas { teto: 6 }));
     let inteira = aba_com(&Limites { max_celulas: 15, ..Limites::default() }, &linhas);
     assert_eq!(inteira.linhas.len(), 5);
     assert!(inteira.corte.is_none());
@@ -99,7 +99,7 @@ fn teto_de_celulas_guardadas_para_de_guardar_linhas_em_ordem() {
         .collect();
     let a = aba_com(&Limites { max_celulas: 6, ..Limites::default() }, &linhas);
     assert_eq!(textos(&a), [["1", "2", "3"], ["2", "2", "3"]]);
-    assert_eq!((a.linhas_total, a.corte), (5, Some(Corte::Celulas)));
+    assert_eq!((a.linhas_total, a.corte), (5, Some(Corte::Celulas { teto: 6 })));
 }
 
 #[test]

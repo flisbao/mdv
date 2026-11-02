@@ -13,12 +13,14 @@ mod formato_literais;
 mod le;
 mod limites;
 mod markdown;
+mod modelo;
 mod numero;
 mod pacote;
 mod pasta;
 mod planilha;
 mod referencia;
 mod relacoes;
+mod texto_limitado;
 mod textos;
 mod xml_leitor;
 mod zip_diretorio;
@@ -33,6 +35,8 @@ mod data_tests;
 mod formato_tests;
 #[cfg(test)]
 mod numero_tests;
+#[cfg(test)]
+mod texto_limitado_tests;
 #[cfg(test)]
 mod textos_tests;
 #[cfg(test)]

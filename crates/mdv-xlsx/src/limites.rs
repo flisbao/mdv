@@ -1,6 +1,9 @@
 //! Tetos de leitura de uma planilha. `Default` traz os valores de produção; os testes usam tetos pequenos.
 
-/// Tetos que limitam a memória e o tamanho da saída; passou do teto, a conversão corta e avisa.
+use crate::MAX_MARKDOWN_BYTES;
+
+/// Tetos que limitam a memória e o tamanho da saída; passou de qualquer um, a conversão corta e avisa
+/// (só ZIP, XML ou pacote quebrado dão erro).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Limites {
     /// Quantas abas visíveis entram na saída.
@@ -17,6 +20,9 @@ pub struct Limites {
     pub max_bytes_celulas: usize,
     /// Teto de células (linhas × colunas) da grade de uma aba; passou, cortam-se linhas.
     pub max_celulas: usize,
+    /// Bytes de Markdown da saída inteira. A aba que faria passar do teto não entra, e a saída
+    /// termina com um aviso (nunca erro).
+    pub max_markdown_bytes: usize,
 }
 
 impl Default for Limites {
@@ -29,6 +35,7 @@ impl Default for Limites {
             max_textos: 500_000,
             max_bytes_celulas: 8 * 1024 * 1024,
             max_celulas: 500_000,
+            max_markdown_bytes: MAX_MARKDOWN_BYTES,
         }
     }
 }

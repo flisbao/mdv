@@ -3,12 +3,12 @@
 
 use crate::estilos::Estilos;
 use crate::limites::Limites;
-use crate::markdown::{escrever_ausente, escrever_aba};
+use crate::markdown::{escrever_aba, escrever_abas_cortadas, escrever_ausente, escrever_markdown_cortado, escrever_sem_abas_visiveis};
 use crate::pacote::Pacote;
 use crate::pasta::{self, AbaRef};
 use crate::planilha;
 use crate::textos;
-use crate::{Budget, MAX_MARKDOWN_BYTES};
+use crate::Budget;
 
 /// Converte com os tetos de produção (`Limites::default`).
 pub fn to_markdown(bytes: &[u8], budget: &dyn Budget) -> Result<String, String> {
@@ -16,8 +16,8 @@ pub fn to_markdown(bytes: &[u8], budget: &dyn Budget) -> Result<String, String> 
 }
 
 /// Converte a planilha em Markdown: uma aba visível vira `# nome` + tabela. Abas ocultas não entram.
-/// Passar de algum teto corta a saída com um aviso em itálico; só o formato errado ou o pacote
-/// quebrado dão erro.
+/// Passar de algum teto (abas, células, bytes de célula ou `max_markdown_bytes`) corta a saída
+/// com um aviso em itálico; só o formato errado ou o pacote (ZIP/XML) quebrado dão erro.
 pub fn converter(bytes: &[u8], budget: &dyn Budget, limites: &Limites) -> Result<String, String> {
     let mut pacote = Pacote::abrir(bytes)?;
     let pasta = pasta::abrir(&mut pacote, budget)?;
@@ -37,26 +37,33 @@ pub fn converter(bytes: &[u8], budget: &dyn Budget, limites: &Limites) -> Result
     };
     let visiveis: Vec<&AbaRef> = pasta.abas.iter().filter(|a| !a.oculta).collect();
     if visiveis.is_empty() {
-        return Ok("_(a planilha não tem abas visíveis)_\n".to_string());
+        let mut saida = String::new();
+        escrever_sem_abas_visiveis(&mut saida);
+        return Ok(saida);
     }
     let mostradas = visiveis.len().min(limites.max_abas);
     let mut saida = String::new();
     let mut orcamento = limites.max_bytes_celulas;
     for aba_ref in &visiveis[..mostradas] {
         budget.check()?;
+        // Cada aba é escrita à parte: só entra na saída se couber no teto de Markdown.
+        let mut bloco = String::new();
         match pacote.parte(&aba_ref.parte)? {
             Some(xml) => {
                 let aba = planilha::ler(&xml, &textos, &estilos, pasta.data_1904, limites, &mut orcamento, budget)?;
-                escrever_aba(&aba_ref.nome, &aba, limites, &mut saida);
+                escrever_aba(&aba_ref.nome, &aba, &mut bloco);
             }
-            None => escrever_ausente(&aba_ref.nome, &mut saida),
+            None => escrever_ausente(&aba_ref.nome, &mut bloco),
         }
-        if saida.len() > MAX_MARKDOWN_BYTES {
-            return Err("planilha convertida grande demais".to_string());
+        if saida.len() + bloco.len() > limites.max_markdown_bytes {
+            // Se nem a primeira aba cabe, a saída é só o aviso (sem o título dela).
+            escrever_markdown_cortado(limites.max_markdown_bytes, &mut saida);
+            return Ok(saida);
         }
+        saida.push_str(&bloco);
     }
     if visiveis.len() > mostradas {
-        saida.push_str(&format!("_(planilha cortada: {mostradas} de {} abas mostradas)_\n", visiveis.len()));
+        escrever_abas_cortadas(mostradas, visiveis.len(), &mut saida);
     }
     Ok(saida)
 }

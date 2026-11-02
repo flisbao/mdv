@@ -1,33 +1,18 @@
 //! Leitura de uma aba em fluxo: `Vec<Celula>` por linha não vazia, colunas recortadas e tetos.
 //! Nunca se indexa pelo número de linha ou de coluna declarado no arquivo: linhas são compactadas,
 //! colunas além de `max_colunas` são descartadas e cada texto gasta do orçamento de bytes.
+//! Este é o único ponto que sanitiza e corta o texto vindo do arquivo (`texto_seguro`): os
+//! valores crus de `ler_valor` e os textos compartilhados de `textos::ler` chegam aqui só limitados.
 //! Fórmula: só o `<v>` (valor em cache) é lido; `<f>` é pulado sem ser interpretado.
 
-use crate::celula::{acumular_limitado, converter, texto_seguro, Celula};
+use crate::celula::converter;
 use crate::estilos::Estilos;
 use crate::limites::Limites;
+use crate::modelo::{Aba, Celula, Corte};
 use crate::referencia::coluna_de;
+use crate::texto_limitado::{texto_seguro, TextoLimitado};
 use crate::xml_leitor::{Evento, Leitor};
 use crate::Budget;
-
-/// Qual teto cortou a leitura da aba (o primeiro que disparou).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Corte {
-    /// Orçamento de bytes de texto de células (compartilhado entre as abas).
-    Bytes,
-    /// `max_celulas`: células guardadas ou tamanho da grade.
-    Celulas,
-}
-
-/// Uma aba lida: linhas já com a mesma largura, mais o que foi cortado.
-#[derive(Debug, Default)]
-pub(crate) struct Aba {
-    pub linhas: Vec<Vec<Celula>>,
-    /// Linhas não vazias lidas, inclusive as que passaram de `max_linhas` (não guardadas).
-    pub linhas_total: usize,
-    pub colunas_omitidas: bool,
-    pub corte: Option<Corte>,
-}
 
 /// Lê uma aba (`sheetData` de um `worksheet`). `orcamento` são os bytes de célula ainda
 /// disponíveis, compartilhados entre as abas; esgotado, a leitura para com `corte = Some(Corte::Bytes)`.
@@ -57,7 +42,7 @@ pub(crate) fn ler(
                 proxima = coluna.saturating_add(1);
                 let (bruto, cortado) = ler_valor(&mut leitor, limites.max_celula_chars)?;
                 if coluna >= limites.max_colunas {
-                    montagem.aba.colunas_omitidas = true;
+                    montagem.aba.colunas_omitidas = Some(limites.max_colunas);
                     continue;
                 }
                 let estilo = tag.attr("s").and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -94,8 +79,7 @@ pub(crate) fn ler(
 /// `t` dentro dele formam o valor bruto, limitado a `max_chars`. Célula sem `v` devolve vazio.
 /// O segundo item diz se o valor foi cortado.
 fn ler_valor(leitor: &mut Leitor, max_chars: usize) -> Result<(String, bool), String> {
-    let mut valor = String::new();
-    let mut cortado = false;
+    let mut valor = TextoLimitado::novo(max_chars);
     let (mut em_v, mut em_t) = (false, false);
     loop {
         // Defensivo: o `Leitor` já recusa o fim truncado (erro "XML inválido") com `<c>` aberta,
@@ -111,11 +95,14 @@ fn ler_valor(leitor: &mut Leitor, max_chars: usize) -> Result<(String, bool), St
             },
             Evento::Texto(trecho) => {
                 if em_v || em_t {
-                    cortado |= acumular_limitado(&mut valor, &trecho, max_chars);
+                    valor.acrescentar(&trecho);
                 }
             }
             Evento::Fecha(nome) => match nome.as_str() {
-                "c" => return Ok((valor, cortado)),
+                "c" => {
+                    let cortado = valor.cortado();
+                    return Ok((valor.into_bruto(), cortado));
+                }
                 "v" => em_v = false,
                 "t" => em_t = false,
                 _ => {}
@@ -193,7 +180,7 @@ impl Montagem {
         }
         if self.celulas_retidas + celulas.len() > self.max_celulas {
             self.cheia = true;
-            self.aba.corte.get_or_insert(Corte::Celulas);
+            self.aba.corte.get_or_insert(Corte::Celulas { teto: self.max_celulas });
             return;
         }
         self.celulas_retidas += celulas.len();
@@ -215,7 +202,7 @@ impl Montagem {
         let couberam = (max_celulas / largura).max(1);
         if retidas.len() > couberam {
             retidas.truncate(couberam);
-            aba.corte.get_or_insert(Corte::Celulas);
+            aba.corte.get_or_insert(Corte::Celulas { teto: max_celulas });
         }
         aba.linhas = retidas
             .into_iter()

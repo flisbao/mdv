@@ -1,5 +1,6 @@
-use crate::celula::{acumular_limitado, converter, texto_seguro, Celula};
+use crate::celula::converter;
 use crate::formato::Formato;
+use crate::modelo::Celula;
 
 fn texto(c: &Celula) -> &str {
     &c.texto
@@ -56,27 +57,4 @@ fn valor_vazio_vira_celula_vazia() {
 fn numero_invalido_mostra_o_texto() {
     let c = converter(None, "abc", &Formato::Geral, &[], false);
     assert_eq!((texto(&c), c.numerica), ("abc", false));
-}
-#[test]
-fn acumular_limitado_nunca_passa_de_max_mais_um() {
-    let mut destino = String::new();
-    let cortou = acumular_limitado(&mut destino, &"x".repeat(10_000), 3);
-    assert!(cortou);
-    assert_eq!(destino.chars().count(), 4);
-    assert_eq!(texto_seguro(&destino, 3), "xxx…");
-}
-#[test]
-fn acumular_limitado_sem_corte_nao_avisa() {
-    let mut destino = String::new();
-    assert!(!acumular_limitado(&mut destino, "ab", 3));
-    assert_eq!(destino, "ab");
-}
-#[test]
-fn acumular_limitado_junta_como_sanitize_no_texto_inteiro() {
-    // \r\n partido entre dois trechos vira \n, como no texto inteiro
-    let mut destino = String::new();
-    for trecho in ["ab\r", "\ncd", "\u{1}x\r"] {
-        acumular_limitado(&mut destino, trecho, 100);
-    }
-    assert_eq!(texto_seguro(&destino, 100), mdv_text::sanitize("ab\r\ncd\u{1}x\r").as_ref());
 }
