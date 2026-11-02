@@ -7,7 +7,7 @@ use crate::modelo::Celula;
 
 /// Texto de uma célula conforme o tipo `t` (`None` = número). `valor` vazio é sempre célula vazia
 /// (fórmula sem valor em cache). `s` com índice fora da lista também fica vazio.
-pub(crate) fn converter(tipo: Option<&str>, valor: &str, formato: &Formato, textos: &[String], data_1904: bool) -> Celula {
+pub(crate) fn interpretar(tipo: Option<&str>, valor: &str, formato: &Formato, textos: &[String], data_1904: bool) -> Celula {
     if valor.is_empty() {
         return Celula::default();
     }

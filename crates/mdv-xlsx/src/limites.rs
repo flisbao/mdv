@@ -39,3 +39,30 @@ impl Default for Limites {
         }
     }
 }
+
+/// Bytes de texto de célula ainda disponíveis para a planilha inteira (compartilhado entre as abas).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Orcamento(usize);
+
+impl Orcamento {
+    pub(crate) fn novo(bytes: usize) -> Self {
+        Orcamento(bytes)
+    }
+
+    /// Desconta `custo` se couber; senão devolve `false` e não muda nada.
+    pub(crate) fn gastar(&mut self, custo: usize) -> bool {
+        match self.0.checked_sub(custo) {
+            Some(resta) => {
+                self.0 = resta;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Bytes que ainda podem ser gastos.
+    #[cfg(test)]
+    pub(crate) fn restante(&self) -> usize {
+        self.0
+    }
+}

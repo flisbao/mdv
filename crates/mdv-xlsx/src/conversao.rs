@@ -2,11 +2,11 @@
 //! (textos, estilos, abas) e aplica os tetos de abas, de bytes de célula e do Markdown final.
 
 use crate::estilos::Estilos;
-use crate::limites::Limites;
+use crate::limites::{Limites, Orcamento};
 use crate::markdown::{escrever_aba, escrever_abas_cortadas, escrever_ausente, escrever_markdown_cortado, escrever_sem_abas_visiveis};
 use crate::pacote::Pacote;
 use crate::pasta::{self, AbaRef};
-use crate::planilha;
+use crate::planilha::{self, ContextoPasta};
 use crate::textos;
 use crate::Budget;
 
@@ -43,14 +43,15 @@ pub fn converter(bytes: &[u8], budget: &dyn Budget, limites: &Limites) -> Result
     }
     let mostradas = visiveis.len().min(limites.max_abas);
     let mut saida = String::new();
-    let mut orcamento = limites.max_bytes_celulas;
+    let mut orcamento = Orcamento::novo(limites.max_bytes_celulas);
+    let ctx = ContextoPasta { textos: &textos, estilos: &estilos, data_1904: pasta.data_1904, limites };
     for aba_ref in &visiveis[..mostradas] {
         budget.check()?;
         // Cada aba é escrita à parte: só entra na saída se couber no teto de Markdown.
         let mut bloco = String::new();
         match pacote.parte(&aba_ref.parte)? {
             Some(xml) => {
-                let aba = planilha::ler(&xml, &textos, &estilos, pasta.data_1904, limites, &mut orcamento, budget)?;
+                let aba = planilha::ler(&xml, &ctx, &mut orcamento, budget)?;
                 escrever_aba(&aba_ref.nome, &aba, &mut bloco);
             }
             None => escrever_ausente(&aba_ref.nome, &mut bloco),
