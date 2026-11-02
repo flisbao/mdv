@@ -29,7 +29,8 @@ mdv vendas.csv -o vendas.xlsx          # CSV/TSV para planilha (também .ods)
 - **Exporta** Markdown para PDF/DOCX/ODT, e tabelas (do CSV, TSV ou do próprio Markdown) para XLSX/ODS. [Detalhes](#exportar)
 - **Feito para agentes e LLMs:** `--follow`, `--toc`, `--stats` e as ferramentas do `mdv-tools`. [Detalhes](#markdown-de-agentes-e-llms)
 - **Funciona em pipe:** com `-p`, ou quando a saída não é um terminal, imprime ANSI (serve em scripts, `less -R` e CI).
-- **Seguro com entrada não confiável:** sequências de escape do documento são neutralizadas, o tamanho de entrada e a memória têm teto, e a rede só entra com `--remote`.
+- **Documentos do Office só para leitura:** `.docx` e `.xlsx` viram texto; macros, objetos OLE, fórmulas, conexões e links externos nunca são executados nem seguidos. [`.docx`](#documentos-docx-do-word) · [`.xlsx`](#planilhas-xlsx)
+- **Seguro com entrada não confiável:** sequências de escape do conteúdo do documento são neutralizadas, o tamanho de entrada e a memória têm teto, e a rede só entra com `--remote`.
 - **Portátil:** binários em Rust, sem dependências de runtime, para Linux (glibc e musl), macOS e Windows.
 
 ## Instalação
@@ -113,7 +114,7 @@ Cada release traz dois executáveis. Eles não dependem um do outro: instale só
 
 ### `mdv`: o leitor
 
-Abre Markdown, JSON, YAML, CSV, TSV e planilhas `.xlsx` num leitor interativo (busca, títulos, links, zoom de tabela e de diagrama), imprime ANSI com `-p`, acompanha texto que ainda está chegando (`--follow`), mostra índice e estatísticas (`--toc`, `--stats`) e exporta com `-o`.
+Abre Markdown, JSON, YAML, CSV, TSV, HTML, e-mails `.msg`, documentos `.docx` e planilhas `.xlsx` num leitor interativo (busca, títulos, links, zoom de tabela e de diagrama), imprime ANSI com `-p`, acompanha texto que ainda está chegando (`--follow`), mostra índice e estatísticas (`--toc`, `--stats`) e exporta com `-o`.
 
 ```bash
 mdv README.md                      # leitor interativo
@@ -280,7 +281,7 @@ A entrada é limitada a 32 MiB. Um `.msg` inválido sai com erro e código 1. O 
 | Título (`Heading N`, `Title` ou nível de estrutura de tópicos) | `#` a `######` |
 | Negrito, itálico, tachado, fonte monoespaçada | `**`, `*`, `~~`, `` ` `` |
 | Link externo `http`, `https` ou `mailto` | `[texto](url)`; outros esquemas (`javascript:`, `file:`, `data:`) ficam só com o texto |
-| Lista com marcadores ou numerada, com recuo | `- ` ou `N. `, quatro espaços por nível |
+| Lista com marcadores ou numerada, com recuo | `- ` ou `N. `, recuo pela largura do marcador do item pai (no mínimo quatro espaços) |
 | Tabela (inclusive células mescladas) | tabela GFM; a primeira linha é o cabeçalho |
 | Estilo de citação, estilo de código | `>` e bloco com cerca |
 | Nota de rodapé ou de fim | `[^N]` e a definição no fim |
@@ -296,9 +297,9 @@ mdv relatorio.docx -o relatorio.pdf        # também .docx, .odt, .xlsx e .ods
 
 `samples/relatorio.docx` foi gerada pelo próprio exportador do `mdv`; por isso os marcadores de lista dela são texto literal (`• `), e não uma lista do Word.
 
-**Limites:** arquivo de até 32 MiB, ZIP com no máximo 5000 entradas, XML com até 100 níveis de profundidade e Markdown de até 16 MiB. Um arquivo inválido sai com erro e código 1.
+**Limites:** arquivo de até 32 MiB, ZIP com no máximo 5000 entradas, 16 MiB por parte do ZIP e 40 MiB descomprimidos no total, XML com até 100 níveis de profundidade, 20 000 relações, 100 000 notas, tabelas de até 200 colunas (o excedente sai com `*(tabela cortada em 200 colunas)*`) e Markdown de até 16 MiB. Tabelas, listas e notas param ao passar do teto de saída. Uma URL de link acima de 4 KiB deixa o texto sem link, e os destinos de link de um parágrafo somam no máximo 64 KiB. Ao contrário do `.xlsx`, passar de 16 MiB de Markdown é erro (`documento convertido grande demais`), não corte. Um arquivo inválido sai com erro e código 1.
 
-**Fora do escopo:** `.doc` antigo e `.docx` criptografado (só um erro claro), imagens (só o texto alternativo), cabeçalho e rodapé de página, comentários, caixas de texto, campos como o sumário, equações, `.docm`/`.dotx`, leitura pelo stdin, numeração automática de títulos e a continuação de numeração entre listas diferentes que compartilham o mesmo modelo.
+**Fora do escopo:** `.doc` antigo, `.docm`, `.dotx` e `.dotm` (não são lidos; a mensagem de erro dessas extensões ainda é genérica) e `.docx` criptografado (só um erro claro), imagens (só o texto alternativo), cabeçalho e rodapé de página, comentários, caixas de texto, campos como o sumário, equações, leitura pelo stdin, numeração automática de títulos e a continuação de numeração entre listas diferentes que compartilham o mesmo modelo.
 
 ## Planilhas `.xlsx`
 
@@ -320,11 +321,13 @@ mdv vendas.xlsx -o vendas.pdf          # também .docx, .odt, .xlsx e .ods
 
 `samples/vendas.xlsx` foi gerada pelo próprio exportador do `mdv`, a partir de `samples/vendas.csv`; não tem fórmulas.
 
-**Limites:** arquivo de até 32 MiB, ZIP com no máximo 5000 entradas, XML com até 100 níveis de profundidade, Markdown de até 16 MiB, até 64 abas visíveis, 10 000 linhas e 200 colunas por aba, 2000 caracteres por célula, 8 MiB de texto de célula no total e 500 000 textos compartilhados (além disso, as células que apontam para eles saem vazias, sem aviso). Os cortes saem com aviso em itálico, sem erro (ZIP, XML ou pacote quebrado continuam sendo erro): `mostrando as primeiras N de M linhas` quando passa de 10 000 linhas; `planilha cortada: limite de 500000 células por aba atingido` quando passa de 500 000 células por aba (com 200 colunas, só 2 500 linhas aparecem); abas além de 64 saem com aviso; Markdown acima de 16 MiB é cortado na última aba que cabe, com `planilha cortada: limite de 16 MiB de Markdown atingido` (se nem a primeira aba cabe, sai só o aviso). Uma pasta com mais de 1000 abas é recusada com erro, não cortada. Um arquivo inválido sai com erro e código 1.
+**Limites:** arquivo de até 32 MiB, ZIP com no máximo 5000 entradas, 16 MiB por parte do ZIP e 40 MiB descomprimidos no total (acima disso, erro `planilha descomprimida grande demais`), XML com até 100 níveis de profundidade, Markdown de até 16 MiB, até 64 abas visíveis, 10 000 linhas e 200 colunas por aba, 2000 caracteres por célula, 8 MiB de texto de célula no total e 500 000 textos compartilhados (além disso, as células que apontam para eles saem vazias, sem aviso). Os cortes saem com aviso em itálico, sem erro (ZIP, XML ou pacote quebrado continuam sendo erro): `mostrando as primeiras N de M linhas` quando passa de 10 000 linhas; `planilha cortada: limite de 500000 células por aba atingido` quando passa de 500 000 células por aba (com 200 colunas, só 2 500 linhas aparecem); abas além de 64 saem com aviso; Markdown acima de 16 MiB é cortado na última aba que cabe, com `planilha cortada: limite de 16 MiB de Markdown atingido` (se nem a primeira aba cabe, sai só o aviso). Uma pasta com mais de 1000 abas é recusada com erro, não cortada. Um arquivo inválido sai com erro e código 1.
 
 **Formatos recusados:** `.xls` (formato antigo), `.xlsb`, `.xlsm` e `.ods` saem com uma mensagem pedindo para salvar como `.xlsx`.
 
 **Fora do escopo:** `.xls` antigo, `.xlsb`, `.xlsm`, `.ods`, planilha protegida por senha (só um erro claro), gráficos, imagens, comentários, formatação condicional, tabelas dinâmicas, nomes definidos e leitura pelo stdin.
+
+**Macros e conteúdo ativo (`.docx` e `.xlsx`):** o `mdv` só lê os XMLs de texto do pacote, em memória; nada é extraído para o disco e nenhum subprocesso ou conexão é aberto. `vbaProject.bin` (macros VBA), objetos OLE, `externalLink`, conexões de dados, DDE e relações externas nunca são lidos; uma fórmula nunca é avaliada (só o valor guardado aparece). Arquivos com macros (`.xlsm`, `.docm`) são recusados pela extensão. Só links `http`, `https` e `mailto` viram link, e o texto de todo documento passa por um filtro que troca caracteres de controle do terminal por U+FFFD.
 
 **Limitações conhecidas:** durações (formatos `[h]:mm:ss` e os ids de formato 45 a 47) mostram HH:MM:SS, que volta a zero a cada 24 horas; AM/PM não aparece (as horas saem em 24 horas); folhas de gráfico e de diálogo são ignoradas; uma aba sem nome vira um título vazio.
 
@@ -413,6 +416,22 @@ O `mdv` usa no máximo **512 MiB**. Se um arquivo precisar de mais, ele para e m
 ## Changelog
 
 <!-- mdv:changelog:start -->
+### v0.9.0
+
+_2026-11-02_
+
+- feat(xlsx): abre .xlsx na TUI e no --plain, uma tabela por aba visível, só com os valores (fórmula mostra o resultado)
+- feat(xlsx): números, percentuais, moeda, datas e horas conforme o formato da célula; `-o x.md` e seletor de pasta aceitam .xlsx
+- feat(xlsx): crate mdv-xlsx (ZIP e XML à mão), amostra samples/vendas.xlsx e goldens
+- fix(xlsx): .xls, .xlsb, .xlsm e .ods têm erro claro em português; cortes com aviso em vez de erro (linhas, células, Markdown de 16 MiB)
+- fix(xlsx): tetos de memória (abas, textos compartilhados, células, estilos) e nomes do pacote sanitizados nas mensagens de erro
+- refactor(xlsx): ContextoPasta, Orcamento, TextoLimitado, CamposData, load::conversor e load::read_binary_capped após code review (Clean Code e SOLID)
+- feat(docx): abre .docx na TUI e no --plain: títulos, listas, tabelas com células mescladas, citações, código, links e notas
+- feat(docx): `-o x.md` grava o Markdown convertido; seletor de pasta lista .docx
+- feat(docx): crate mdv-docx (ZIP e XML à mão), amostra samples/relatorio.docx e goldens
+- fix(docx): escapes de Markdown (entidades, início de linha, # final de título), recuo de lista pelo item pai e numeração de lista
+- fix(docx): tetos de saída de lista, citação, tabela e notas, e conferência de tamanho antes de copiar entrada armazenada
+
 ### v0.8.0
 
 _2026-10-30_
