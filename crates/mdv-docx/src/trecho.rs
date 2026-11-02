@@ -23,40 +23,36 @@ pub(crate) fn ler_run(
     let inicio = saida.len();
     let mut marcas = Marcas::default();
     let mut pendente = String::new();
-    loop {
-        match l.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "r" => break,
-            Some(Evento::Abre(tag)) => match tag.nome.as_str() {
-                "rPr" => marcas = ler_rpr(l, ctx)?,
-                // Só `w:t` é texto do documento; `delText` e `instrText` (abaixo) são pulados.
-                "t" => ler_t(l, &mut pendente)?,
-                "tab" => pendente.push(' '),
-                "noBreakHyphen" => pendente.push('-'),
-                "br" => {
-                    // Quebra de página ou de coluna não é quebra de linha no Markdown.
-                    if matches!(tag.attr("type"), None | Some("textWrapping")) {
-                        esvaziar(&mut pendente, link, saida);
-                        saida.push(Trecho::Quebra);
-                    }
-                }
-                "footnoteReference" | "endnoteReference" => {
+    while let Some(evento) = l.dentro("r")? {
+        let Evento::Abre(tag) = evento else { continue };
+        match tag.nome.as_str() {
+            "rPr" => marcas = ler_rpr(l, ctx)?,
+            // Só `w:t` é texto do documento; `delText` e `instrText` (abaixo) são pulados.
+            "t" => ler_t(l, &mut pendente)?,
+            "tab" => pendente.push(' '),
+            "noBreakHyphen" => pendente.push('-'),
+            "br" => {
+                // Quebra de página ou de coluna não é quebra de linha no Markdown.
+                if matches!(tag.attr("type"), None | Some("textWrapping")) {
                     esvaziar(&mut pendente, link, saida);
-                    let tipo = TipoNota::da_referencia(&tag.nome);
-                    saida.push(Trecho::NotaRef(chave_nota(tipo, tag.attr("id").unwrap_or(""))));
+                    saida.push(Trecho::Quebra);
                 }
-                // Desenho é consumido inteiro só para ler o `descr`; o que há dentro (caixas de
-                // texto, formas) é descartado, pois a conversão não trata caixas de texto.
-                "drawing" | "pict" => {
-                    esvaziar(&mut pendente, link, saida);
-                    let descr = ler_desenho(l)?;
-                    saida.push(Trecho::Imagem(sanitize(&descr).into_owned()));
-                }
-                // O Word repete o desenho em `Fallback` para versões antigas; só vale o `Choice`.
-                "object" | "delText" | "instrText" | "Fallback" => l.pular()?,
-                _ => {}
-            },
-            Some(_) => {}
+            }
+            "footnoteReference" | "endnoteReference" => {
+                esvaziar(&mut pendente, link, saida);
+                let tipo = TipoNota::da_referencia(&tag.nome);
+                saida.push(Trecho::NotaRef(chave_nota(tipo, tag.attr("id").unwrap_or(""))));
+            }
+            // Desenho é consumido inteiro só para ler o `descr`; o que há dentro (caixas de
+            // texto, formas) é descartado, pois a conversão não trata caixas de texto.
+            "drawing" | "pict" => {
+                esvaziar(&mut pendente, link, saida);
+                let descr = ler_desenho(l)?;
+                saida.push(Trecho::Imagem(sanitize(&descr).into_owned()));
+            }
+            // O Word repete o desenho em `Fallback` para versões antigas; só vale o `Choice`.
+            "object" | "delText" | "instrText" | "Fallback" => l.pular()?,
+            _ => {}
         }
     }
     esvaziar(&mut pendente, link, saida);
@@ -70,14 +66,12 @@ pub(crate) fn ler_run(
 
 /// Lê o texto de um `w:t` (já aberto) até o `Fecha` dele, juntando em `pendente`.
 fn ler_t(l: &mut Leitor, pendente: &mut String) -> Result<(), String> {
-    loop {
-        match l.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "t" => return Ok(()),
-            Some(Evento::Texto(t)) => pendente.push_str(&t),
-            Some(_) => {}
+    while let Some(evento) = l.dentro("t")? {
+        if let Evento::Texto(t) = evento {
+            pendente.push_str(&t);
         }
     }
+    Ok(())
 }
 
 /// Consome um `drawing`/`pict` (já aberto) e devolve o `descr` do primeiro `docPr`, ou vazio.
