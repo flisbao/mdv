@@ -2,8 +2,9 @@
 
 use crate::MAX_MARKDOWN_BYTES;
 
-/// Tetos que limitam a memória e o tamanho da saída; passou de qualquer um, a conversão corta e avisa
-/// (só ZIP, XML ou pacote quebrado dão erro).
+/// Tetos que limitam a memória e o tamanho da saída; passou de qualquer um, a conversão corta e,
+/// em geral, avisa na saída (`max_celula_chars` deixa só `…` no texto e `max_textos` deixa a célula
+/// vazia, sem aviso). Os tetos que recusam (erro) ou descartam em silêncio são constantes em `lib.rs`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Limites {
     /// Quantas abas visíveis entram na saída.

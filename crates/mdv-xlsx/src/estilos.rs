@@ -8,14 +8,7 @@ use std::collections::HashMap;
 use crate::formato::Formato;
 use crate::formato_codigo::classificar;
 use crate::xml_leitor::{Evento, Leitor, Tag};
-use crate::Budget;
-
-/// Quantos códigos `numFmt` são guardados; o resto fica Geral.
-const MAX_NUMFMT: usize = 5000;
-/// Limite de caracteres de um código de formato personalizado no próprio Excel; mais longo fica Geral.
-const MAX_CODIGO_CHARS: usize = 255;
-/// Quantos `xf` de `cellXfs` são aceitos; índice maior que isso fica Geral.
-const MAX_XF: usize = 100_000;
+use crate::{Budget, MAX_CODIGO_CHARS, MAX_NUMFMT, MAX_XF};
 
 static GERAL: Formato = Formato::Geral;
 

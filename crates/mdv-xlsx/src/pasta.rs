@@ -6,7 +6,7 @@ use mdv_text::sanitize;
 use crate::pacote::Pacote;
 use crate::relacoes::{rels_de, resolver, Relacoes};
 use crate::xml_leitor::{Evento, Leitor};
-use crate::Budget;
+use crate::{Budget, MAX_ABAS_LEITURA};
 
 /// Uma aba como aparece no `workbook.xml`: nome já saneado, parte do pacote e se está oculta.
 #[derive(Debug, Clone, PartialEq)]
@@ -24,9 +24,6 @@ pub(crate) struct Pasta {
     pub textos: Option<String>,
     pub estilos: Option<String>,
 }
-
-/// Teto de abas aceitas na leitura; um `workbook.xml` hostil não enche a memória com `<sheet>` sem fim.
-const MAX_ABAS_LEITURA: usize = 1000;
 
 /// Lê o workbook do pacote: abas na ordem do arquivo, sistema de datas e as partes ligadas.
 /// Aba cuja relação não existe ou não é de planilha (ex.: gráfico) é descartada.
