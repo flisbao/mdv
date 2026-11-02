@@ -5,25 +5,17 @@
 use std::io;
 use std::path::Path;
 
-use mdv_xlsx::{Budget, MAX_XLSX_BYTES};
+use mdv_xlsx::MAX_XLSX_BYTES;
 
-use crate::{load, mem};
-
-/// O limite de memória do processo (`mem`) visto pelo `mdv-xlsx`.
-struct XlsxBudget;
-
-impl Budget for XlsxBudget {
-    fn check(&self) -> Result<(), String> {
-        mem::check().map_err(|e| e.to_string())
-    }
-}
+use crate::load;
+use crate::mem::MemBudget;
 
 /// Lê um `.xlsx` regular, recusando o que passa de `MAX_XLSX_BYTES` antes de ler, e devolve o
 /// Markdown da planilha (uma tabela por aba visível). Erro de conversão vira `io::Error` com a
 /// mensagem em português.
 pub(crate) fn read_xlsx_file(path: &Path) -> io::Result<String> {
     let bytes = load::read_binary_capped(path, MAX_XLSX_BYTES, ".xlsx")?;
-    mdv_xlsx::to_markdown(&bytes, &XlsxBudget).map_err(io::Error::other)
+    mdv_xlsx::to_markdown(&bytes, &MemBudget).map_err(io::Error::other)
 }
 
 /// Planilha que o `mdv` não lê (`.xls` antigo, `.xlsb`, `.xlsm`, `.ods`): a mensagem em português

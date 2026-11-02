@@ -77,20 +77,8 @@ pub(crate) const MAX_CODIGO_CHARS: usize = 255;
 /// Quantos `xf` de `cellXfs` são aceitos; índice maior que isso fica Geral.
 pub(crate) const MAX_XF: usize = 100_000;
 
-/// Orçamento de trabalho consultado pelos laços de conversão.
-pub trait Budget {
-    /// Confirma que ainda há orçamento; chamado por evento XML, por entrada do ZIP e por aba.
-    fn check(&self) -> Result<(), String>;
-}
-
-/// Orçamento sem limite, para testes e uso interno controlado.
-pub struct Unlimited;
-
-impl Budget for Unlimited {
-    fn check(&self) -> Result<(), String> {
-        Ok(())
-    }
-}
+/// Orçamento de trabalho (`mdv_text::Budget`): chamado por evento XML, por entrada do ZIP e por aba.
+pub use mdv_text::{Budget, Unlimited};
 
 #[cfg(test)]
 mod tests {

@@ -5,27 +5,16 @@
 use std::io;
 use std::path::Path;
 
-use mdv_msg::{Budget, MAX_MSG_BYTES};
+use mdv_msg::MAX_MSG_BYTES;
 
-use crate::{load, mem};
-
-/// O limite de memória do processo (`mem`) visto pelo `mdv-msg`.
-struct MsgBudget;
-
-impl Budget for MsgBudget {
-    fn check(&self) -> Result<(), String> {
-        mem::check().map_err(|e| e.to_string())
-    }
-    fn check_html(&self, len: usize) -> Result<(), String> {
-        mem::check_html(len).map_err(|e| e.to_string())
-    }
-}
+use crate::load;
+use crate::mem::MemBudget;
 
 /// Lê um `.msg` regular, recusando o que passa de `MAX_MSG_BYTES` antes de ler, e devolve o
 /// Markdown do e-mail. Erro de conversão vira `io::Error` com a mensagem em português.
 pub(crate) fn read_msg_file(path: &Path) -> io::Result<String> {
     let bytes = load::read_binary_capped(path, MAX_MSG_BYTES, ".msg")?;
-    mdv_msg::to_markdown(&bytes, &MsgBudget).map_err(io::Error::other)
+    mdv_msg::to_markdown(&bytes, &MemBudget).map_err(io::Error::other)
 }
 
 #[cfg(test)]

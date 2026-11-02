@@ -5,24 +5,16 @@
 use std::io;
 use std::path::Path;
 
-use mdv_docx::{Budget, MAX_DOCX_BYTES};
+use mdv_docx::MAX_DOCX_BYTES;
 
-use crate::{load, mem};
-
-/// O limite de memória do processo (`mem`) visto pelo `mdv-docx`.
-struct DocxBudget;
-
-impl Budget for DocxBudget {
-    fn check(&self) -> Result<(), String> {
-        mem::check().map_err(|e| e.to_string())
-    }
-}
+use crate::load;
+use crate::mem::MemBudget;
 
 /// Lê um `.docx` regular, recusando o que passa de `MAX_DOCX_BYTES` antes de ler, e devolve o
 /// Markdown do documento. Erro de conversão vira `io::Error` com a mensagem em português.
 pub(crate) fn read_docx_file(path: &Path) -> io::Result<String> {
     let bytes = load::read_binary_capped(path, MAX_DOCX_BYTES, ".docx")?;
-    mdv_docx::to_markdown(&bytes, &DocxBudget).map_err(io::Error::other)
+    mdv_docx::to_markdown(&bytes, &MemBudget).map_err(io::Error::other)
 }
 
 /// Documento que o `mdv` não lê (`.doc` antigo, `.docm`, `.dotx`, `.dotm`, `.odt`): a mensagem em

@@ -78,11 +78,8 @@ pub const MAX_NIVEL_LISTA: u8 = 8;
 /// Tamanho máximo do Markdown produzido.
 pub const MAX_MARKDOWN_BYTES: usize = 16 * 1024 * 1024;
 
-/// Orçamento de trabalho consultado pelos laços de conversão.
-pub trait Budget {
-    /// Confirma que ainda há orçamento; chamado por evento XML, por entrada do ZIP e por bloco.
-    fn check(&self) -> Result<(), String>;
-}
+/// Orçamento de trabalho (`mdv_text::Budget`): chamado por evento XML, por entrada do ZIP e por bloco.
+pub use mdv_text::{Budget, Unlimited};
 
 /// Converte o `.docx` (bytes) em Markdown. Erros viram texto em português; nunca entra em pânico.
 pub fn to_markdown(bytes: &[u8], budget: &dyn Budget) -> Result<String, String> {
@@ -90,15 +87,6 @@ pub fn to_markdown(bytes: &[u8], budget: &dyn Budget) -> Result<String, String> 
     let partes = Partes::carregar(&mut pacote, budget)?;
     let documento = ler_documento(partes, budget)?;
     escrever(&documento, budget)
-}
-
-/// Orçamento sem limite, para testes e uso interno controlado.
-pub struct Unlimited;
-
-impl Budget for Unlimited {
-    fn check(&self) -> Result<(), String> {
-        Ok(())
-    }
 }
 
 #[cfg(test)]

@@ -988,6 +988,7 @@ dependencies = [
 name = "mdv-html"
 version = "0.9.0"
 dependencies = [
+ "mdv-text",
  "scraper",
  "unicode-width",
 ]

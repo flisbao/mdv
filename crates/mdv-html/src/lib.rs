@@ -65,19 +65,8 @@ pub fn render(html: &str, opts: &Options, budget: &dyn Budget) -> Result<Documen
     render::render(html, largura, viewport, &opts.limits, budget)
 }
 
-/// Orçamento de memória e tempo consultado pelos laços de leitura.
-pub trait Budget {
-    fn check(&self) -> Result<(), String>;
-}
-
-/// Orçamento que nunca recusa (uso em testes e em chamadas sem teto externo).
-pub struct Unlimited;
-
-impl Budget for Unlimited {
-    fn check(&self) -> Result<(), String> {
-        Ok(())
-    }
-}
+/// Orçamento de memória e tempo (`mdv_text::Budget`) consultado pelos laços de leitura.
+pub use mdv_text::{Budget, Unlimited};
 
 #[cfg(test)]
 mod tests {
