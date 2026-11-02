@@ -30,7 +30,7 @@ mdv vendas.csv -o vendas.xlsx          # CSV/TSV para planilha (também .ods)
 - **Feito para agentes e LLMs:** `--follow`, `--toc`, `--stats` e as ferramentas do `mdv-tools`. [Detalhes](#markdown-de-agentes-e-llms)
 - **Funciona em pipe:** com `-p`, ou quando a saída não é um terminal, imprime ANSI (serve em scripts, `less -R` e CI).
 - **Documentos do Office só para leitura:** `.docx` e `.xlsx` viram texto; macros, objetos OLE, fórmulas, conexões e links externos nunca são executados nem seguidos. [`.docx`](#documentos-docx-do-word) · [`.xlsx`](#planilhas-xlsx)
-- **Seguro com entrada não confiável:** sequências de escape do conteúdo do documento são neutralizadas, o tamanho de entrada e a memória têm teto, e a rede só entra com `--remote`.
+- **Seguro com entrada não confiável:** sequências de escape do documento são neutralizadas (inclusive nas mensagens de erro), o tamanho de entrada e a memória têm teto, e a rede só entra com `--remote`.
 - **Portátil:** binários em Rust, sem dependências de runtime, para Linux (glibc e musl), macOS e Windows.
 
 ## Instalação
@@ -297,7 +297,7 @@ mdv relatorio.docx -o relatorio.pdf        # também .docx, .odt, .xlsx e .ods
 
 `samples/relatorio.docx` foi gerada pelo próprio exportador do `mdv`; por isso os marcadores de lista dela são texto literal (`• `), e não uma lista do Word.
 
-**Limites:** arquivo de até 32 MiB, ZIP com no máximo 5000 entradas, 16 MiB por parte do ZIP e 40 MiB descomprimidos no total, XML com até 100 níveis de profundidade, 20 000 relações, 100 000 notas, tabelas de até 200 colunas (o excedente sai com `*(tabela cortada em 200 colunas)*`) e Markdown de até 16 MiB. Tabelas, listas e notas param ao passar do teto de saída. Uma URL de link acima de 4 KiB deixa o texto sem link, e os destinos de link de um parágrafo somam no máximo 64 KiB. Ao contrário do `.xlsx`, passar de 16 MiB de Markdown é erro (`documento convertido grande demais`), não corte. Um arquivo inválido sai com erro e código 1.
+**Limites:** arquivo de até 32 MiB, ZIP com no máximo 5000 entradas, 16 MiB por parte do ZIP e 40 MiB descomprimidos no total, XML com até 100 níveis de profundidade, 20 000 relações, 20 000 estilos, 20 000 listas (`abstractNum` e `num`, cada um), 100 000 notas, tabelas de até 200 colunas (o excedente sai com `*(tabela cortada em 200 colunas)*`) e Markdown de até 16 MiB. Tabelas, listas e notas param ao passar do teto de saída. Uma URL de link acima de 4 KiB deixa o texto sem link, e os destinos de link de um parágrafo somam no máximo 64 KiB. Ao contrário do `.xlsx`, passar de 16 MiB de Markdown é erro (`documento convertido grande demais`), não corte. Um arquivo inválido sai com erro e código 1.
 
 **Fora do escopo:** `.doc` antigo, `.docm`, `.dotx`, `.dotm` e `.odt` (não são lidos; o `mdv` recusa a extensão com um erro claro que manda salvar como `.docx`) e `.docx` criptografado (só um erro claro), imagens (só o texto alternativo), cabeçalho e rodapé de página, comentários, caixas de texto, campos como o sumário, equações, leitura pelo stdin, numeração automática de títulos e a continuação de numeração entre listas diferentes que compartilham o mesmo modelo.
 
@@ -431,6 +431,8 @@ _2026-11-02_
 - feat(docx): crate mdv-docx (ZIP e XML à mão), amostra samples/relatorio.docx e goldens
 - fix(docx): escapes de Markdown (entidades, início de linha, # final de título), recuo de lista pelo item pai e numeração de lista
 - fix(docx): tetos de saída de lista, citação, tabela e notas, e conferência de tamanho antes de copiar entrada armazenada
+- fix(docx): nomes e detalhes do arquivo sanitizados nas mensagens de erro; o erro impresso pelo `mdv` também passa pelo filtro
+- fix(docx): `.doc`, `.docm`, `.dotx`, `.dotm` e `.odt` têm erro claro em português; teto de 20 000 estilos e de 20 000 listas
 
 ### v0.8.0
 
