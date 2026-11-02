@@ -1,0 +1,87 @@
+nfeProc · objeto · 3 chaves
+╭─ yaml
+│ @versao: 4.00                                                                 
+│ NFe:                                                                          
+│   infNFe:                                                                     
+│     @Id: NFe35240112345678000190550010000004561000004567                      
+│     @versao: 4.00                                                             
+│     ide:                                                                      
+│       cUF: 35                                                                 
+│       natOp: Venda de mercadoria                                              
+│       mod: 55                                                                 
+│       serie: 1                                                                
+│       nNF: 456                                                                
+│       dhEmi: 2024-03-08T14:05:00-03:00                                        
+│     emit:                                                                     
+│       CNPJ: 12345678000190                                                    
+│       xNome: Indústria ACME Ltda                                              
+│       enderEmit:                                                              
+│         xLgr: Avenida São João                                                
+│         nro: 1200                                                             
+│         xMun: São Paulo                                                       
+│         UF: SP                                                                
+│         CEP: 01046001                                                         
+│       IE: 111222333444                                                        
+│     dest:                                                                     
+│       CNPJ: 98765432000110                                                    
+│       xNome: Comércio Açaí e Cia                                              
+│       enderDest:                                                              
+│         xLgr: Rua das Acácias                                                 
+│         nro: 45                                                               
+│         xMun: Belo Horizonte                                                  
+│         UF: MG                                                                
+│         CEP: 00123000                                                         
+│     det:                                                                      
+│       @nItem: 1                                                               
+│       prod:                                                                   
+│         cProd: 00017                                                          
+│         xProd: Parafuso sextavado M8                                          
+│         NCM: 73181500                                                         
+│         CFOP: 5102                                                            
+│         qCom: 1000.0000                                                       
+│         vUnCom: 0.4500                                                        
+│         vProd: 450.00                                                         
+│     total:                                                                    
+│       ICMSTot:                                                                
+│         vProd: 450.00                                                         
+│         vFrete: 0.00                                                          
+│         vNF: 450.00                                                           
+│     cobr:                                                                     
+│       fat:                                                                    
+│         nFat: 456                                                             
+│         vOrig: 450.00                                                         
+│         vLiq: 450.00                                                          
+│       dup:                                                                    
+│         - nDup: 001                                                           
+│           dVenc: 2024-04-08                                                   
+│           vDup: 225.00                                                        
+│         - nDup: 002                                                           
+│           dVenc: 2024-05-08                                                   
+│           vDup: 225.00                                                        
+│   Signature:                                                                  
+│     SignedInfo:                                                               
+│       CanonicalizationMethod:                                                 
+│         @Algorithm: http://www.w3.org/TR/2001/REC-xml-c14n-20010315           
+│       SignatureMethod:                                                        
+│         @Algorithm: http://www.w3.org/2000/09/xmldsig#rsa-sha1                
+│       Reference:                                                              
+│         @URI: #NFe35240112345678000190550010000004561000004567                
+│         Transforms:                                                           
+│           Transform:                                                          
+│             - @Algorithm: http://www.w3.org/2000/09/xmldsig#enveloped-signatur
+│ e                                                                             
+│             - @Algorithm: http://www.w3.org/TR/2001/REC-xml-c14n-20010315     
+│         DigestMethod:                                                         
+│           @Algorithm: http://www.w3.org/2000/09/xmldsig#sha1                  
+│         DigestValue: Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm8=                     
+│     SignatureValue: QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5          
+│ protNFe:                                                                      
+│   @versao: 4.00                                                               
+│   infProt:                                                                    
+│     tpAmb: 1                                                                  
+│     chNFe: 35240112345678000190550010000004561000004567                       
+│     dhRecbto: 2024-03-08T14:05:41-03:00                                       
+│     nProt: 135240000123456                                                    
+│     cStat: 100                                                                
+│     xMotivo: Autorizado o uso da NF-e                                         
+╰─

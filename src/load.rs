@@ -26,20 +26,31 @@ pub(crate) fn reads_stdin(path: Option<&str>) -> bool {
     }
 }
 
-/// Lê o documento do arquivo informado, de stdin (`-` ou entrada redirecionada).
-pub(crate) fn load_source(path: Option<&str>) -> Result<(Source, String), Failure> {
+/// O formato pedido é XML (subcomando `xml` ou extensão `.xml`)? Então o texto é lido pela
+/// codificação declarada, qualquer que seja o nome do arquivo (ou stdin).
+pub(crate) fn is_xml_doc(doc: &cli::Doc) -> bool {
+    matches!(doc, cli::Doc::Xml { .. })
+}
+
+/// `is_xml_doc` para o que a linha de comando abre.
+pub(crate) fn wants_xml(cli: &cli::Cli) -> bool {
+    matches!(&cli.command, cli::Command::View(d) if is_xml_doc(d))
+}
+
+/// Lê o documento do arquivo informado, de stdin (`-` ou entrada redirecionada). Com `xml`, o
+/// texto é decodificado como XML (BOM, `encoding=`) em vez de exigir UTF-8.
+pub(crate) fn load_source(path: Option<&str>, xml: bool) -> Result<(Source, String), Failure> {
+    let stdin = || if xml { crate::xml::read_xml_stdin() } else { read_stdin() };
     match path {
-        Some("-") => Ok((Source::Stdin, read_stdin().map_err(read_failure("stdin"))?)),
+        Some("-") => Ok((Source::Stdin, stdin().map_err(read_failure("stdin"))?)),
         Some(p) if Path::new(p).is_dir() => Err(Failure::Usage(format!(
             "{p} é uma pasta: abra sem -p num terminal para escolher o arquivo"
         ))),
         Some(p) => {
-            let md = read_document(Path::new(p)).map_err(read_failure(p))?;
+            let md = read_document_as(Path::new(p), xml).map_err(read_failure(p))?;
             Ok((Source::File(PathBuf::from(p)), md))
         }
-        None if !io::stdin().is_terminal() => {
-            Ok((Source::Stdin, read_stdin().map_err(read_failure("stdin"))?))
-        }
+        None if !io::stdin().is_terminal() => Ok((Source::Stdin, stdin().map_err(read_failure("stdin"))?)),
         None => Err(Failure::Usage("nenhum arquivo informado".to_string())),
     }
 }
@@ -141,6 +152,16 @@ pub(crate) fn read_document(path: &Path) -> io::Result<String> {
     }
 }
 
+/// `read_document`, mas com `xml` o arquivo é lido como XML (pela codificação declarada) mesmo
+/// com outra extensão (`.txt`, `.svg`, `.kml`…); só os formatos convertidos e os recusados ficam como estão.
+pub(crate) fn read_document_as(path: &Path, xml: bool) -> io::Result<String> {
+    if xml && !e_convertido(path) && recusa(path).is_none() {
+        crate::xml::read_xml_file(path)
+    } else {
+        read_document(path)
+    }
+}
+
 /// Formato de escritório que o `mdv` reconhece e recusa com uma mensagem clara (documento ou planilha).
 fn recusa(path: &Path) -> Option<&'static str> {
     crate::docx::documento_nao_suportado(path).or_else(|| crate::xlsx::planilha_nao_suportada(path))
@@ -186,10 +207,16 @@ pub(crate) fn read_limited_bytes(reader: impl Read, max: u64) -> io::Result<Vec<
     Ok(bytes)
 }
 
-/// Lê UTF-8 de `reader`, falhando se passar de `max` bytes.
+/// Lê UTF-8 de `reader`, falhando se passar de `max` bytes ou se o texto não for UTF-8 válido.
 pub(crate) fn read_limited(reader: impl Read, max: u64) -> io::Result<String> {
     let bytes = read_limited_bytes(reader, max)?;
-    String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    String::from_utf8(bytes).map_err(|e| {
+        let msg = format!(
+            "o texto não é UTF-8 válido (byte inválido na posição {}); para XML em outra codificação use `mdv xml`",
+            e.utf8_error().valid_up_to()
+        );
+        io::Error::new(io::ErrorKind::InvalidData, msg)
+    })
 }
 
 #[cfg(test)]
@@ -224,6 +251,17 @@ mod tests {
         let xml = d.path().join("a.xml");
         fs::write(&xml, b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><a>caf\xe9</a>").unwrap();
         assert!(read_document(&xml).unwrap().contains("café"));
+    }
+
+    #[test]
+    fn read_document_as_xml_ignora_a_extensao() {
+        let d = tempfile::tempdir().unwrap();
+        let txt = d.path().join("nota.txt");
+        fs::write(&txt, b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><a>caf\xe9</a>").unwrap();
+        assert!(read_document_as(&txt, true).unwrap().contains("café"));
+        let err = read_document_as(&txt, false).unwrap_err();
+        assert!(err.to_string().contains("não é UTF-8 válido"), "{err}");
+        assert!(is_xml_doc(&cli::Doc::Xml { xml_path: None, view: cli::JsonView::Auto }) && !is_xml_doc(&cli::Doc::Markdown));
     }
 
     #[test]

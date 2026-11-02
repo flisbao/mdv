@@ -29,7 +29,7 @@ use ratatui::{DefaultTerminal, Frame};
 use unicode_width::UnicodeWidthStr;
 
 use crate::doc::{DocOpts, Document};
-use crate::load::{image_store, read_document, Source};
+use crate::load::{image_store, is_xml_doc, read_document_as, Source};
 use crate::{browse, cli, clip, data, graphics, image, imgview, mem, picker, render, Failure};
 
 pub(crate) use input::action_for;
@@ -275,7 +275,7 @@ impl App {
         let Source::File(p) = &self.source else {
             return;
         };
-        match read_document(p) {
+        match read_document_as(p, is_xml_doc(&self.doc.opts.doc)) {
             Ok(md) => self.doc.set_md(md),
             Err(e) => {
                 self.notice = Some(render::sanitize(&format!("não consegui reler {}: {e}", p.display())).into_owned());

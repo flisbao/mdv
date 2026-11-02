@@ -9,7 +9,6 @@ use crate::mem;
 use crate::render::{error_rendered, memory_error, render_code_only, Rendered};
 use crate::syntax_error::render_with_error;
 use crate::xmldoc::{self, Limits, XmlDoc, XmlError};
-use crate::yaml_view::with_head;
 
 /// Teto da árvore já recuada: o recuo multiplica uma entrada pequena e muito aninhada.
 const MAX_OUTLINE_BYTES: usize = 8 * 1024 * 1024;
@@ -34,7 +33,7 @@ pub fn auto_view_of_text(text: &str, path: Option<&str>) -> JsonView {
             Err(_) => JsonView::Text,
         };
     }
-    if find_records(&doc.value).is_some() {
+    if find_dominant_records(&doc.value).is_some() {
         JsonView::Table
     } else {
         JsonView::Text
@@ -44,7 +43,12 @@ pub fn auto_view_of_text(text: &str, path: Option<&str>) -> JsonView {
 /// Mesma ordem de checagens de `yaml_view::render_yaml_with`; `limits` entra por parâmetro para os testes.
 fn render_xml_with(text: &str, o: &JsonOpts, width: usize, limits: &Limits) -> Rendered {
     if text.len() > data::MAX_DATA_BYTES {
-        return error_rendered("entrada grande demais para o modo XML (limite de 5 MiB)");
+        // O texto já está decodificado (Latin-1 e UTF-16 podem crescer até 3x), então o arquivo pode
+        // ter menos de 5 MiB: a mensagem diz o tamanho do texto.
+        let mib = text.len().div_ceil(1024 * 1024);
+        return error_rendered(&format!(
+            "entrada grande demais para o modo XML (texto de {mib} MiB depois de decodificar; limite de 5 MiB)"
+        ));
     }
     if let Err(e) = mem::check_xml(text.len()) {
         return error_rendered(&e.to_string());
@@ -78,9 +82,15 @@ fn render_doc(doc: &XmlDoc, o: &JsonOpts, has_path: bool, width: usize) -> Rende
             Err(e) => return error_rendered(&e),
         }
     } else {
-        match find_records(&doc.value) {
-            Some((label, v)) if o.view != JsonView::Schema && o.view != JsonView::Text => (v, Some(label)),
-            _ => (&doc.value, None),
+        // `Auto` só abre a tabela se a lista domina o documento; `Table` aceita a mais rasa.
+        let found = match o.view {
+            JsonView::Auto => find_dominant_records(&doc.value),
+            JsonView::Table => find_records(&doc.value),
+            JsonView::Schema | JsonView::Text => None,
+        };
+        match found {
+            Some((label, v)) => (v, Some(label)),
+            None => (&doc.value, None),
         }
     };
     let view = if o.view == JsonView::Auto { data::auto_view(sel) } else { o.view };
@@ -89,7 +99,7 @@ fn render_doc(doc: &XmlDoc, o: &JsonOpts, has_path: bool, width: usize) -> Rende
             let r = data::render_json_table(sel, o, width);
             match (records, sel) {
                 (Some(label), Value::Array(items)) => {
-                    with_head(r, format!("registros em {label} · {} itens", items.len()))
+                    r.with_head(format!("registros em {label} · {} itens", items.len()))
                 }
                 _ => r,
             }
@@ -112,19 +122,42 @@ fn path_set(path: Option<&str>) -> bool {
 /// por que a tecla `v` leva a um erro.
 fn xml_with_notice(text: &str, m: &str, width: usize) -> Rendered {
     let motivo = m.split(':').next().unwrap_or(m);
-    with_head(render_code_only(text, "xml", width), format!("{motivo} para tabela/esquema: só o XML original"))
+    render_code_only(text, "xml", width).with_head(format!("{motivo} para tabela/esquema: só o XML original"))
 }
 
 fn tree_view(v: &Value, head: String, width: usize) -> Rendered {
     let Some(s) = outline(v) else {
         return error_rendered("saída grande demais depois de indentada (limite de 8 MiB)");
     };
-    with_head(render_code_only(&s, "yaml", width), head)
+    render_code_only(&s, "yaml", width).with_head(head)
 }
 
 /// O `Array` de objetos mais raso (largura primeiro, sem descer em listas), o primeiro na ordem do
 /// documento em caso de empate, com o caminho de chaves separado por ` › `.
 fn find_records(root: &Value) -> Option<(String, &Value)> {
+    let (path, v) = records_path(root)?;
+    Some((path.join(" › "), v))
+}
+
+/// `find_records`, mas só se a lista *domina* o documento: nenhum objeto no caminho da raiz até ela
+/// tem outro filho que seja objeto ou lista (texto e `@atributos` não contam). Numa NF-e, por
+/// exemplo, as duplicatas (`cobr › dup`) ficam ao lado de emitente, destinatário e totais: a
+/// tabela esconderia o essencial, então o `Auto` mostra a árvore.
+fn find_dominant_records(root: &Value) -> Option<(String, &Value)> {
+    let (path, v) = records_path(root)?;
+    let mut node = root;
+    for key in &path {
+        let Value::Object(m) = node else { return None };
+        if m.iter().any(|(k, c)| k != key && matches!(c, Value::Object(_) | Value::Array(_))) {
+            return None;
+        }
+        node = m.get(*key)?;
+    }
+    Some((path.join(" › "), v))
+}
+
+/// Caminho de chaves até a lista de registros mais rasa, e a lista.
+fn records_path(root: &Value) -> Option<(Vec<&str>, &Value)> {
     let mut queue = std::collections::VecDeque::new();
     queue.push_back((Vec::<&str>::new(), root));
     let mut visited = 0;
@@ -139,7 +172,7 @@ fn find_records(root: &Value) -> Option<(String, &Value)> {
                 Value::Array(a) if !a.is_empty() && a.iter().all(Value::is_object) => {
                     let mut p = path.clone();
                     p.push(k);
-                    return Some((p.join(" › "), v));
+                    return Some((p, v));
                 }
                 Value::Object(_) => {
                     let mut p = path.clone();
@@ -341,6 +374,64 @@ mod tests {
         assert_eq!(auto_view_of_text(src, None), JsonView::Table);
     }
 
+    /// NF-e assinada de verdade: poucas listas pequenas (`dup`, `Transform`) escondidas no meio.
+    const NFE_ASSINADA: &str = include_str!("../samples/nfe-assinada.xml");
+
+    #[test]
+    fn auto_so_abre_tabela_quando_a_lista_domina_o_documento() {
+        // Lista simples, catálogo e envelope SOAP com irmãos escalares dominam o documento.
+        let lista = "<lista><item id=\"1\"/><item id=\"2\"/></lista>";
+        let catalogo = "<catalogo><produto id=\"1\"><n>a</n></produto><produto id=\"2\"><n>b</n></produto></catalogo>";
+        let soap = "<Envelope><Body><Resp><status>ok</status><item><a>1</a></item><item><a>2</a></item></Resp></Body></Envelope>";
+        for (nome, src) in [("lista", lista), ("catalogo", catalogo), ("soap", soap)] {
+            assert_eq!(auto_view_of_text(src, None), JsonView::Table, "{nome}");
+            let t = text(&render_xml(src, &opts(None, JsonView::Auto), 80));
+            assert!(t.contains("registros em"), "{nome}\n{t}");
+        }
+        // Uma lista ao lado de outro objeto (ou de uma lista de textos) não domina: abre a árvore.
+        let irmao_objeto = "<r><cab><x>1</x></cab><item><a>1</a></item><item><a>2</a></item></r>";
+        let irmao_lista = "<r><tel>1</tel><tel>2</tel><item><a>1</a></item><item><a>2</a></item></r>";
+        // O irmão está no avô da lista, não no pai.
+        let irmao_do_pai = "<r><cab><x>1</x></cab><corpo><item><a>1</a></item><item><a>2</a></item></corpo></r>";
+        for (nome, src) in [("objeto", irmao_objeto), ("lista de textos", irmao_lista), ("avô", irmao_do_pai)] {
+            assert_eq!(auto_view_of_text(src, None), JsonView::Text, "{nome}");
+            let t = text(&render_xml(src, &opts(None, JsonView::Auto), 80));
+            assert!(!t.contains("registros em") && t.contains("item:"), "{nome}\n{t}");
+        }
+    }
+
+    #[test]
+    fn nfe_assinada_abre_em_arvore_no_auto_e_em_tabela_no_table() {
+        let auto = text(&render_xml(NFE_ASSINADA, &opts(None, JsonView::Auto), 80));
+        assert!(auto.contains("xNome: Indústria ACME Ltda") && auto.contains("vNF: 450.00"), "{auto}");
+        assert!(!auto.contains("registros em"), "{auto}");
+        assert_eq!(auto_view_of_text(NFE_ASSINADA, None), JsonView::Text);
+        // `--as table` e a tecla `v` continuam com a lista mais rasa (as duplicatas).
+        let tabela = text(&render_xml(NFE_ASSINADA, &opts(None, JsonView::Table), 80));
+        assert!(tabela.contains("registros em NFe › infNFe › cobr › dup · 2 itens"), "{tabela}");
+    }
+
+    #[test]
+    fn nfe_com_varios_itens_tambem_abre_em_arvore() {
+        let src = NFE_ASSINADA.replace(
+            "</det>",
+            "</det><det nItem=\"2\"><prod><cProd>2</cProd></prod></det>",
+        );
+        assert_eq!(auto_view_of_text(&src, None), JsonView::Text);
+        let t = text(&render_xml(&src, &opts(None, JsonView::Auto), 80));
+        assert!(t.contains("emit:") && t.contains("dest:"), "{t}");
+    }
+
+    #[test]
+    fn tabela_automatica_com_resumo_desloca_o_indice_da_tabela() {
+        let src = "<lista><item id=\"1\"><nome>a</nome></item><item id=\"2\"><nome>b</nome></item></lista>";
+        let r = render_xml(src, &opts(None, JsonView::Auto), 80);
+        assert!(line_text(&r.lines[0]).starts_with("registros em item"));
+        let t = &r.tables[0];
+        assert!(line_text(&r.lines[t.start]).starts_with('┌'), "{}", text(&r));
+        assert!(line_text(&r.lines[t.end - 1]).starts_with('└'), "{}", text(&r));
+    }
+
     const NF: &str = "<nf xmlns=\"urn:x\"><emit><xNome>ACME</xNome></emit></nf>";
 
     #[test]
@@ -442,7 +533,8 @@ mod tests {
     #[test]
     fn entrada_grande_demais_e_recusada() {
         let big = "a".repeat(data::MAX_DATA_BYTES + 1);
-        assert!(text(&render_xml(&big, &opts(None, JsonView::Text), 80)).contains("limite de 5 MiB"));
+        let t = text(&render_xml(&big, &opts(None, JsonView::Text), 80));
+        assert!(t.contains("limite de 5 MiB") && t.contains("texto de 6 MiB depois de decodificar"), "{t}");
         assert_eq!(auto_view_of_text(&big, None), JsonView::Text);
     }
 }

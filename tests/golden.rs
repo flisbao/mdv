@@ -34,6 +34,7 @@ const FILES: &[&str] = &[
     "samples/quebrado.yaml",
     "samples/quebrado.json",
     "samples/nfe.xml",
+    "samples/nfe-assinada.xml",
     "samples/catalogo.xml",
     "samples/quebrado.xml",
 ];
@@ -53,6 +54,7 @@ const EXTRAS: &[(&str, &[&str])] = &[
     ("yaml-schema.k8s", &["yaml", "-p", "-w", "80", "samples/k8s.yaml", "--as", "schema"]),
     ("xml-table.nfe", &["xml", "-p", "-w", "80", "samples/nfe.xml", "--as", "table"]),
     ("xml-text.nfe", &["xml", "-p", "-w", "80", "samples/nfe.xml", "--as", "text"]),
+    ("xml-table.nfe-assinada", &["xml", "-p", "-w", "80", "samples/nfe-assinada.xml", "--as", "table"]),
     ("xml-schema.nfe", &["xml", "-p", "-w", "80", "samples/nfe.xml", "--as", "schema"]),
 ];
 

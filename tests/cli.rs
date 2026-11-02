@@ -2,6 +2,11 @@ use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
 fn mdv(args: &[&str], stdin: &str) -> Output {
+    mdv_bytes(args, stdin.as_bytes())
+}
+
+/// Como `mdv`, com a entrada em bytes (para codificações que não são UTF-8).
+fn mdv_bytes(args: &[&str], stdin: &[u8]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mdv"))
         .args(args)
         .stdin(Stdio::piped())
@@ -10,7 +15,7 @@ fn mdv(args: &[&str], stdin: &str) -> Output {
         .spawn()
         .expect("mdv deve iniciar");
     // O mdv pode sair sem ler stdin (erro de uso): `BrokenPipe` aqui é esperado.
-    let _ = child.stdin.take().expect("stdin").write_all(stdin.as_bytes());
+    let _ = child.stdin.take().expect("stdin").write_all(stdin);
     child.wait_with_output().expect("mdv deve terminar")
 }
 
@@ -245,10 +250,13 @@ fn yaml_com_aliases_em_excesso_nao_estoura() {
 
 #[test]
 fn xml_valido_em_modo_plain_nao_mostra_tags() {
-    // A vista automática mostra a tabela dos dois `det`; a árvore (`--as text`) mostra o resto.
+    // Os `det` não dominam a nota (há emitente, destinatário e total ao lado): o automático abre a
+    // árvore; a tabela dos itens vem de `--as table`.
     let auto = mdv(&["-p", &sample("nfe.xml")], "");
     let auto = String::from_utf8_lossy(&auto.stdout);
-    assert!(auto.contains("registros em infNFe › det") && !auto.contains("xmlns"), "{auto}");
+    assert!(auto.contains("emit:") && !auto.contains("registros em") && !auto.contains("xmlns"), "{auto}");
+    let tabela = mdv(&["-p", "--as", "table", &sample("nfe.xml")], "");
+    assert!(String::from_utf8_lossy(&tabela.stdout).contains("registros em infNFe › det"));
     let out = mdv(&["-p", "--as", "text", &sample("nfe.xml")], "");
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let text = String::from_utf8_lossy(&out.stdout);
@@ -300,6 +308,69 @@ fn xml_com_aninhamento_absurdo_nao_estoura() {
     assert!(!se.contains("panicked") && !so.contains("panicked"), "{se}");
     assert!(out.status.success(), "{se}");
     assert!(so.contains("aninhamento fundo demais"), "{}", &so[..so.len().min(500)]);
+}
+
+const NFE_LATIN1: &[u8] = b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n<nf><emit><xNome>Ind\xfastria S\xe3o Jo\xe3o</xNome></emit></nf>\n";
+
+fn assert_acentos_do_latin1(out: &Output) {
+    let (so, se) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(out.status.success(), "{se}");
+    assert!(so.contains("xNome: Indústria São João") && !so.contains('\u{fffd}'), "{so}{se}");
+}
+
+#[test]
+fn xml_latin1_em_arquivo_xml_mostra_os_acentos() {
+    let dir = tempfile::tempdir().unwrap();
+    let arq = dir.path().join("nota.xml");
+    std::fs::write(&arq, NFE_LATIN1).unwrap();
+    assert_acentos_do_latin1(&mdv(&["-p", arq.to_str().unwrap()], ""));
+}
+
+#[test]
+fn xml_latin1_com_subcomando_vale_para_qualquer_extensao() {
+    let dir = tempfile::tempdir().unwrap();
+    for nome in ["nota.txt", "mapa.kml", "sem-extensao"] {
+        let arq = dir.path().join(nome);
+        std::fs::write(&arq, NFE_LATIN1).unwrap();
+        assert_acentos_do_latin1(&mdv(&["xml", "-p", arq.to_str().unwrap()], ""));
+    }
+}
+
+#[test]
+fn xml_latin1_via_stdin_com_subcomando() {
+    assert_acentos_do_latin1(&mdv_bytes(&["xml", "-p", "-"], NFE_LATIN1));
+}
+
+#[test]
+fn utf8_invalido_em_markdown_da_erro_em_portugues() {
+    let out = mdv_bytes(&["-p", "-"], b"# caf\xe9\n");
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("não é UTF-8 válido") && !err.contains("invalid utf-8"), "{err}");
+}
+
+#[cfg(target_os = "linux")] // `ulimit -v` não é confiável no macOS nem existe no Windows
+#[test]
+fn xml_com_muitos_elementos_minusculos_nao_aborta() {
+    // 250 000 x `<a/>` = ~1 MiB: pouca entrada, muitos nós; com 64 MiB de teto o resultado é a
+    // árvore ou o aviso de memória, nunca um aborto.
+    let src = format!("<r>{}</r>", "<a/>".repeat(250_000));
+    assert!(src.len() <= 1_100_000);
+    let out = mdv_com_teto(&["xml", "-p", "--memory-buffer", "64M", "-"], &src);
+    let (so, se) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(!se.contains("panicked") && !so.contains("panicked"), "{se}");
+    assert!(!se.contains("memory allocation"), "{se}");
+    assert!(out.status.code().is_some(), "morto por sinal: {:?}", out.status);
+    assert!(!so.is_empty(), "sem saída; stderr: {se}");
+}
+
+#[test]
+fn xml_assinado_abre_na_nota_e_nao_na_tabela_da_assinatura() {
+    let out = mdv(&["-p", "-w", "80", &sample("nfe-assinada.xml")], "");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("xNome: Indústria ACME Ltda") && text.contains("xNome: Comércio Açaí e Cia"), "{text}");
+    assert!(text.contains("vNF: 450.00") && !text.contains("registros em"), "{text}");
 }
 
 #[test]

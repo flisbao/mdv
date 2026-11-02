@@ -1119,3 +1119,26 @@ fn arquivos_de_producao_tem_ate_500_linhas() {
         assert!(producao <= 500, "{nome} tem {producao} linhas de produção");
     }
 }
+
+#[test]
+fn with_head_desloca_tudo_o_que_e_indexado_por_linha() {
+    let md = "# Título\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] feito\n\n```rs\nlet a = 1;\n```\n";
+    let r = render(md, 60);
+    let (h, t, c, k, n) = (r.headings.clone(), r.tables[0].start, r.code_blocks[0].start, r.tasks[0].line, r.lines.len());
+    let (te, ol) = (r.tables[0].end, r.outline[0].line);
+    let r = r.with_head("resumo".to_string());
+    assert_eq!(r.lines.len(), n + 1);
+    assert_eq!(joined_text(&r).lines().next(), Some("resumo"));
+    assert_eq!(r.headings, h.iter().map(|x| x + 1).collect::<Vec<_>>());
+    assert_eq!((r.tables[0].start, r.tables[0].end), (t + 1, te + 1));
+    assert_eq!((r.code_blocks[0].start, r.tasks[0].line, r.outline[0].line), (c + 1, k + 1, ol + 1));
+    assert_eq!(r.line_src.len(), n + 1);
+    assert!(r.lines[r.headings[0]].spans.iter().any(|s| s.content.contains("Título")));
+    assert!(r.lines[r.tables[0].start].spans.iter().any(|s| s.content.contains('┌')));
+}
+
+#[test]
+fn with_head_desloca_o_foco() {
+    let r = Rendered { focus: Some(3), ..Rendered::default() }.with_head("x".to_string());
+    assert_eq!(r.focus, Some(4));
+}

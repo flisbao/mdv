@@ -102,7 +102,7 @@ fn run_cli() -> Result<(), Failure> {
             return run_tui(app);
         }
     }
-    let (source, md) = load_source(cli.common.path.as_deref())?;
+    let (source, md) = load_source(cli.common.path.as_deref(), load::wants_xml(&cli))?;
     if cli.command == cli::Command::Stats {
         return mem::check_parse(md.len()).map_err(|e| Failure::Runtime(e.to_string())).and_then(|()| write_stdout(&stats::format(&stats::stats(&md))));
     }

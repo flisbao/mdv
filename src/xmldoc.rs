@@ -200,6 +200,11 @@ impl Builder<'_> {
             }
             return Err(syntax(text, start, "texto fora do elemento raiz".into()));
         };
+        // Espaço sem texto antes dele, ou num elemento com atributos/filhos, `build` descartaria de
+        // qualquer jeito; só o espaço *entre* dois trechos de um elemento-folha conta (`a<![CDATA[ ]]>b`).
+        if s.trim().is_empty() && (top.texts.is_empty() || !top.attrs.is_empty() || !top.children.is_empty()) {
+            return Ok(());
+        }
         top.texts.push(sanitize(s).into_owned());
         self.charge(0, s.len())
     }
@@ -329,6 +334,14 @@ mod tests {
             Ok(d) => d,
             Err(e) => panic!("{s:?} deveria ler: {e:?}"),
         }
+    }
+
+    #[test]
+    fn espaco_entre_trechos_de_folha_continua_valendo() {
+        assert_eq!(ok("<r><a>foo<![CDATA[ ]]>bar</a></r>").value, json!({"a": "foo bar"}));
+        assert_eq!(ok("<r><a> \n <![CDATA[ x ]]> \n </a></r>").value, json!({"a": "x"}));
+        // Entre filhos e em volta do texto de um elemento misto o espaço some, como antes.
+        assert_eq!(ok("<r k=\"1\"> <b/> \n <![CDATA[ ]]> t <![CDATA[ ]]> </r>").value, json!({"@k": "1", "#text": "t", "b": null}));
     }
 
     fn erro(s: &str) -> XmlError {

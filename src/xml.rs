@@ -32,15 +32,25 @@ pub(crate) fn read_xml_file(path: &Path) -> io::Result<String> {
     Ok(decode(&bytes))
 }
 
+/// Lê o XML de stdin (até `MAX_DATA_BYTES`) e decodifica como `read_xml_file`.
+pub(crate) fn read_xml_stdin() -> io::Result<String> {
+    read_xml(io::stdin().lock())
+}
+
+fn read_xml(reader: impl io::Read) -> io::Result<String> {
+    Ok(decode(&load::read_limited_bytes(reader, MAX_DATA_BYTES as u64)?))
+}
+
 /// Texto do XML: BOM (UTF-8/UTF-16) manda; senão o `encoding=` da declaração, se for um rótulo
-/// conhecido (UTF-16 sem BOM é ignorado); senão UTF-8 com substituição de bytes inválidos.
+/// conhecido (UTF-16 sem BOM e as codificações `replacement` são ignorados); senão UTF-8 com substituição de bytes inválidos.
 pub(crate) fn decode(bytes: &[u8]) -> String {
     if let Some((enc, _)) = encoding_rs::Encoding::for_bom(bytes) {
         return enc.decode(bytes).0.into_owned();
     }
     let enc = encoding_declarado(bytes)
         .and_then(|rotulo| encoding_rs::Encoding::for_label(rotulo.as_bytes()))
-        .filter(|enc| !matches!(enc.name(), "UTF-16LE" | "UTF-16BE"));
+        // `replacement` (hz-gb-2312, iso-2022-kr…) devolveria só U+FFFD: melhor ler como UTF-8.
+        .filter(|enc| !matches!(enc.name(), "UTF-16LE" | "UTF-16BE" | "replacement"));
     match enc {
         Some(enc) => enc.decode(bytes).0.into_owned(),
         None => String::from_utf8_lossy(bytes).into_owned(),
@@ -115,9 +125,26 @@ mod tests {
     }
 
     #[test]
+    fn decode_codificacao_replacement_cai_em_utf8() {
+        for rotulo in ["hz-gb-2312", "iso-2022-kr"] {
+            let xml = format!("<?xml version=\"1.0\" encoding=\"{rotulo}\"?><a>ç</a>");
+            let t = decode(xml.as_bytes());
+            assert!(t.contains("<a>ç</a>"), "{rotulo}: {t}");
+        }
+    }
+
+    #[test]
     fn decode_sem_declaracao_e_utf8_com_substituicao() {
         let t = decode(b"<a>x\xffy</a>");
         assert!(t.contains('\u{fffd}'), "{t}");
+    }
+
+    #[test]
+    fn ler_leitor_decodifica_e_respeita_o_teto() {
+        let t = read_xml(&b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><a>caf\xe9</a>"[..]).unwrap();
+        assert!(t.contains("café"), "{t}");
+        let err = read_xml(io::repeat(b'a')).unwrap_err();
+        assert!(err.to_string().contains("entrada maior que 5 MiB"), "{err}");
     }
 
     #[test]

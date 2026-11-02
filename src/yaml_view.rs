@@ -1,13 +1,10 @@
 //! Vistas do YAML (texto, tabela, esquema) sobre o `Value` lido por `yamldoc`, reaproveitando as
 //! vistas de JSON de `data`. O texto mostra o YAML original (comentários e ordem preservados).
 
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
-
 use crate::cli::JsonView;
 use crate::data::{self, JsonOpts};
 use crate::mem;
-use crate::render::{error_rendered, memory_error, render_code_only, Rendered, DIM};
+use crate::render::{error_rendered, memory_error, render_code_only, Rendered};
 use crate::syntax_error::render_with_error;
 use crate::yamldoc::{self, Limits, YamlError};
 
@@ -85,20 +82,16 @@ fn text_with_notice(text: &str, m: &str, width: usize) -> Rendered {
 }
 
 fn text_with_head(text: &str, head: String, width: usize) -> Rendered {
-    with_head(render_code_only(text, "yaml", width), head)
-}
-
-/// Insere `head` em itálico cinza como primeira linha.
-pub(crate) fn with_head(mut r: Rendered, head: String) -> Rendered {
-    let head = Line::from(Span::styled(head, Style::default().fg(DIM).add_modifier(Modifier::ITALIC)));
-    r.lines.insert(0, head);
-    r
+    render_code_only(text, "yaml", width).with_head(head)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::style::Color;
+    use ratatui::style::{Color, Modifier};
+    use ratatui::text::Line;
+
+    use crate::render::DIM;
 
     fn opts(path: Option<&str>, view: JsonView) -> JsonOpts {
         JsonOpts { path: path.map(String::from), view, head: 100, cols: Vec::new() }
@@ -106,6 +99,14 @@ mod tests {
 
     fn line_text(l: &Line) -> String {
         l.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn texto_com_resumo_desloca_o_bloco_de_codigo() {
+        let r = render_yaml("a: 1\nb: 2\n", &opts(None, JsonView::Text), 80);
+        assert_eq!(r.code_blocks.len(), 1);
+        assert_eq!(r.code_blocks[0].start, 1, "o resumo ocupa a linha 0");
+        assert!(r.code_blocks[0].end <= r.lines.len());
     }
 
     fn text(r: &Rendered) -> String {

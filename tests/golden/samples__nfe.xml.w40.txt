@@ -1,21 +1,47 @@
-registros em infNFe › det · 2 itens
-┌──────┬──────┬──────┬─────┬─────┬─────┐
-│ @nIt │ prod │ prod │ pro │ pro │ pro │
-│   em │ .cPr │ .xPr │ d.q │ d.v │ d.v │
-│      │   od │ od   │ Com │ UnC │ Pro │
-│      │      │      │     │  om │   d │
-├──────┼──────┼──────┼─────┼─────┼─────┤
-│    1 │ 0001 │ Para │ 100 │ 0.4 │ 45. │
-│      │    7 │ fuso │ .00 │ 500 │  00 │
-│      │      │ sext │  00 │     │     │
-│      │      │ avad │     │     │     │
-│      │      │ o M8 │     │     │     │
-├──────┼──────┼──────┼─────┼─────┼─────┤
-│    2 │ 0023 │ Porc │ 100 │ 0.3 │ 30. │
-│      │    0 │ a    │ .00 │ 000 │  00 │
-│      │      │ auto │  00 │     │     │
-│      │      │ trav │     │     │     │
-│      │      │ ante │     │     │     │
-│      │      │ M8   │     │     │     │
-└──────┴──────┴──────┴─────┴─────┴─────┘
-2 de 2 itens · 6 colunas
+NFe · objeto · 1 chaves
+╭─ yaml
+│ infNFe:                               
+│   @Id: NFe3524011234567800019055001000
+│ 0001231000001234                      
+│   @versao: 4.00                       
+│   ide:                                
+│     cUF: 35                           
+│     nNF: 123                          
+│     natOp: Venda de mercadoria        
+│     dhEmi: 2024-01-15T10:30:00-03:00  
+│   emit:                               
+│     CNPJ: 12345678000190              
+│     xNome: Indústria ACME Ltda        
+│     enderEmit:                        
+│       xLgr: Avenida São João          
+│       nro: 1200                       
+│       xMun: São Paulo                 
+│       UF: SP                          
+│       CEP: 01046001                   
+│   dest:                               
+│     CPF: 12345678909                  
+│     xNome: José da Conceição          
+│     enderDest:                        
+│       xLgr: Rua das Acácias           
+│       nro: 45                         
+│       xMun: Belo Horizonte            
+│       UF: MG                          
+│       CEP: 00123000                   
+│   det:                                
+│     - @nItem: 1                       
+│       prod:                           
+│         cProd: 00017                  
+│         xProd: Parafuso sextavado M8  
+│         qCom: 100.0000                
+│         vUnCom: 0.4500                
+│         vProd: 45.00                  
+│     - @nItem: 2                       
+│       prod:                           
+│         cProd: 00230                  
+│         xProd: Porca autotravante M8  
+│         qCom: 100.0000                
+│         vUnCom: 0.3000                
+│         vProd: 30.00                  
+│   total:                              
+│     vNF: 75.00                        
+╰─

@@ -138,7 +138,7 @@ pub(crate) fn run_export(cli: &cli::Cli, e: &cli::Export, mem_warning: Option<&s
     if let Some(w) = mem_warning {
         eprintln!("mdv: {w}");
     }
-    let (source, text) = load_source(cli.common.path.as_deref())?;
+    let (source, text) = load_source(cli.common.path.as_deref(), matches!(e.doc, cli::Doc::Xml { .. }))?;
     if cli::saida_markdown(&e.output) {
         // A entrada já é o Markdown do `.msg`, `.docx` ou `.xlsx` (`load_source` converte); só falta gravar.
         write_markdown(Path::new(&e.output), &text, e.force).map_err(Failure::Runtime)?;

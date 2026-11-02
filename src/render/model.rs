@@ -37,6 +37,35 @@ pub struct Rendered {
     pub focus: Option<usize>,
 }
 
+impl Rendered {
+    /// Insere `head` em itálico cinza como primeira linha e desloca uma linha tudo o que é
+    /// indexado por linha (títulos, tabelas, blocos de código, tarefas, imagens, foco, fonte).
+    pub(crate) fn with_head(mut self, head: String) -> Self {
+        let head = Line::from(Span::styled(head, Style::default().fg(DIM).add_modifier(Modifier::ITALIC)));
+        self.lines.insert(0, head);
+        self.headings.iter_mut().for_each(|h| *h += 1);
+        self.outline.iter_mut().for_each(|e| e.line += 1);
+        for t in &mut self.tables {
+            t.start += 1;
+            t.end += 1;
+        }
+        for c in &mut self.code_blocks {
+            c.start += 1;
+            c.end += 1;
+        }
+        for m in &mut self.mermaids {
+            m.start += 1;
+            m.end += 1;
+        }
+        self.tasks.iter_mut().for_each(|t| t.line += 1);
+        if !self.line_src.is_empty() {
+            self.line_src.insert(0, 0);
+        }
+        self.focus = self.focus.map(|f| f + 1);
+        self
+    }
+}
+
 /// Diagrama Mermaid desenhado como imagem: linhas renderizadas `[start, end)` e a chave do PNG
 /// original em `ImageStore::mermaid_png`.
 #[derive(Clone)]
