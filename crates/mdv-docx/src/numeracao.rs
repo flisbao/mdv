@@ -68,7 +68,7 @@ impl Numeracao {
             return Ok(numeracao);
         }
         let (mut abstratos, mut nums) = (0usize, 0usize);
-        while let Some(evento) = leitor.proximo()? {
+        while let Some(evento) = leitor.dentro("numbering")? {
             match evento {
                 Evento::Abre(tag) if tag.nome == "abstractNum" => {
                     abstratos += 1;
@@ -86,7 +86,6 @@ impl Numeracao {
                 }
                 // Outros filhos da raiz (`numPicBullet`, ...) não interessam e são pulados inteiros.
                 Evento::Abre(_) => leitor.pular()?,
-                Evento::Fecha(nome) if nome == "numbering" => break,
                 Evento::Fecha(_) | Evento::Texto(_) => {}
             }
         }
@@ -123,18 +122,15 @@ impl Numeracao {
 fn ler_abstrato(leitor: &mut Leitor, tag: &Tag, numeracao: &mut Numeracao) -> Result<(), String> {
     let id = tag.attr("abstractNumId").and_then(|v| v.parse::<u32>().ok());
     let mut niveis = [Nivel::default(); NIVEIS];
-    loop {
-        match leitor.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "abstractNum" => break,
-            Some(Evento::Abre(filho)) if filho.nome == "lvl" => {
-                let nivel = ler_lvl(leitor)?;
-                if let Some(n) = ler_nivel(&filho) {
-                    niveis[usize::from(n)] = nivel;
-                }
+    while let Some(evento) = leitor.dentro("abstractNum")? {
+        let Evento::Abre(filho) = evento else { continue };
+        if filho.nome == "lvl" {
+            let nivel = ler_lvl(leitor)?;
+            if let Some(n) = ler_nivel(&filho) {
+                niveis[usize::from(n)] = nivel;
             }
-            Some(Evento::Abre(_)) => leitor.pular()?,
-            Some(_) => {}
+        } else {
+            leitor.pular()?;
         }
     }
     // Sem `abstractNumId` válido o bloco não tem como ser referenciado; é lido e descartado.
@@ -147,27 +143,20 @@ fn ler_abstrato(leitor: &mut Leitor, tag: &Tag, numeracao: &mut Numeracao) -> Re
 /// Lê um `w:lvl` até o fecho: `start` e `numFmt`; o resto (`pPr`, `rPr`...) é pulado.
 fn ler_lvl(leitor: &mut Leitor) -> Result<Nivel, String> {
     let mut nivel = Nivel::default();
-    loop {
-        match leitor.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "lvl" => break,
-            Some(Evento::Abre(tag)) => match tag.nome.as_str() {
-                "start" => {
-                    nivel.start = tag.val().and_then(|v| v.parse::<u32>().ok());
-                    leitor.pular()?;
-                }
-                // Só `bullet` (e `none`, que não mostra nada) é marcador; qualquer formato de número é numerado.
-                "numFmt" => {
-                    nivel.marca = tag.val().map(|v| match v {
-                        "bullet" | "none" => Marca::Marcador,
-                        _ => Marca::Numerada,
-                    });
-                    leitor.pular()?;
-                }
-                _ => leitor.pular()?,
-            },
-            Some(_) => {}
+    while let Some(evento) = leitor.dentro("lvl")? {
+        let Evento::Abre(tag) = evento else { continue };
+        match tag.nome.as_str() {
+            "start" => nivel.start = tag.val().and_then(|v| v.parse::<u32>().ok()),
+            // Só `bullet` (e `none`, que não mostra nada) é marcador; qualquer formato de número é numerado.
+            "numFmt" => {
+                nivel.marca = tag.val().map(|v| match v {
+                    "bullet" | "none" => Marca::Marcador,
+                    _ => Marca::Numerada,
+                });
+            }
+            _ => {}
         }
+        leitor.pular()?;
     }
     Ok(nivel)
 }
@@ -176,19 +165,15 @@ fn ler_lvl(leitor: &mut Leitor) -> Result<Nivel, String> {
 fn ler_num(leitor: &mut Leitor, tag: &Tag, numeracao: &mut Numeracao) -> Result<(), String> {
     let id = tag.attr("numId").and_then(|v| v.parse::<u32>().ok());
     let mut num = Num::default();
-    loop {
-        match leitor.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "num" => break,
-            Some(Evento::Abre(filho)) => match filho.nome.as_str() {
-                "abstractNumId" => {
-                    num.abstrato = filho.val().and_then(|v| v.parse::<u32>().ok());
-                    leitor.pular()?;
-                }
-                "lvlOverride" => ler_override(leitor, &filho, &mut num)?,
-                _ => leitor.pular()?,
-            },
-            Some(_) => {}
+    while let Some(evento) = leitor.dentro("num")? {
+        let Evento::Abre(filho) = evento else { continue };
+        match filho.nome.as_str() {
+            "abstractNumId" => {
+                num.abstrato = filho.val().and_then(|v| v.parse::<u32>().ok());
+                leitor.pular()?;
+            }
+            "lvlOverride" => ler_override(leitor, &filho, &mut num)?,
+            _ => leitor.pular()?,
         }
     }
     if let Some(id) = id {
@@ -200,20 +185,15 @@ fn ler_num(leitor: &mut Leitor, tag: &Tag, numeracao: &mut Numeracao) -> Result<
 /// Lê um `w:lvlOverride`: só o `startOverride` importa; o `lvl` completo que ele pode trazer é pulado.
 fn ler_override(leitor: &mut Leitor, tag: &Tag, num: &mut Num) -> Result<(), String> {
     let nivel = ler_nivel(tag);
-    loop {
-        match leitor.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "lvlOverride" => break,
-            Some(Evento::Abre(filho)) if filho.nome == "startOverride" => {
-                let valor = filho.val().and_then(|v| v.parse::<u32>().ok());
-                if let (Some(n), Some(v)) = (nivel, valor) {
-                    num.sobrepostos[usize::from(n)] = Some(v);
-                }
-                leitor.pular()?;
+    while let Some(evento) = leitor.dentro("lvlOverride")? {
+        let Evento::Abre(filho) = evento else { continue };
+        if filho.nome == "startOverride" {
+            let valor = filho.val().and_then(|v| v.parse::<u32>().ok());
+            if let (Some(n), Some(v)) = (nivel, valor) {
+                num.sobrepostos[usize::from(n)] = Some(v);
             }
-            Some(Evento::Abre(_)) => leitor.pular()?,
-            Some(_) => {}
         }
+        leitor.pular()?;
     }
     Ok(())
 }
