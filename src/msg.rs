@@ -2,7 +2,6 @@
 //! O texto devolvido já é Markdown, então o resto do `mdv` (TUI, `--plain`, `-o .md`) o trata
 //! como qualquer documento.
 
-use std::fs;
 use std::io;
 use std::path::Path;
 
@@ -30,19 +29,7 @@ impl Budget for MsgBudget {
 /// Lê um `.msg` regular, recusando o que passa de `MAX_MSG_BYTES` antes de ler, e devolve o
 /// Markdown do e-mail. Erro de conversão vira `io::Error` com a mensagem em português.
 pub(crate) fn read_msg_file(path: &Path) -> io::Result<String> {
-    let meta = fs::metadata(path)?;
-    if !meta.is_file() {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "não é um arquivo regular"));
-    }
-    if meta.len() > MAX_MSG_BYTES {
-        let teto = MAX_MSG_BYTES / (1024 * 1024);
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("arquivo .msg grande demais (máximo {teto} MiB)"),
-        ));
-    }
-    mem::check_input(meta.len()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-    let bytes = load::read_limited_bytes(fs::File::open(path)?, MAX_MSG_BYTES)?;
+    let bytes = load::read_binary_capped(path, MAX_MSG_BYTES, ".msg")?;
     mdv_msg::to_markdown(&bytes, &MsgBudget).map_err(io::Error::other)
 }
 
