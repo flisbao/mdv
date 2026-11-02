@@ -14,7 +14,7 @@ use crate::Budget;
 /// Converte as partes do pacote em `Documento`.
 /// A ordem é estilos, numeração, corpo e notas porque o corpo consulta os dois primeiros e as notas
 /// reaproveitam o mesmo contexto. Parte opcional ausente usa o padrão vazio, nunca é erro.
-pub(crate) fn ler_documento(partes: &Partes, budget: &dyn Budget) -> Result<Documento, String> {
+pub(crate) fn ler_documento(partes: Partes, budget: &dyn Budget) -> Result<Documento, String> {
     let estilos = match &partes.estilos {
         Some(xml) => Estilos::ler(xml, budget)?,
         None => Estilos::vazio(),
@@ -57,7 +57,7 @@ mod tests {
                 .notas(r#"<w:footnote w:id="1"><w:p><w:r><w:t>nota</w:t></w:r></w:p></w:footnote>"#)
                 .fim(r#"<w:endnote w:id="1"><w:p><w:r><w:t>fim</w:t></w:r></w:p></w:endnote>"#),
         );
-        let doc = ler_documento(&p, &Unlimited).expect("documento");
+        let doc = ler_documento(p, &Unlimited).expect("documento");
         assert_eq!(doc.blocos.len(), 1);
         assert!(doc.notas.contains_key("n1"));
         assert!(doc.notas.contains_key("e1"));
@@ -67,7 +67,7 @@ mod tests {
     fn estilos_e_numeracao_ausentes_funcionam_com_padrao() {
         let p = partes(DocxBuilder::novo().corpo("<w:p><w:r><w:t>oi</w:t></w:r></w:p>"));
         assert!(p.estilos.is_none() && p.numeracao.is_none());
-        let doc = ler_documento(&p, &Unlimited).expect("documento");
+        let doc = ler_documento(p, &Unlimited).expect("documento");
         assert!(matches!(&doc.blocos[..], [Bloco::Paragrafo(_)]));
         assert!(doc.notas.is_empty());
     }
@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn xml_do_corpo_invalido_da_erro_de_xml() {
         let p = partes(DocxBuilder::novo().corpo("<w:p><w:r></w:p>"));
-        let erro = ler_documento(&p, &Unlimited).expect_err("erro");
+        let erro = ler_documento(p, &Unlimited).expect_err("erro");
         assert!(erro.starts_with("XML inválido"), "{erro}");
     }
 }

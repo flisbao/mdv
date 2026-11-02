@@ -40,6 +40,15 @@ enum Peca {
 /// quebra); só no modo `Bloco` o começo de cada linha é escapado, depois de aparar. Cada modo
 /// muda a quebra, o escape de `|` (célula, inclusive no destino do link) e o negrito (título).
 pub(crate) fn inline(trechos: &[Trecho], notas: &mut Notas, modo: Modo) -> String {
+    inline_de(trechos, notas, modo)
+}
+
+/// Como `inline`, para trechos que vêm de um iterador (filtrados por referência, sem clonar).
+pub(crate) fn inline_de<'a>(
+    trechos: impl IntoIterator<Item = &'a Trecho>,
+    notas: &mut Notas,
+    modo: Modo,
+) -> String {
     let pecas = fundir(trechos, notas, modo);
     let mut links = 0;
     let juntos: String = pecas.iter().map(|p| escrever(p, modo, &mut links)).collect();
@@ -65,7 +74,7 @@ fn escapar_linhas(texto: &str) -> String {
 }
 
 /// Reduz os trechos a peças, fundindo `Texto` vizinhos de mesmas marcas e mesmo link.
-fn fundir(trechos: &[Trecho], notas: &mut Notas, modo: Modo) -> Vec<Peca> {
+fn fundir<'a>(trechos: impl IntoIterator<Item = &'a Trecho>, notas: &mut Notas, modo: Modo) -> Vec<Peca> {
     let mut pecas: Vec<Peca> = Vec::new();
     for trecho in trechos {
         match trecho {

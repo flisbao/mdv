@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::escape;
 use crate::limite::Limite;
-use crate::md_inline::{inline, Modo};
+use crate::md_inline::{inline_de, Modo};
 use crate::modelo::Trecho;
 
 /// Notas referenciadas até agora, na ordem da primeira aparição.
@@ -53,14 +53,9 @@ impl Notas {
 
 /// Texto de uma nota em uma linha; "(nota ausente)" quando não há texto.
 fn texto_nota(trechos: Option<&Vec<Trecho>>) -> String {
-    let sem_refs: Vec<Trecho> = trechos
-        .into_iter()
-        .flatten()
-        .filter(|t| !matches!(t, Trecho::NotaRef(_)))
-        .cloned()
-        .collect();
+    let sem_refs = trechos.into_iter().flatten().filter(|t| !matches!(t, Trecho::NotaRef(_)));
     // O texto vem logo depois de `[^N]: `, onde `# ` ou `> ` abririam um bloco dentro da nota.
-    let texto = escape::inicio_de_linha(&inline(&sem_refs, &mut Notas::novo(), Modo::Linha));
+    let texto = escape::inicio_de_linha(&inline_de(sem_refs, &mut Notas::novo(), Modo::Linha));
     if texto.is_empty() {
         "(nota ausente)".to_string()
     } else {

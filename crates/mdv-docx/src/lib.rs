@@ -86,7 +86,7 @@ pub trait Budget {
 pub fn to_markdown(bytes: &[u8], budget: &dyn Budget) -> Result<String, String> {
     let mut pacote = Pacote::abrir(bytes)?;
     let partes = Partes::carregar(&mut pacote, budget)?;
-    let documento = ler_documento(&partes, budget)?;
+    let documento = ler_documento(partes, budget)?;
     escrever(&documento, budget)
 }
 
