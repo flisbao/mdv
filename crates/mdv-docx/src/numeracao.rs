@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use crate::xml_leitor::{Evento, Leitor, Tag};
 use crate::Budget;
-use crate::MAX_NIVEL_LISTA;
+use crate::{MAX_LISTAS, MAX_NIVEL_LISTA};
 
 /// Quantidade de níveis de uma lista (0 até `MAX_NIVEL_LISTA`).
 const NIVEIS: usize = MAX_NIVEL_LISTA as usize + 1;
@@ -55,18 +55,35 @@ impl Numeracao {
 
     /// Lê `numbering.xml`; lista desconhecida não é erro.
     pub(crate) fn ler(xml: &[u8], budget: &dyn Budget) -> Result<Self, String> {
+        Self::ler_com_teto(xml, budget, MAX_LISTAS)
+    }
+
+    /// Como `ler`, com o teto de listas explícito (os testes usam um teto pequeno). O teto vale para
+    /// `abstractNum` e para `num` separadamente e é conferido a cada bloco, antes de lê-lo.
+    pub(crate) fn ler_com_teto(xml: &[u8], budget: &dyn Budget, max_listas: usize) -> Result<Self, String> {
         let mut leitor = Leitor::novo(xml, budget);
         let mut numeracao = Numeracao::vazia();
         // Consome a raiz `w:numbering` antes do laço: o laço trata os filhos dela, não a raiz.
         if leitor.ate("numbering")?.is_none() {
             return Ok(numeracao);
         }
+        let (mut abstratos, mut nums) = (0usize, 0usize);
         while let Some(evento) = leitor.proximo()? {
             match evento {
                 Evento::Abre(tag) if tag.nome == "abstractNum" => {
+                    abstratos += 1;
+                    if abstratos > max_listas {
+                        return Err("listas demais".into());
+                    }
                     ler_abstrato(&mut leitor, &tag, &mut numeracao)?
                 }
-                Evento::Abre(tag) if tag.nome == "num" => ler_num(&mut leitor, &tag, &mut numeracao)?,
+                Evento::Abre(tag) if tag.nome == "num" => {
+                    nums += 1;
+                    if nums > max_listas {
+                        return Err("listas demais".into());
+                    }
+                    ler_num(&mut leitor, &tag, &mut numeracao)?
+                }
                 // Outros filhos da raiz (`numPicBullet`, ...) não interessam e são pulados inteiros.
                 Evento::Abre(_) => leitor.pular()?,
                 Evento::Fecha(nome) if nome == "numbering" => break,
@@ -266,6 +283,25 @@ mod tests {
         format!(
             r#"<w:abstractNum w:abstractNumId="0">{niveis}</w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>"#
         )
+    }
+
+    #[test]
+    fn listas_acima_do_teto_sao_recusadas() {
+        let abstratos = |n: usize| -> String {
+            let itens: String = (0..n).map(|i| format!(r#"<w:abstractNum w:abstractNumId="{i}"/>"#)).collect();
+            format!("<w:numbering {NS}>{itens}</w:numbering>")
+        };
+        let nums = |n: usize| -> String {
+            let itens: String = (0..n).map(|i| format!(r#"<w:num w:numId="{i}"/>"#)).collect();
+            format!("<w:numbering {NS}>{itens}</w:numbering>")
+        };
+        for xml in [abstratos(3), nums(3)] {
+            assert!(Numeracao::ler_com_teto(xml.as_bytes(), &Unlimited, 3).is_ok());
+        }
+        for xml in [abstratos(4), nums(4)] {
+            let erro = Numeracao::ler_com_teto(xml.as_bytes(), &Unlimited, 3).err().expect("erro");
+            assert!(erro.contains("listas demais"), "{erro}");
+        }
     }
 
     #[test]

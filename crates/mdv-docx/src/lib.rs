@@ -67,6 +67,10 @@ pub const MAX_PROFUNDIDADE_XML: usize = 100;
 pub const MAX_URL_BYTES: usize = 4096;
 /// Número máximo de colunas de uma tabela convertida.
 pub const MAX_COLUNAS: usize = 200;
+/// Número máximo de estilos lidos de `styles.xml`; um documento real do Word tem centenas.
+pub(crate) const MAX_ESTILOS: usize = 20_000;
+/// Número máximo de `abstractNum` (e, à parte, de `num`) lidos de `numbering.xml`.
+pub(crate) const MAX_LISTAS: usize = 20_000;
 /// Nível máximo de recuo de uma lista.
 pub const MAX_NIVEL_LISTA: u8 = 8;
 /// Tamanho máximo do Markdown produzido.

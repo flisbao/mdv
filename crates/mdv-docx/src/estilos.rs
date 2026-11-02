@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use crate::propriedades::ler_ppr;
 use crate::xml_leitor::{Evento, Leitor};
-use crate::Budget;
+use crate::{Budget, MAX_ESTILOS};
 
 /// Limite de saltos em `basedOn`; cadeia mais longa, ou ciclo, para aqui.
 const MAX_SALTOS: usize = 16;
@@ -41,9 +41,17 @@ impl Estilos {
 
     /// Lê `styles.xml`; estilo desconhecido não é erro.
     pub(crate) fn ler(xml: &[u8], budget: &dyn Budget) -> Result<Self, String> {
+        Self::ler_com_teto(xml, budget, MAX_ESTILOS)
+    }
+
+    /// Como `ler`, com o teto de estilos explícito (os testes usam um teto pequeno).
+    pub(crate) fn ler_com_teto(xml: &[u8], budget: &dyn Budget, max_estilos: usize) -> Result<Self, String> {
         let mut leitor = Leitor::novo(xml, budget);
         let mut brutos = Vec::new();
         while let Some(tag) = leitor.ate("style")? {
+            if brutos.len() >= max_estilos {
+                return Err("estilos demais".into());
+            }
             let id = tag.attr("styleId").unwrap_or("").to_string();
             brutos.push(ler_estilo(&mut leitor, id)?);
         }
@@ -165,6 +173,17 @@ mod tests {
     fn ler_xml(corpo: &str) -> Estilos {
         let xml = format!("<w:styles>{corpo}</w:styles>");
         Estilos::ler(xml.as_bytes(), &Unlimited).unwrap()
+    }
+
+    #[test]
+    fn estilos_acima_do_teto_sao_recusados() {
+        let estilos = |n: usize| -> String {
+            let itens: String = (0..n).map(|i| format!(r#"<w:style w:styleId="E{i}"><w:name w:val="x"/></w:style>"#)).collect();
+            format!("<w:styles>{itens}</w:styles>")
+        };
+        assert!(Estilos::ler_com_teto(estilos(3).as_bytes(), &Unlimited, 3).is_ok());
+        let erro = Estilos::ler_com_teto(estilos(4).as_bytes(), &Unlimited, 3).err().expect("erro");
+        assert!(erro.contains("estilos demais"), "{erro}");
     }
 
     #[test]
