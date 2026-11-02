@@ -43,6 +43,7 @@ url = { version = "2", optional = true }
 serde_json = { version = "1", features = ["preserve_order"] }
 csv = "1"
 saphyr-parser = "0.3.3"
+quick-xml = "0.37"
 mermaid-rs-renderer = { version = "0.3.1", default-features = false, optional = true }
 resvg = { version = "0.45", default-features = false, features = ["text", "system-fonts"], optional = true }
 

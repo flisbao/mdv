@@ -27,6 +27,9 @@ mod plain;
 mod stats;
 mod stream;
 mod xlsx;
+// Usado pela vista de XML (próxima tarefa); até lá nada chama `parse`.
+#[allow(dead_code)]
+mod xmldoc;
 mod syntax_error;
 mod yaml_view;
 mod yamldoc;

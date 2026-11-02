@@ -953,6 +953,7 @@ dependencies = [
  "mdv-xlsx",
  "mermaid-rs-renderer",
  "pulldown-cmark",
+ "quick-xml",
  "ratatui",
  "resvg",
  "saphyr-parser",
