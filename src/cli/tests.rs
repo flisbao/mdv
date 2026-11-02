@@ -246,9 +246,9 @@ fn flags_de_outro_formato_sao_erro() {
         (&["a.md", "--cols", "x"], "a opção --cols só vale para CSV/TSV"),
         (&["a.md", "--no-header"], "a opção --no-header só vale para CSV/TSV"),
         (&["a.json", "--head", "5"], "a opção --head só vale para CSV/TSV"),
-        (&["a.csv", "--path", ".x"], "a opção --path só vale para JSON e YAML"),
-        (&["a.md", "--path", ".x"], "a opção --path só vale para JSON e YAML"),
-        (&["a.csv", "--as", "text"], "a opção --as só vale para JSON e YAML"),
+        (&["a.csv", "--path", ".x"], "a opção --path só vale para JSON, YAML e XML"),
+        (&["a.md", "--path", ".x"], "a opção --path só vale para JSON, YAML e XML"),
+        (&["a.csv", "--as", "text"], "a opção --as só vale para JSON, YAML e XML"),
         (&["a.json", "--toc"], "--toc só vale para Markdown"),
         (&["a.csv", "--toc"], "--toc só vale para Markdown"),
     ];
@@ -455,4 +455,46 @@ fn opcoes_comuns_valem_em_todos_os_formatos() {
         assert!(c.plain && c.follow);
         assert_eq!((c.width, c.table), (Some(50), Some(2)));
     }
+}
+
+#[test]
+fn xml_por_extensao() {
+    assert_eq!(doc(&["a.xml"]), Doc::Xml { xml_path: None, view: JsonView::Auto });
+}
+
+#[test]
+fn subcomando_xml_com_stdin() {
+    assert_eq!(doc(&["xml", "-"]), Doc::Xml { xml_path: None, view: JsonView::Auto });
+}
+
+#[test]
+fn path_e_as_valem_para_xml() {
+    assert_eq!(
+        doc(&["a.xml", "--path", ".x", "--as", "table"]),
+        Doc::Xml { xml_path: Some(".x".into()), view: JsonView::Table }
+    );
+}
+
+#[test]
+fn head_nao_vale_para_xml() {
+    assert_eq!(run(&["a.xml", "--head", "3"]).unwrap_err(), "a opção --head só vale para CSV/TSV");
+}
+
+#[test]
+fn xml_nao_exporta() {
+    assert!(run(&["a.xml", "-o", "x.csv"]).unwrap_err().contains("XML ainda não exporta"));
+}
+
+#[test]
+fn path_so_vale_para_json_yaml_e_xml() {
+    assert_eq!(run(&["a.md", "--path", ".x"]).unwrap_err(), "a opção --path só vale para JSON, YAML e XML");
+}
+
+#[test]
+fn data_view_responde_para_xml() {
+    let mut d = doc_for_path("a.xml");
+    assert_eq!(d, Doc::Xml { xml_path: None, view: JsonView::Auto });
+    assert!(d.data_view().is_some());
+    *d.data_view_mut().unwrap().1 = JsonView::Schema;
+    assert_eq!(d.data_view(), Some((&None, JsonView::Schema)));
 }

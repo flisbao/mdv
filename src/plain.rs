@@ -19,6 +19,7 @@ USO:
     cat arquivo.md | mdv
     mdv json [opções] <arquivo|->
     mdv yaml [opções] <arquivo|->
+    mdv xml [opções] <arquivo|->
     mdv csv|tsv [opções] <arquivo|->
     mdv [opções] <arquivo.md> -o <saída.pdf|docx|odt|xlsx|ods>
     mdv [opções] <email.msg> [-o <saída.md|pdf|docx|odt>]
@@ -26,7 +27,7 @@ USO:
     mdv [opções] <planilha.xlsx> [-o <saída.md|pdf|docx|odt|xlsx|ods>]
     mdv csv|tsv [opções] <arquivo|-> -o <saída.xlsx|ods>
     mdv <pasta>            (seletor: .md, .msg, .docx, .xlsx, .yaml/.yml e .html/.htm da pasta por data, filtro ao digitar)
-    (o formato também é deduzido da extensão: .json, .jsonl, .yaml, .yml, .csv, .tsv, .html, .htm, .msg, .docx, .xlsx)
+    (o formato também é deduzido da extensão: .json, .jsonl, .yaml, .yml, .xml, .csv, .tsv, .html, .htm, .msg, .docx, .xlsx)
     HTML (.html, .htm): páginas com cores do CSS, sem JavaScript; é uma aproximação, não um navegador
 
 OPÇÕES:
@@ -49,7 +50,7 @@ OPÇÕES:
     -h, --help         mostra esta ajuda
     -V, --version      mostra a versão
 
-OPÇÕES DE JSON E YAML (só valem para estes formatos):
+OPÇÕES DE JSON, YAML E XML (só valem para estes formatos):
         --path <p>     mostra só um trecho, ex.: .itens[0].nome
         --as <vista>   auto (padrão), text, table ou schema
 
@@ -71,7 +72,7 @@ TECLAS (modo interativo):
     Backspace / H      volta ao documento anterior (pilha de até 100)
     m                  alterna entre renderizado e fonte crua
     w                  código sem quebra: h/l (ou ←/→) rolam 8 colunas, 0/$ início/fim; w de novo volta a quebrar
-    v                  (JSON/YAML) alterna tabela / esquema / texto
+    v                  (JSON/YAML/XML) alterna tabela / esquema / texto
     t                  zoom da tabela mais visível na tela (h/l colunas, n/p troca de tabela, Esc volta)
     i                  zoom do diagrama Mermaid mais visível na tela: n/p troca de diagrama, +/- zoom, h/j/k/l movem, espaço/b página, g/G topo/fim, 0 ajusta, Esc volta
     y / Y              copia o bloco de código da tela / o Markdown da seção (OSC 52, até 64 KiB)

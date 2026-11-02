@@ -50,23 +50,28 @@ pub enum Doc {
     Markdown,
     Json { json_path: Option<String>, view: JsonView },
     Yaml { yaml_path: Option<String>, view: JsonView },
+    Xml { xml_path: Option<String>, view: JsonView },
     Table { delimiter: u8, head: usize, cols: Vec<String>, no_header: bool },
     /// Página HTML (`.html`, `.htm`, `.xhtml`): só o formato, sem opções próprias.
     Html,
 }
 
 impl Doc {
-    /// Caminho e vista de um documento de dados (JSON ou YAML); `None` nos demais formatos.
+    /// Caminho e vista de um documento de dados (JSON, YAML ou XML); `None` nos demais formatos.
     pub fn data_view(&self) -> Option<(&Option<String>, JsonView)> {
         match self {
-            Doc::Json { json_path: path, view } | Doc::Yaml { yaml_path: path, view } => Some((path, *view)),
+            Doc::Json { json_path: path, view }
+            | Doc::Yaml { yaml_path: path, view }
+            | Doc::Xml { xml_path: path, view } => Some((path, *view)),
             _ => None,
         }
     }
 
     pub fn data_view_mut(&mut self) -> Option<(&mut Option<String>, &mut JsonView)> {
         match self {
-            Doc::Json { json_path: path, view } | Doc::Yaml { yaml_path: path, view } => Some((path, view)),
+            Doc::Json { json_path: path, view }
+            | Doc::Yaml { yaml_path: path, view }
+            | Doc::Xml { xml_path: path, view } => Some((path, view)),
             _ => None,
         }
     }
@@ -125,6 +130,7 @@ enum Format {
     Markdown,
     Json,
     Yaml,
+    Xml,
     Html,
     Table(u8),
 }
@@ -134,6 +140,7 @@ fn format_from_extension(path: &str) -> Format {
     match ext.as_str() {
         "json" | "jsonl" | "ndjson" => Format::Json,
         "yaml" | "yml" => Format::Yaml,
+        "xml" => Format::Xml,
         "html" | "htm" | "xhtml" => Format::Html,
         "csv" => Format::Table(b','),
         "tsv" => Format::Table(b'\t'),
@@ -147,6 +154,7 @@ pub fn doc_for_path(path: &str) -> Doc {
         Format::Markdown => Doc::Markdown,
         Format::Json => Doc::Json { json_path: None, view: JsonView::Auto },
         Format::Yaml => Doc::Yaml { yaml_path: None, view: JsonView::Auto },
+        Format::Xml => Doc::Xml { xml_path: None, view: JsonView::Auto },
         Format::Html => Doc::Html,
         Format::Table(delimiter) => {
             Doc::Table { delimiter, head: DEFAULT_HEAD, cols: Vec::new(), no_header: false }
@@ -176,6 +184,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
     let subcommand = match args.peek().map(String::as_str) {
         Some("json") => Some(Format::Json),
         Some("yaml") => Some(Format::Yaml),
+        Some("xml") => Some(Format::Xml),
         Some("csv") => Some(Format::Table(b',')),
         Some("tsv") => Some(Format::Table(b'\t')),
         _ => None,
@@ -235,8 +244,9 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
     };
     let cli = match format {
         Format::Markdown => parse_markdown(common, &flags),
-        Format::Json => parse_data(common, &flags, false),
-        Format::Yaml => parse_data(common, &flags, true),
+        Format::Json => parse_data(common, &flags, |p, v| Doc::Json { json_path: p, view: v }),
+        Format::Yaml => parse_data(common, &flags, |p, v| Doc::Yaml { yaml_path: p, view: v }),
+        Format::Xml => parse_data(common, &flags, |p, v| Doc::Xml { xml_path: p, view: v }),
         Format::Html => parse_html(common, &flags),
         Format::Table(delimiter) => parse_table(common, &flags, delimiter),
     }?;
@@ -289,6 +299,7 @@ fn into_export(
     match &doc {
         Doc::Json { .. } => return Err("JSON ainda não exporta (use .md, .csv ou .tsv)".to_string()),
         Doc::Yaml { .. } => return Err("YAML ainda não exporta (use .md, .csv ou .tsv)".to_string()),
+        Doc::Xml { .. } => return Err("XML ainda não exporta (use .md, .csv ou .tsv)".to_string()),
         Doc::Html => return Err("HTML ainda não exporta (use .md, .csv ou .tsv como saída)".to_string()),
         Doc::Table { .. } => {
             if let Some(f) = ["--head", "--cols"].into_iter().find(|f| had.iter().any(|h| h == f)) {
@@ -345,7 +356,7 @@ fn take_common(common: &mut Common, f: &Flag) -> Result<bool, String> {
 /// Flag não reconhecida pelo formato: "só vale para X" se existe em outro formato.
 fn wrong_format(flag: &str) -> String {
     match flag {
-        "--path" | "--as" => format!("a opção {flag} só vale para JSON e YAML"),
+        "--path" | "--as" => format!("a opção {flag} só vale para JSON, YAML e XML"),
         "--head" | "--cols" | "--no-header" | "--delimiter" => {
             format!("a opção {flag} só vale para CSV/TSV")
         }
@@ -384,8 +395,8 @@ fn parse_markdown(mut common: Common, flags: &[Flag]) -> Result<Cli, String> {
     Ok(Cli { common, command })
 }
 
-/// JSON e YAML aceitam as mesmas opções (`--path`, `--as`); `yaml` escolhe a variante de `Doc`.
-fn parse_data(mut common: Common, flags: &[Flag], yaml: bool) -> Result<Cli, String> {
+/// JSON, YAML e XML aceitam as mesmas opções (`--path`, `--as`); `make` escolhe a variante de `Doc`.
+fn parse_data(mut common: Common, flags: &[Flag], make: fn(Option<String>, JsonView) -> Doc) -> Result<Cli, String> {
     let (mut path, mut view) = (None, JsonView::Auto);
     for f in flags {
         if take_common(&mut common, f)? {
@@ -405,8 +416,7 @@ fn parse_data(mut common: Common, flags: &[Flag], yaml: bool) -> Result<Cli, Str
             n => return Err(wrong_format(n)),
         }
     }
-    let doc = if yaml { Doc::Yaml { yaml_path: path, view } } else { Doc::Json { json_path: path, view } };
-    Ok(Cli { common, command: Command::View(doc) })
+    Ok(Cli { common, command: Command::View(make(path, view)) })
 }
 
 fn parse_table(mut common: Common, flags: &[Flag], mut delimiter: u8) -> Result<Cli, String> {

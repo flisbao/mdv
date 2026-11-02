@@ -1,6 +1,6 @@
 //! O documento aberto: texto, opções de leitura e como o texto vira linhas.
 
-use crate::{cli, data, html, image, render, yaml_view};
+use crate::{cli, data, html, image, render, xml_view, yaml_view};
 
 /// Como a entrada é interpretada: o formato (com as opções que só ele aceita) e a rolagem de código.
 #[derive(Clone)]
@@ -19,7 +19,7 @@ impl DocOpts {
     }
 }
 
-/// Opções das vistas de dados estruturados (JSON e YAML), que só diferem no formato de entrada.
+/// Opções das vistas de dados estruturados (JSON, YAML e XML), que só diferem no formato de entrada.
 fn json_opts(path: &Option<String>, view: cli::JsonView) -> data::JsonOpts {
     data::JsonOpts { path: path.clone(), view, head: cli::DEFAULT_HEAD, cols: Vec::new() }
 }
@@ -35,6 +35,7 @@ pub(crate) fn render_doc(doc: &DocOpts, text: &str, width: usize, images: &image
         }
         cli::Doc::Json { json_path, view } => data::render_json(text, &json_opts(json_path, *view), width),
         cli::Doc::Yaml { yaml_path, view } => yaml_view::render_yaml(text, &json_opts(yaml_path, *view), width),
+        cli::Doc::Xml { xml_path, view } => xml_view::render_xml(text, &json_opts(xml_path, *view), width),
         cli::Doc::Html => html::render_html(text, width),
         cli::Doc::Table { delimiter, head, cols, no_header } => {
             let opts = data::TableOpts {
@@ -54,8 +55,19 @@ pub(crate) fn raw_lang(doc: &cli::Doc) -> &'static str {
         cli::Doc::Markdown => "md",
         cli::Doc::Json { .. } => "json",
         cli::Doc::Yaml { .. } => "yaml",
+        cli::Doc::Xml { .. } => "xml",
         cli::Doc::Html => "html",
         cli::Doc::Table { .. } => "text",
+    }
+}
+
+/// Vista que o modo `auto` escolheria para o texto (tecla `v` parte dela); `Text` nos demais formatos.
+pub(crate) fn auto_view_of_text(doc: &cli::Doc, text: &str, path: Option<&str>) -> cli::JsonView {
+    match doc {
+        cli::Doc::Json { .. } => data::auto_view_of_text(text, path),
+        cli::Doc::Yaml { .. } => yaml_view::auto_view_of_text(text, path),
+        cli::Doc::Xml { .. } => xml_view::auto_view_of_text(text, path),
+        _ => cli::JsonView::Text,
     }
 }
 
@@ -109,6 +121,31 @@ mod tests {
 
     fn opts() -> DocOpts {
         DocOpts::from_cli(&crate::cli::parse(["x.md".to_string()]).expect("cli de teste"))
+    }
+
+    #[test]
+    fn raw_lang_do_xml() {
+        assert_eq!(raw_lang(&cli::doc_for_path("a.xml")), "xml");
+    }
+
+    #[test]
+    fn render_doc_xml_sem_tags_e_colorido() {
+        let store = image::ImageStore::new(None);
+        let doc = DocOpts { doc: cli::doc_for_path("a.xml"), code_scroll: None };
+        let r = render_doc(&doc, "<nf><emit><xNome>ACME</xNome></emit></nf>", 60, &store);
+        let texto: String = r.lines.iter().flat_map(|l| l.spans.iter().map(|s| s.content.as_ref())).collect();
+        assert!(texto.contains("xNome: ACME"), "{texto}");
+        assert!(!texto.contains('<'), "{texto}");
+        let colorido = r.lines.iter().flat_map(|l| &l.spans).any(|s| s.style.fg.is_some());
+        assert!(colorido, "o XML deveria sair com cores");
+    }
+
+    #[test]
+    fn auto_view_despacha_por_formato() {
+        let xml = auto_view_of_text(&cli::doc_for_path("a.xml"), r#"<l><i a="1"/><i a="2"/></l>"#, None);
+        assert_eq!(xml, cli::JsonView::Table);
+        assert_eq!(auto_view_of_text(&cli::doc_for_path("a.yaml"), "a: 1\n", None), cli::JsonView::Text);
+        assert_eq!(auto_view_of_text(&cli::doc_for_path("a.md"), "# x", None), cli::JsonView::Text);
     }
 
     #[test]
