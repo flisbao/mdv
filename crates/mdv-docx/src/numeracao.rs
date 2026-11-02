@@ -71,17 +71,11 @@ impl Numeracao {
         while let Some(evento) = leitor.dentro("numbering")? {
             match evento {
                 Evento::Abre(tag) if tag.nome == "abstractNum" => {
-                    abstratos += 1;
-                    if abstratos > max_listas {
-                        return Err("listas demais".into());
-                    }
+                    contar_lista(&mut abstratos, max_listas)?;
                     ler_abstrato(&mut leitor, &tag, &mut numeracao)?
                 }
                 Evento::Abre(tag) if tag.nome == "num" => {
-                    nums += 1;
-                    if nums > max_listas {
-                        return Err("listas demais".into());
-                    }
+                    contar_lista(&mut nums, max_listas)?;
                     ler_num(&mut leitor, &tag, &mut numeracao)?
                 }
                 // Outros filhos da raiz (`numPicBullet`, ...) não interessam e são pulados inteiros.
@@ -116,6 +110,15 @@ impl Numeracao {
         let abstrato = self.nums.get(&num_id)?.abstrato?;
         self.abstratos.get(&abstrato).map(|niveis| &niveis[idx])
     }
+}
+
+/// Conta mais uma lista do tipo e recusa passar do teto.
+fn contar_lista(contagem: &mut usize, max_listas: usize) -> Result<(), String> {
+    *contagem += 1;
+    if *contagem > max_listas {
+        return Err("listas demais".into());
+    }
+    Ok(())
 }
 
 /// Lê um `w:abstractNum` até o fecho. O id é atributo aqui, mas `w:num` o repete como elemento.
