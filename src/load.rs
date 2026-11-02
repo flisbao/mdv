@@ -10,6 +10,9 @@ use crate::{cli, graphics, image, mem, net, Failure};
 /// Teto de bytes lidos de arquivo ou stdin (protege a memória).
 pub(crate) const MAX_INPUT_BYTES: u64 = 16 * 1024 * 1024;
 
+/// Bytes em uma MiB, para exibir os tetos de tamanho nas mensagens.
+const MIB: u64 = 1024 * 1024;
+
 pub(crate) enum Source {
     File(PathBuf),
     Stdin,
@@ -88,14 +91,29 @@ pub(crate) fn read_stdin() -> io::Result<String> {
     read_limited(io::stdin().lock(), MAX_INPUT_BYTES)
 }
 
-/// Lê o documento de um caminho: `.msg` vira Markdown pelo `mdv-msg`, `.docx` pelo `mdv-docx`, `.xlsx` pelo `mdv-xlsx`; HTML vai para `html`; o resto é Markdown puro.
-pub(crate) fn read_document(path: &Path) -> io::Result<String> {
+/// Leitor de um formato que o `mdv` converte em Markdown (`.msg`, `.docx`, `.xlsx`), ou `None`.
+/// É a única lista desses formatos: um novo conversor entra aqui e `e_convertido` o acompanha.
+pub(crate) fn conversor(path: &Path) -> Option<fn(&Path) -> io::Result<String>> {
     if crate::msg::is_msg(path) {
-        crate::msg::read_msg_file(path)
+        Some(crate::msg::read_msg_file)
     } else if crate::docx::is_docx(path) {
-        crate::docx::read_docx_file(path)
+        Some(crate::docx::read_docx_file)
     } else if crate::xlsx::is_xlsx(path) {
-        crate::xlsx::read_xlsx_file(path)
+        Some(crate::xlsx::read_xlsx_file)
+    } else {
+        None
+    }
+}
+
+/// O arquivo é de um formato que o `mdv` converte em Markdown (tem `conversor`)?
+pub(crate) fn e_convertido(path: &Path) -> bool {
+    conversor(path).is_some()
+}
+
+/// Lê o documento de um caminho: `.msg` vira Markdown pelo `mdv-msg`, `.docx` pelo `mdv-docx`, `.xlsx` pelo `mdv-xlsx` (ver `conversor`); planilha recusada dá erro; HTML vai para `html`; o resto é Markdown puro.
+pub(crate) fn read_document(path: &Path) -> io::Result<String> {
+    if let Some(ler) = conversor(path) {
+        ler(path)
     } else if let Some(recusa) = crate::xlsx::planilha_nao_suportada(path) {
         Err(io::Error::new(io::ErrorKind::InvalidInput, recusa))
     } else if crate::html::is_html(path) {
@@ -119,12 +137,27 @@ pub(crate) fn read_markdown_file(path: &Path) -> io::Result<String> {
     read_limited(fs::File::open(path)?, MAX_INPUT_BYTES)
 }
 
+/// Lê um arquivo binário regular (nunca dispositivo, FIFO ou diretório) de até `max` bytes.
+/// Recusa antes de ler o que passa do teto (`arquivo {rotulo} grande demais`) ou do limite de memória.
+pub(crate) fn read_binary_capped(path: &Path, max: u64, rotulo: &str) -> io::Result<Vec<u8>> {
+    let meta = fs::metadata(path)?;
+    if !meta.is_file() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "não é um arquivo regular"));
+    }
+    if meta.len() > max {
+        let msg = format!("arquivo {rotulo} grande demais (máximo {} MiB)", max / MIB);
+        return Err(io::Error::new(io::ErrorKind::InvalidData, msg));
+    }
+    mem::check_input(meta.len()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+    read_limited_bytes(fs::File::open(path)?, max)
+}
+
 /// Lê até `max` bytes de `reader` (sem ler além de `max + 1`), falhando se passar do teto.
 pub(crate) fn read_limited_bytes(reader: impl Read, max: u64) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     reader.take(max + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > max {
-        let msg = format!("entrada maior que {} MiB", max / (1024 * 1024));
+        let msg = format!("entrada maior que {} MiB", max / MIB);
         return Err(io::Error::new(io::ErrorKind::InvalidData, msg));
     }
     Ok(bytes)
@@ -160,6 +193,18 @@ mod tests {
         let md = d.path().join("nota.md");
         fs::write(&md, "# Nota\n\ntexto *puro*\n").unwrap();
         assert_eq!(read_document(&md).unwrap(), "# Nota\n\ntexto *puro*\n");
+    }
+
+    #[test]
+    fn conversor_so_existe_para_msg_docx_e_xlsx() {
+        for nome in ["a.msg", "a.DOCX", "a.xlsx"] {
+            let p = Path::new(nome);
+            assert!(conversor(p).is_some() && e_convertido(p), "{nome}");
+        }
+        for nome in ["a.md", "a.html", "a.xls", "a.ods", "a"] {
+            let p = Path::new(nome);
+            assert!(conversor(p).is_none() && !e_convertido(p), "{nome}");
+        }
     }
 
     fn kitty(k: &str) -> Option<String> {

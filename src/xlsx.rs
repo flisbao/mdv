@@ -2,16 +2,12 @@
 //! O texto devolvido já é Markdown (uma tabela por aba visível), então o resto do `mdv` (TUI,
 //! `--plain`, `-o .md`) o trata como qualquer documento.
 
-use std::fs;
 use std::io;
 use std::path::Path;
 
 use mdv_xlsx::{Budget, MAX_XLSX_BYTES};
 
 use crate::{load, mem};
-
-/// Bytes em uma MiB, para exibir o teto de tamanho nas mensagens.
-const MIB: u64 = 1024 * 1024;
 
 /// Extensão `.xlsx` (sem diferenciar caixa).
 pub(crate) fn is_xlsx(path: &Path) -> bool {
@@ -31,19 +27,7 @@ impl Budget for XlsxBudget {
 /// Markdown da planilha (uma tabela por aba visível). Erro de conversão vira `io::Error` com a
 /// mensagem em português.
 pub(crate) fn read_xlsx_file(path: &Path) -> io::Result<String> {
-    let meta = fs::metadata(path)?;
-    if !meta.is_file() {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "não é um arquivo regular"));
-    }
-    if meta.len() > MAX_XLSX_BYTES {
-        let teto = MAX_XLSX_BYTES / MIB;
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("arquivo .xlsx grande demais (máximo {teto} MiB)"),
-        ));
-    }
-    mem::check_input(meta.len()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-    let bytes = load::read_limited_bytes(fs::File::open(path)?, MAX_XLSX_BYTES)?;
+    let bytes = load::read_binary_capped(path, MAX_XLSX_BYTES, ".xlsx")?;
     mdv_xlsx::to_markdown(&bytes, &XlsxBudget).map_err(io::Error::other)
 }
 
@@ -64,7 +48,7 @@ pub(crate) fn planilha_nao_suportada(path: &Path) -> Option<&'static str> {
 mod tests {
     use super::*;
     use mdv_xlsx::testutil::XlsxBuilder;
-    use std::fs::File;
+    use std::fs::{self, File};
 
     #[test]
     fn planilhas_nao_suportadas_dao_erro_claro_antes_do_markdown() {
