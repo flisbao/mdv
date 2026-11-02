@@ -75,7 +75,7 @@ fn celula_de(tag: &Tag, bruto: String, cortado: bool, ctx: &ContextoPasta) -> Ce
     let celula = if cortado && matches!(tag.attr("t"), None | Some("n")) {
         Celula { texto: bruto, numerica: false }
     } else {
-        interpretar(tag.attr("t"), &bruto, ctx.estilos.formato(estilo), ctx.textos, ctx.data_1904)
+        interpretar(tag.attr("t"), &bruto, estilo, ctx)
     };
     Celula { texto: texto_seguro(&celula.texto, ctx.limites.max_celula_chars), numerica: celula.numerica }
 }
