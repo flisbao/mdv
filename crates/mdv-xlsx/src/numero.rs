@@ -46,29 +46,9 @@ pub(crate) fn fixo(v: f64, decimais: u8, milhar: bool) -> String {
     let Some((dig, expo)) = quinze_digitos(v.abs()) else {
         return String::new();
     };
-    let p = expo + 1;
-    let k = p + d as i64;
-    let mut n: Vec<u8> = Vec::new();
-    if k >= 0 {
-        let k = k as usize;
-        n.extend((0..k).map(|i| dig.get(i).copied().unwrap_or(b'0')));
-        if dig.get(k).is_some_and(|b| *b >= b'5') {
-            incrementar(&mut n);
-        }
-    }
-    if n.is_empty() {
-        n.push(b'0');
-    }
-    let (inteiro, fracao) = if n.len() > d {
-        let corte = n.len() - d;
-        (n[..corte].to_vec(), n[corte..].to_vec())
-    } else {
-        let mut f = vec![b'0'; d - n.len()];
-        f.extend_from_slice(&n);
-        (vec![b'0'], f)
-    };
+    let (inteiro, fracao) = parte_decimal(&dig, expo, d);
     let mut s = String::new();
-    if v < 0.0 && n.iter().any(|b| *b != b'0') {
+    if v < 0.0 && inteiro.iter().chain(&fracao).any(|b| *b != b'0') {
         s.push('-');
     }
     if milhar {
@@ -81,6 +61,32 @@ pub(crate) fn fixo(v: f64, decimais: u8, milhar: bool) -> String {
         s.extend(fracao.iter().map(|b| char::from(*b)));
     }
     s
+}
+
+/// Separa em parte inteira e fração (esta com `d` dígitos) os 15 dígitos significativos `dig` de um
+/// número cujo expoente decimal é `expo`, arredondando meia para longe de zero na casa `d`.
+/// A parte inteira tem ao menos um dígito.
+fn parte_decimal(dig: &[u8], expo: i64, d: usize) -> (Vec<u8>, Vec<u8>) {
+    let k = expo + 1 + d as i64;
+    let mut n: Vec<u8> = Vec::new();
+    if k >= 0 {
+        let k = k as usize;
+        n.extend((0..k).map(|i| dig.get(i).copied().unwrap_or(b'0')));
+        if dig.get(k).is_some_and(|b| *b >= b'5') {
+            incrementar(&mut n);
+        }
+    }
+    if n.is_empty() {
+        n.push(b'0');
+    }
+    if n.len() > d {
+        let corte = n.len() - d;
+        (n[..corte].to_vec(), n[corte..].to_vec())
+    } else {
+        let mut f = vec![b'0'; d - n.len()];
+        f.extend_from_slice(&n);
+        (vec![b'0'], f)
+    }
 }
 
 /// Dígitos da parte inteira com `,` a cada três casas, da direita para a esquerda.
