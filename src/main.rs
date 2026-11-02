@@ -7,6 +7,7 @@ mod data;
 mod doc;
 mod docx;
 mod export;
+mod failure;
 mod graphics;
 mod html;
 #[cfg(test)]
@@ -30,39 +31,27 @@ mod syntax_error;
 mod yaml_view;
 mod yamldoc;
 mod render;
-use std::{io::{self, IsTerminal}, path::Path, process::ExitCode};
+
+use std::{
+    io::{self, IsTerminal},
+    path::Path,
+    process::ExitCode,
+};
+
+pub(crate) use failure::Failure;
 
 use app::{run_tui, App};
 use load::{load_source, reads_stdin, Source, MAX_INPUT_BYTES};
 use plain::{run_plain, write_stdout, HELP};
+
 #[global_allocator]
 static ALLOC: mem::CountingAlloc = mem::CountingAlloc;
-
-/// Falha que encerra o programa; o código de saída depende do tipo.
-pub(crate) enum Failure {
-    /// Uso incorreto da linha de comando (código 2).
-    Usage(String),
-    /// Erro ao ler a entrada ou usar o terminal (código 1).
-    Runtime(String),
-}
-
-impl Failure {
-    fn exit_code(&self) -> ExitCode {
-        match self {
-            Failure::Usage(_) => ExitCode::from(2),
-            Failure::Runtime(_) => ExitCode::from(1),
-        }
-    }
-}
 
 fn main() -> ExitCode {
     match run_cli() {
         Ok(()) => ExitCode::SUCCESS,
         Err(failure) => {
-            match &failure {
-                Failure::Usage(msg) => eprintln!("mdv: {}\nUse `mdv --help` para ver as opções.", render::sanitize(msg)),
-                Failure::Runtime(msg) => eprintln!("mdv: {}", render::sanitize(msg)),
-            }
+            failure.report();
             failure.exit_code()
         }
     }
@@ -83,7 +72,9 @@ fn run_cli() -> Result<(), Failure> {
     let stdout_tty = io::stdout().is_terminal();
     let interactive = !cli.common.plain && stdout_tty;
     let width = cli.common.width.unwrap_or(render::MAX_WIDTH);
-    if let cli::Command::Export(e) = &cli.command { return export::run_export(&cli, e, mem_warning.as_deref()); }
+    if let cli::Command::Export(e) = &cli.command {
+        return export::run_export(&cli, e, mem_warning.as_deref());
+    }
     if !interactive {
         if let Some(w) = &mem_warning {
             eprintln!("mdv: {w}");
