@@ -51,24 +51,22 @@ fn ler_nota(l: &mut Leitor, ctx: &mut Contexto, elemento: &str) -> Result<Vec<Tr
 fn ler_paragrafos(l: &mut Leitor, ctx: &mut Contexto, elemento: &str) -> Result<Vec<Trecho>, String> {
     let mut trechos: Vec<Trecho> = Vec::new();
     let mut primeiro = true;
-    loop {
-        match l.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == elemento => return Ok(trechos),
-            Some(Evento::Abre(tag)) if tag.nome == "p" => {
-                let Some(bloco) = ler_paragrafo(l, ctx)? else { continue };
-                for paragrafo in bloco.paragrafos() {
-                    if !primeiro {
-                        let espaco = Trecho::Texto { texto: " ".into(), marcas: Marcas::default(), link: None };
-                        trechos.push(espaco);
-                    }
-                    primeiro = false;
-                    trechos.extend(paragrafo.into_iter().filter(|t| !matches!(t, Trecho::NotaRef(_))));
-                }
+    while let Some(evento) = l.dentro(elemento)? {
+        let Evento::Abre(tag) = evento else { continue };
+        if tag.nome != "p" {
+            continue;
+        }
+        let Some(bloco) = ler_paragrafo(l, ctx)? else { continue };
+        for paragrafo in bloco.paragrafos() {
+            if !primeiro {
+                let espaco = Trecho::Texto { texto: " ".into(), marcas: Marcas::default(), link: None };
+                trechos.push(espaco);
             }
-            Some(_) => {}
+            primeiro = false;
+            trechos.extend(paragrafo.into_iter().filter(|t| !matches!(t, Trecho::NotaRef(_))));
         }
     }
+    Ok(trechos)
 }
 
 #[cfg(test)]
