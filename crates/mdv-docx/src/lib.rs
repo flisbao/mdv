@@ -56,9 +56,9 @@ use partes::Partes;
 /// Tamanho máximo aceito para um arquivo `.docx` inteiro.
 pub const MAX_DOCX_BYTES: u64 = 32 * 1024 * 1024;
 /// Tamanho máximo de uma parte do pacote já descomprimida.
-pub const MAX_PARTE_BYTES: usize = 16 * 1024 * 1024;
+pub(crate) const MAX_PARTE_BYTES: usize = 16 * 1024 * 1024;
 /// Soma máxima dos bytes de todas as partes lidas.
-pub const MAX_TOTAL_BYTES: usize = 40 * 1024 * 1024;
+pub(crate) const MAX_TOTAL_BYTES: usize = 40 * 1024 * 1024;
 /// Número máximo de entradas do diretório do ZIP.
 pub const MAX_ENTRADAS: usize = 5000;
 /// Profundidade máxima da árvore XML analisada.
@@ -66,7 +66,7 @@ pub const MAX_PROFUNDIDADE_XML: usize = 100;
 /// Tamanho máximo do destino de um link; acima disso o texto fica sem link.
 pub const MAX_URL_BYTES: usize = 4096;
 /// Número máximo de colunas de uma tabela convertida.
-pub const MAX_COLUNAS: usize = 200;
+pub(crate) const MAX_COLUNAS: usize = 200;
 /// Número máximo de estilos lidos de `styles.xml`; um documento real do Word tem centenas.
 pub(crate) const MAX_ESTILOS: usize = 20_000;
 /// Número máximo de `abstractNum` (e, à parte, de `num`) lidos de `numbering.xml`.
@@ -74,7 +74,7 @@ pub(crate) const MAX_LISTAS: usize = 20_000;
 /// Maior nível de título (`h6`); níveis acima disso são limitados a ele.
 pub(crate) const MAX_NIVEL_TITULO: u8 = 6;
 /// Nível máximo de recuo de uma lista.
-pub const MAX_NIVEL_LISTA: u8 = 8;
+pub(crate) const MAX_NIVEL_LISTA: u8 = 8;
 /// Tamanho máximo do Markdown produzido.
 pub const MAX_MARKDOWN_BYTES: usize = 16 * 1024 * 1024;
 
