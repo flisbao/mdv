@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use crate::propriedades::ler_ppr;
+use crate::propriedades::{ler_ppr, Propriedades};
 use crate::xml_leitor::{Evento, Leitor};
 use crate::{Budget, MAX_ESTILOS, MAX_NIVEL_TITULO};
 
@@ -84,9 +84,8 @@ fn ler_estilo(leitor: &mut Leitor, id: String) -> Result<Bruto, String> {
             }
             // `numId` 0 quer dizer "sem numeração" e `outlineLvl` 9, texto comum.
             "pPr" => {
-                let props = ler_ppr(leitor)?;
-                titulo_outline = props.nivel;
-                numeracao = props.num.filter(|&(num_id, _)| num_id != 0);
+                let Propriedades { nivel, num, .. } = ler_ppr(leitor)?;
+                (titulo_outline, numeracao) = (nivel, num.filter(|&(num_id, _)| num_id != 0));
             }
             _ => leitor.pular()?,
         }
