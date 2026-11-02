@@ -102,9 +102,10 @@ fn render_doc(doc: &XmlDoc, o: &JsonOpts, has_path: bool, width: usize) -> Rende
     }
 }
 
-/// `--path` que de fato recorta o documento (vazio e `.` valem a raiz).
+/// `--path` informado: só vazio (depois do `trim`) vale "sem caminho"; qualquer outro, inclusive
+/// `.`, passa por `data::select` (que devolve a raiz para `.`) e dispensa a busca de registros.
 fn path_set(path: Option<&str>) -> bool {
-    !matches!(path.map(str::trim), None | Some("") | Some("."))
+    !matches!(path.map(str::trim), None | Some(""))
 }
 
 /// Teto estourado: o XML original com o motivo (`m` até o `:`) no lugar do resumo, para explicar
@@ -154,8 +155,13 @@ fn find_records(root: &Value) -> Option<(String, &Value)> {
 
 /// A árvore recuada (`chave: valor`); `None` se passar de `MAX_OUTLINE_BYTES` ou da memória.
 fn outline(v: &Value) -> Option<String> {
+    outline_capped(v, MAX_OUTLINE_BYTES)
+}
+
+/// `outline` com o teto de bytes por parâmetro (os testes usam um teto pequeno).
+fn outline_capped(v: &Value, cap: usize) -> Option<String> {
     let mut out = String::new();
-    node(&mut out, 0, "", None, v)?;
+    node(&mut out, cap, 0, "", None, v)?;
     Some(out)
 }
 
@@ -165,8 +171,8 @@ fn indent(out: &mut String, n: usize) {
 
 /// Escreve `v` com a linha de abertura em `ind` + `lead` (`- ` num item de lista) + `label`.
 /// Os filhos ficam 2 colunas depois do começo do conteúdo (`ind + lead`).
-fn node(out: &mut String, ind: usize, lead: &str, label: Option<&str>, v: &Value) -> Option<()> {
-    if out.len() > MAX_OUTLINE_BYTES || mem::exceeded() {
+fn node(out: &mut String, cap: usize, ind: usize, lead: &str, label: Option<&str>, v: &Value) -> Option<()> {
+    if out.len() > cap || mem::exceeded() {
         return None;
     }
     let col = ind + lead.len();
@@ -180,9 +186,9 @@ fn node(out: &mut String, ind: usize, lead: &str, label: Option<&str>, v: &Value
             // A primeira entrada leva o `- `; as demais alinham com ela.
             for (i, (k, c)) in m.iter().enumerate() {
                 if i == 0 {
-                    node(out, ind, lead, Some(k), c)?;
+                    node(out, cap, ind, lead, Some(k), c)?;
                 } else {
-                    node(out, col, "", Some(k), c)?;
+                    node(out, cap, col, "", Some(k), c)?;
                 }
             }
         }
@@ -191,19 +197,19 @@ fn node(out: &mut String, ind: usize, lead: &str, label: Option<&str>, v: &Value
             out.push_str(lead.trim_end());
             out.push('\n');
             for c in a {
-                node(out, col + 2, "- ", None, c)?;
+                node(out, cap, col + 2, "- ", None, c)?;
             }
         }
         (Value::Object(m), Some(k)) => {
             head_line(out, ind, lead, k, "");
             for (k, c) in m {
-                node(out, col + 2, "", Some(k), c)?;
+                node(out, cap, col + 2, "", Some(k), c)?;
             }
         }
         (Value::Array(a), Some(k)) => {
             head_line(out, ind, lead, k, "");
             for c in a {
-                node(out, col + 2, "- ", None, c)?;
+                node(out, cap, col + 2, "- ", None, c)?;
             }
         }
         (leaf, label) => {
@@ -237,6 +243,10 @@ fn node(out: &mut String, ind: usize, lead: &str, label: Option<&str>, v: &Value
             out.push('\n');
             if multiline {
                 for l in s.split('\n') {
+                    // Um texto só pode escrever muito (cada linha leva o recuo): confere por linha.
+                    if out.len() > cap || mem::exceeded() {
+                        return None;
+                    }
                     if !l.is_empty() {
                         indent(out, col + 2);
                         out.push_str(l);
@@ -302,6 +312,15 @@ mod tests {
     }
 
     #[test]
+    fn outline_corta_texto_multilinha_no_teto() {
+        let v = json!({"t": "a\n".repeat(200)});
+        assert!(outline_capped(&v, 100).is_none());
+        assert!(outline_capped(&v, 10_000).is_some());
+        // O teto vale também para a folha raiz.
+        assert!(outline_capped(&json!("a\n".repeat(200)), 100).is_none());
+    }
+
+    #[test]
     fn find_records_prefere_o_mais_raso_e_o_primeiro() {
         let v = json!({"cab":{"x":[{"a":"1"},{"a":"2"}]},"y":[{"b":"1"},{"b":"2"}]});
         assert_eq!(find_records(&v).unwrap().0, "y");
@@ -333,6 +352,18 @@ mod tests {
     }
 
     #[test]
+    fn path_ponto_vale_a_raiz_e_nao_busca_registros() {
+        let src = "<lista><item id=\"1\"><nome>a</nome></item><item id=\"2\"><nome>b</nome></item></lista>";
+        let t = text(&render_xml(src, &opts(Some("."), JsonView::Table), 80));
+        assert!(!t.contains("registros em"), "{t}");
+        assert!(t.contains("chave") && t.contains("valor"), "{t}");
+        let t = text(&render_xml(src, &opts(None, JsonView::Table), 80));
+        assert!(t.contains("registros em item"), "{t}");
+        assert_eq!(auto_view_of_text(src, Some(".")), JsonView::Text);
+        assert_eq!(auto_view_of_text(src, None), JsonView::Table);
+    }
+
+    #[test]
     fn registro_unico_em_tabela_vira_chave_valor() {
         let t = text(&render_xml(NF, &opts(None, JsonView::Table), 80));
         assert!(t.contains("emit.xNome") && t.contains("ACME"), "{t}");
@@ -341,7 +372,8 @@ mod tests {
     #[test]
     fn esquema_lista_chaves_e_tipos() {
         let t = text(&render_xml("<a><b>1</b></a>", &opts(None, JsonView::Schema), 80));
-        assert!(t.contains('b'), "{t}");
+        assert!(t.lines().any(|l| l.starts_with("│ objeto ")), "{t}");
+        assert!(t.lines().any(|l| l.starts_with("│   b: texto")), "{t}");
     }
 
     #[test]
