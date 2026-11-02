@@ -85,7 +85,11 @@ fn text_with_notice(text: &str, m: &str, width: usize) -> Rendered {
 }
 
 fn text_with_head(text: &str, head: String, width: usize) -> Rendered {
-    let mut r = render_code_only(text, "yaml", width);
+    with_head(render_code_only(text, "yaml", width), head)
+}
+
+/// Insere `head` em itálico cinza como primeira linha.
+pub(crate) fn with_head(mut r: Rendered, head: String) -> Rendered {
     let head = Line::from(Span::styled(head, Style::default().fg(DIM).add_modifier(Modifier::ITALIC)));
     r.lines.insert(0, head);
     r

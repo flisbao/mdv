@@ -27,9 +27,10 @@ mod plain;
 mod stats;
 mod stream;
 mod xlsx;
-// Usado pela vista de XML (próxima tarefa); até lá nada chama `parse`.
-#[allow(dead_code)]
 mod xmldoc;
+// A tarefa 3 liga `render_xml` e `auto_view_of_text` ao `doc`/`app` e remove este `allow`.
+#[allow(dead_code)]
+mod xml_view;
 mod syntax_error;
 mod yaml_view;
 mod yamldoc;

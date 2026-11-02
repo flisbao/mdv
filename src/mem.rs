@@ -189,6 +189,13 @@ pub fn check_json(len: usize) -> Result<(), MemoryLimit> {
     check_against(len.saturating_mul(16), limit())
 }
 
+/// Estimativa do `serde_json::Value` montado por `xmldoc`. Pior caso: `<a/>` repetido, 4 bytes de
+/// texto geram uma chave `String` (24 B + heap), um `Value` (32 B) e a entrada do mapa (~40 B),
+/// ≈ 100–130 B, ou ~32× o texto.
+pub fn check_xml(len: usize) -> Result<(), MemoryLimit> {
+    check_against(len.saturating_mul(32), limit())
+}
+
 /// Teto de alocação para decodificar uma imagem: o que resta do limite, no máximo `max`.
 pub fn image_budget(used: usize, limit: usize, max: u64) -> u64 {
     (limit.saturating_sub(used) as u64).min(max)
@@ -482,6 +489,13 @@ mod tests {
         assert!(check_json(1024).is_ok());
         assert!(check_json(limit() / 16 + 1).is_err());
         assert!(check_json(limit() / 16).is_ok());
+    }
+
+    #[test]
+    fn check_xml_conta_a_arvore() {
+        assert!(check_xml(1024).is_ok());
+        assert!(check_xml(limit() / 32 + 1).is_err());
+        assert!(check_xml(limit() / 32).is_ok());
     }
 
     #[test]
