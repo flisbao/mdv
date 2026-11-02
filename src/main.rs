@@ -27,6 +27,7 @@ mod plain;
 mod stats;
 mod stream;
 mod xlsx;
+mod xml;
 mod xmldoc;
 mod xml_view;
 mod syntax_error;

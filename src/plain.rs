@@ -26,7 +26,7 @@ USO:
     mdv [opções] <documento.docx> [-o <saída.md|pdf|docx|odt>]
     mdv [opções] <planilha.xlsx> [-o <saída.md|pdf|docx|odt|xlsx|ods>]
     mdv csv|tsv [opções] <arquivo|-> -o <saída.xlsx|ods>
-    mdv <pasta>            (seletor: .md, .msg, .docx, .xlsx, .yaml/.yml e .html/.htm da pasta por data, filtro ao digitar)
+    mdv <pasta>            (seletor: .md, .msg, .docx, .xlsx, .yaml/.yml, .xml e .html/.htm da pasta por data, filtro ao digitar)
     (o formato também é deduzido da extensão: .json, .jsonl, .yaml, .yml, .xml, .csv, .tsv, .html, .htm, .msg, .docx, .xlsx)
     HTML (.html, .htm): páginas com cores do CSS, sem JavaScript; é uma aproximação, não um navegador
 

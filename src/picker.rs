@@ -1,4 +1,4 @@
-//! Seletor de arquivos (`mdv <pasta>`): lista os `.md`, `.msg`, `.docx`, `.xlsx`, `.yaml`/`.yml` e `.html`/`.htm` da pasta por mtime, com filtro fuzzy.
+//! Seletor de arquivos (`mdv <pasta>`): lista os `.md`, `.msg`, `.docx`, `.xlsx`, `.yaml`/`.yml`, `.xml` e `.html`/`.htm` da pasta por mtime, com filtro fuzzy.
 
 use std::fs;
 use std::io;
@@ -27,7 +27,7 @@ pub struct Picker {
     pub truncated: bool,
 }
 
-/// Arquivos listados no seletor: Markdown, os formatos convertidos (`load::CONVERSORES`), YAML e HTML (JSON e CSV/TSV ficam de fora).
+/// Arquivos listados no seletor: Markdown, os formatos convertidos (`load::CONVERSORES`), YAML, XML e HTML (JSON e CSV/TSV ficam de fora).
 fn is_listed(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     n.ends_with(".md")
@@ -35,6 +35,7 @@ fn is_listed(name: &str) -> bool {
         || crate::load::e_convertido(Path::new(&n))
         || n.ends_with(".yaml")
         || n.ends_with(".yml")
+        || n.ends_with(".xml")
         || n.ends_with(".html")
         || n.ends_with(".htm")
 }
@@ -194,15 +195,15 @@ mod tests {
     }
 
     #[test]
-    fn lista_yaml_e_yml_mas_nao_json_nem_csv() {
+    fn lista_yaml_xml_mas_nao_json_nem_csv() {
         let d = tempfile::tempdir().unwrap();
-        for n in ["a.md", "b.yaml", "c.YML", "d.json", "e.csv", "f.txt", "g.tsv"] {
+        for n in ["a.md", "b.yaml", "c.YML", "d.json", "e.csv", "f.txt", "g.tsv", "h.xml", "i.XML"] {
             fs::write(d.path().join(n), "a").unwrap();
         }
         let p = Picker::scan(d.path()).unwrap();
         let mut names: Vec<_> = p.entries.iter().map(|e| e.name.as_str()).collect();
         names.sort_unstable();
-        assert_eq!(names, ["a.md", "b.yaml", "c.YML"]);
+        assert_eq!(names, ["a.md", "b.yaml", "c.YML", "h.xml", "i.XML"]);
     }
 
     #[test]

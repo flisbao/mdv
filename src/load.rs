@@ -126,7 +126,7 @@ pub(crate) fn extensoes_convertidas() -> String {
     }
 }
 
-/// Lê o documento de um caminho: `.msg` vira Markdown pelo `mdv-msg`, `.docx` pelo `mdv-docx`, `.xlsx` pelo `mdv-xlsx` (ver `conversor`); planilha recusada dá erro; HTML vai para `html`; o resto é Markdown puro.
+/// Lê o documento de um caminho: `.msg` vira Markdown pelo `mdv-msg`, `.docx` pelo `mdv-docx`, `.xlsx` pelo `mdv-xlsx` (ver `conversor`); planilha recusada dá erro; HTML vai para `html` e XML para `xml` (encoding declarado); o resto é Markdown puro.
 pub(crate) fn read_document(path: &Path) -> io::Result<String> {
     if let Some(ler) = conversor(path) {
         ler(path)
@@ -134,6 +134,8 @@ pub(crate) fn read_document(path: &Path) -> io::Result<String> {
         Err(io::Error::new(io::ErrorKind::InvalidInput, recusa))
     } else if crate::html::is_html(path) {
         crate::html::read_html_file(path)
+    } else if crate::xml::is_xml(path) {
+        crate::xml::read_xml_file(path)
     } else {
         read_markdown_file(path)
     }
@@ -214,6 +216,14 @@ mod tests {
         let md = d.path().join("nota.md");
         fs::write(&md, "# Nota\n\ntexto *puro*\n").unwrap();
         assert_eq!(read_document(&md).unwrap(), "# Nota\n\ntexto *puro*\n");
+    }
+
+    #[test]
+    fn read_document_decodifica_xml_pelo_encoding_declarado() {
+        let d = tempfile::tempdir().unwrap();
+        let xml = d.path().join("a.xml");
+        fs::write(&xml, b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><a>caf\xe9</a>").unwrap();
+        assert!(read_document(&xml).unwrap().contains("café"));
     }
 
     #[test]
