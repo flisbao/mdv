@@ -25,6 +25,16 @@ impl<'a> Contexto<'a> {
     ) -> Self {
         Contexto { estilos, numeracao, relacoes, contador: Contador::novo(), budget }
     }
+
+    /// Roda `f` com a contagem de listas parada e a restaura ao sair, qualquer que seja o resultado.
+    /// Um item numerado dentro de célula ou de nota sai sem marcador; se contasse, deslocaria a
+    /// numeração da lista do corpo que usa o mesmo `numId`.
+    pub(crate) fn sem_contar<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        let antes = self.contador.parar(true);
+        let resultado = f(self);
+        self.contador.parar(antes);
+        resultado
+    }
 }
 
 /// Monta um contexto de teste a partir de filhos XML de `styles` e `numbering` (vazio = sem nada)

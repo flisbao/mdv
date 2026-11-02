@@ -982,13 +982,18 @@ fn table_alem_do_que_existe_avisa_e_nao_abre() {
         .is_some_and(|n| n.contains("tabela 5 não existe (há 1)")));
 }
 
-/// Spec 5: `main.rs` enxuto; nenhum arquivo novo acima de ~500 linhas de produção.
+/// Spec 5: `main.rs` enxuto; nenhum arquivo acima de ~500 linhas de produção (o que vem depois de `#[cfg(test)] mod tests {` não conta; `mod tests;` em arquivo próprio também não).
 #[test]
 fn arquivos_de_producao_dentro_do_teto() {
     let arquivos: &[(&str, &str, usize)] = &[
-        ("main.rs", include_str!("../main.rs"), 126),
+        ("main.rs", include_str!("../main.rs"), 125),
         ("load.rs", include_str!("../load.rs"), 500),
         ("plain.rs", include_str!("../plain.rs"), 500),
+        ("cli.rs", include_str!("../cli.rs"), 500),
+        ("docx.rs", include_str!("../docx.rs"), 500),
+        ("xlsx.rs", include_str!("../xlsx.rs"), 500),
+        ("picker.rs", include_str!("../picker.rs"), 500),
+        ("export.rs", include_str!("../export.rs"), 500),
         ("doc.rs", include_str!("../doc.rs"), 500),
         ("app/mod.rs", include_str!("mod.rs"), 500),
         ("app/viewport.rs", include_str!("viewport.rs"), 500),

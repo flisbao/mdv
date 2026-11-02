@@ -8,7 +8,7 @@ use crate::contexto::Contexto;
 use crate::modelo::{Bloco, Trecho};
 use crate::propriedades::{ler_ppr, Propriedades};
 use crate::trecho::ler_run;
-use crate::xml_leitor::{Evento, Leitor};
+use crate::xml_leitor::{Evento, Leitor, Tag};
 use crate::MAX_URL_BYTES;
 
 /// Lê um `w:p` (chamada logo depois do `Abre("p")`), consome até o `Fecha` dele e o classifica.
@@ -17,48 +17,51 @@ use crate::MAX_URL_BYTES;
 /// são texto aceito: `del` e `moveFrom` (texto apagado), `Fallback` (cópia do `Choice`), `drawing`/`pict`
 /// e `txbxContent` (caixa de texto, fora do escopo) e `rPr` solto.
 pub(crate) fn ler_paragrafo(l: &mut Leitor, ctx: &mut Contexto) -> Result<Option<Bloco>, String> {
-    let mut props = Propriedades::default();
-    let mut trechos = Vec::new();
-    percorrer(l, ctx, None, &mut props, &mut trechos, "p")?;
-    Ok(classificar(&props, trechos, ctx))
+    let mut paragrafo = Paragrafo::default();
+    paragrafo.percorrer(l, ctx, "p")?;
+    Ok(classificar(&paragrafo.props, paragrafo.trechos, ctx))
 }
 
-/// Percorre os eventos até o `Fecha(fim)`. Dentro de um `hyperlink` volta aqui com o destino,
-/// que vale para todo run até o fecho dele, mesmo atrás de `ins` ou `smartTag`.
-fn percorrer(
-    l: &mut Leitor,
-    ctx: &mut Contexto,
-    link: Option<&Rc<str>>,
-    props: &mut Propriedades,
-    trechos: &mut Vec<Trecho>,
-    fim: &str,
-) -> Result<(), String> {
-    loop {
-        match l.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == fim => return Ok(()),
-            Some(Evento::Abre(tag)) => match tag.nome.as_str() {
-                "pPr" => *props = ler_ppr(l)?,
-                "r" => ler_run(l, ctx, link, trechos)?,
+/// O que a leitura de um `w:p` junta: as propriedades, os trechos e o link em vigor.
+#[derive(Default)]
+struct Paragrafo {
+    props: Propriedades,
+    trechos: Vec<Trecho>,
+    /// Destino do `hyperlink` aberto, que vale para todo run até o fecho dele.
+    link: Option<Rc<str>>,
+}
+
+impl Paragrafo {
+    /// Percorre os eventos até o `Fecha(fim)`. Dentro de um `hyperlink` volta aqui com o destino,
+    /// que vale para todo run até o fecho dele, mesmo atrás de `ins` ou `smartTag`.
+    fn percorrer(&mut self, l: &mut Leitor, ctx: &mut Contexto, fim: &str) -> Result<(), String> {
+        while let Some(evento) = l.dentro(fim)? {
+            let Evento::Abre(tag) = evento else { continue };
+            match tag.nome.as_str() {
+                "pPr" => self.props = ler_ppr(l)?,
+                "r" => ler_run(l, ctx, self.link.as_ref(), &mut self.trechos)?,
                 "hyperlink" => {
-                    // Só destino externo vira link; `anchor` aponta para dentro do documento.
-                    let url = tag
-                        .attr("id")
-                        .and_then(|id| ctx.relacoes.por_id(id))
-                        .filter(|r| r.externo && r.alvo.len() <= MAX_URL_BYTES)
-                        .map(|r| Rc::from(r.alvo.as_str()));
-                    percorrer(l, ctx, url.as_ref(), props, trechos, "hyperlink")?;
+                    let anterior = std::mem::replace(&mut self.link, destino(&tag, ctx));
+                    self.percorrer(l, ctx, "hyperlink")?;
+                    self.link = anterior;
                 }
                 // `oMath` e `oMathPara` têm runs `m:r`/`m:t` com o mesmo nome local dos de texto.
                 "del" | "moveFrom" | "Fallback" | "drawing" | "pict" | "txbxContent" | "rPr" | "oMath"
-                | "oMathPara" => {
-                    l.pular()?
-                }
+                | "oMathPara" => l.pular()?,
                 _ => {}
-            },
-            Some(_) => {}
+            }
         }
+        Ok(())
     }
+}
+
+/// Só destino externo vira link; `anchor` aponta para dentro do documento.
+fn destino(hyperlink: &Tag, ctx: &Contexto) -> Option<Rc<str>> {
+    hyperlink
+        .attr("id")
+        .and_then(|id| ctx.relacoes.por_id(id))
+        .filter(|r| r.externo && r.alvo.len() <= MAX_URL_BYTES)
+        .map(|r| Rc::from(r.alvo.as_str()))
 }
 
 /// Lê o primeiro `w:p` do XML e o classifica; ajuda os testes de parágrafo e de classificação.

@@ -1,0 +1,155 @@
+//! Planilhas `.xlsx` do Excel: leitura com teto e conversão para Markdown (crate `mdv-xlsx`).
+//! O texto devolvido já é Markdown (uma tabela por aba visível), então o resto do `mdv` (TUI,
+//! `--plain`, `-o .md`) o trata como qualquer documento.
+
+use std::io;
+use std::path::Path;
+
+use mdv_xlsx::MAX_XLSX_BYTES;
+
+use crate::load;
+use crate::mem::MemBudget;
+
+/// Lê um `.xlsx` regular, recusando o que passa de `MAX_XLSX_BYTES` antes de ler, e devolve o
+/// Markdown da planilha (uma tabela por aba visível). Erro de conversão vira `io::Error` com a
+/// mensagem em português.
+pub(crate) fn read_xlsx_file(path: &Path) -> io::Result<String> {
+    let bytes = load::read_binary_capped(path, MAX_XLSX_BYTES, ".xlsx")?;
+    mdv_xlsx::to_markdown(&bytes, &MemBudget).map_err(io::Error::other)
+}
+
+/// Planilha que o `mdv` não lê (`.xls` antigo, `.xlsb`, `.xlsm`, `.ods`): a mensagem em português
+/// que manda salvar como `.xlsx`. `None` para os outros arquivos.
+pub(crate) fn planilha_nao_suportada(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "xls" => "planilha .xls (formato antigo) não é suportada: salve como .xlsx",
+        "xlsb" => "planilha .xlsb não é suportada ainda: salve como .xlsx",
+        "xlsm" => "planilha .xlsm não é suportada ainda: salve como .xlsx",
+        "ods" => "planilha .ods não é suportada ainda: salve como .xlsx",
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mdv_xlsx::testutil::XlsxBuilder;
+    use std::fs::{self, File};
+
+    #[test]
+    fn planilhas_nao_suportadas_dao_erro_claro_antes_do_markdown() {
+        let d = tempfile::tempdir().unwrap();
+        for nome in ["a.xls", "a.XLSB", "a.xlsm", "a.ods"] {
+            let p = d.path().join(nome);
+            fs::write(&p, b"qualquer coisa").unwrap();
+            let err = crate::load::read_document(&p).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::InvalidInput, "{nome}");
+            assert!(err.to_string().contains("salve como .xlsx"), "{nome}: {err}");
+            assert!(!err.to_string().contains("UTF-8"), "{nome}: {err}");
+        }
+        assert!(planilha_nao_suportada(Path::new("a.xls")).unwrap().contains(".xls (formato antigo)"));
+        assert!(planilha_nao_suportada(Path::new("a.xlsx")).is_none());
+    }
+
+    /// Texto das linhas renderizadas, uma por linha, sem estilos.
+    fn texto_renderizado(md: &str) -> String {
+        crate::render::render(md, 60)
+            .lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn le_xlsx_do_disco() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("planilha.xlsx");
+        let linhas = r#"<row r="1"><c r="A1"><v>7</v></c></row>"#;
+        fs::write(&p, XlsxBuilder::novo().aba("P", linhas).construir()).unwrap();
+        let md = read_xlsx_file(&p).unwrap();
+        assert!(md.contains("# P"), "{md}");
+        assert!(md.contains("| 7 |"), "{md}");
+    }
+
+    #[test]
+    fn xlsx_acima_do_teto_e_recusado_sem_ler_tudo() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("grande.xlsx");
+        File::create(&p).unwrap().set_len(MAX_XLSX_BYTES + 1).unwrap();
+        let err = read_xlsx_file(&p).unwrap_err();
+        assert!(err.to_string().contains("grande demais"), "{err}");
+        assert!(err.to_string().contains("máximo 32 MiB"), "{err}");
+    }
+
+    #[test]
+    fn diretorio_nao_e_arquivo_regular() {
+        let d = tempfile::tempdir().unwrap();
+        let err = read_xlsx_file(d.path()).unwrap_err();
+        assert!(err.to_string().contains("não é um arquivo regular"), "{err}");
+    }
+
+    #[test]
+    fn xlsx_exportado_pelo_proprio_mdv_volta_como_tabela() {
+        use mdv_export::{convert, Context, Format, Input, PictureProvider, Select, Unlimited};
+        use std::sync::Arc;
+
+        /// Sem imagens: a entrada é CSV, nunca pede figuras.
+        struct SemImagens;
+        impl PictureProvider for SemImagens {
+            fn load(&self, _src: &str) -> Result<Arc<image::DynamicImage>, String> {
+                Err("sem imagens".to_string())
+            }
+            fn mermaid(&self, _source: &str) -> Option<Result<Arc<image::DynamicImage>, String>> {
+                None
+            }
+        }
+
+        let entrada = Input::Table { text: "nome,qtd\nlápis,3\n", delimiter: b',', no_header: false, name: "Dados" };
+        let saida = convert(
+            &entrada,
+            &Select::default(),
+            Format::Xlsx,
+            &Context { budget: &Unlimited, pictures: &SemImagens },
+        )
+        .unwrap();
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("ida.xlsx");
+        fs::write(&p, &saida.bytes).unwrap();
+        let md = read_xlsx_file(&p).unwrap();
+        assert!(md.contains("| nome | qtd |"), "{md}");
+        assert!(md.contains("| lápis | 3 |"), "{md}");
+    }
+
+    #[test]
+    fn celula_com_markup_aparece_literal_renderizada_pela_tui() {
+        let texto = "a|b *c* [d](e) &lt;b&gt;";
+        let linhas = format!(r#"<row r="1"><c r="A1" t="inlineStr"><is><t>{texto}</t></is></c></row>"#);
+        let md = mdv_xlsx::to_markdown(&XlsxBuilder::novo().aba("P", &linhas).construir(), &mdv_xlsx::Unlimited).unwrap();
+        let todo = texto_renderizado(&md);
+        assert!(todo.contains("a|b *c* [d](e) <b>"), "{todo}");
+        // Uma só coluna: a linha com o texto tem exatamente duas barras verticais de caixa (bordas).
+        assert!(
+            todo.lines().any(|l| l.contains("a|b *c* [d](e) <b>") && l.matches('│').count() == 2),
+            "{todo}"
+        );
+    }
+
+    #[test]
+    fn aba_sem_nome_ou_com_jogo_da_velha_renderizada_pela_tui_sem_panico() {
+        let linhas = concat!(
+            r#"<row r="1"><c r="A1" t="inlineStr"><is><t>x</t></is></c></row>"#,
+            r#"<row r="2"><c r="A2" t="inlineStr"><is><t>y</t></is></c></row>"#,
+        );
+        let arquivo = XlsxBuilder::novo().aba("", linhas).aba("#", linhas).construir();
+        let md = mdv_xlsx::to_markdown(&arquivo, &mdv_xlsx::Unlimited).unwrap();
+        // Título vazio sai como `# ` (uma vez); o `#` vira `\#`, para não ser lido como cabeçalho.
+        assert_eq!(md.lines().filter(|l| *l == "# ").count(), 1, "{md}");
+        assert!(md.lines().any(|l| l == "# \\#"), "{md}");
+        let todo = texto_renderizado(&md);
+        // A TUI desenha a tabela com caixas: a célula aparece entre `│`.
+        assert!(todo.contains("│ x │"), "{todo}");
+        assert!(todo.contains("│ y │"), "{todo}");
+    }
+}

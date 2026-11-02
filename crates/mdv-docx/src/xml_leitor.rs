@@ -45,7 +45,8 @@ impl Tag {
 pub(crate) struct Leitor<'a> {
     xml: Reader<&'a [u8]>,
     budget: &'a dyn Budget,
-    profundidade: usize,
+    /// Nomes dos elementos abertos, do raiz ao mais fundo; o tamanho é a profundidade.
+    abertos: Vec<String>,
     /// `Fecha` de um elemento vazio, devolvido na chamada seguinte.
     pendente: Option<Evento>,
 }
@@ -57,14 +58,14 @@ impl<'a> Leitor<'a> {
         let config = xml.config_mut();
         config.trim_text(false);
         config.check_end_names = true;
-        Leitor { xml, budget, profundidade: 0, pendente: None }
+        Leitor { xml, budget, abertos: Vec::new(), pendente: None }
     }
 
     /// Próximo evento, ou `None` no fim do documento.
     pub(crate) fn proximo(&mut self) -> Result<Option<Evento>, String> {
         self.budget.check()?;
         if let Some(fecha) = self.pendente.take() {
-            self.profundidade -= 1;
+            self.abertos.pop();
             return Ok(Some(fecha));
         }
         loop {
@@ -74,25 +75,25 @@ impl<'a> Leitor<'a> {
                 Event::Empty(s) => return self.abrir(&s, true).map(Some),
                 Event::End(e) => {
                     let nome = self.nome(e.local_name().as_ref())?;
-                    self.profundidade = self.profundidade.saturating_sub(1);
+                    self.abertos.pop();
                     return Ok(Some(Evento::Fecha(nome)));
                 }
                 Event::Text(t) => {
                     let texto = t.unescape().map_err(|e| self.erro(e))?;
                     // Espaço solto fora do elemento raiz não é conteúdo.
-                    if self.profundidade > 0 && !texto.is_empty() {
+                    if !self.abertos.is_empty() && !texto.is_empty() {
                         return Ok(Some(Evento::Texto(texto.into_owned())));
                     }
                 }
                 Event::CData(c) => {
                     let texto = c.decode().map_err(|e| self.erro(e))?;
-                    if self.profundidade > 0 && !texto.is_empty() {
+                    if !self.abertos.is_empty() && !texto.is_empty() {
                         return Ok(Some(Evento::Texto(texto.into_owned())));
                     }
                 }
                 // Recusar o DTD evita a expansão de entidades (bomba "billion laughs").
                 Event::DocType(_) => return Err(self.erro("DTD não é permitido")),
-                Event::Eof if self.profundidade > 0 => {
+                Event::Eof if !self.abertos.is_empty() => {
                     return Err(self.erro("fim inesperado do documento"));
                 }
                 Event::Eof => return Ok(None),
@@ -105,8 +106,8 @@ impl<'a> Leitor<'a> {
     pub(crate) fn pular(&mut self) -> Result<(), String> {
         // Depois do `Abre` a profundidade já o inclui; o elemento fecha ao voltar um nível.
         // Um elemento vazio conta igual, pois o `Fecha` pendente também baixa a profundidade.
-        let alvo = self.profundidade.saturating_sub(1);
-        while self.profundidade > alvo {
+        let alvo = self.abertos.len().saturating_sub(1);
+        while self.abertos.len() > alvo {
             if self.proximo()?.is_none() {
                 return Err(self.erro("fim inesperado do documento"));
             }
@@ -127,10 +128,32 @@ impl<'a> Leitor<'a> {
         Ok(None)
     }
 
+    /// Próximo evento dentro do elemento `nome`, ou `None` no `Fecha` dele.
+    ///
+    /// O elemento é o aberto mais recente com esse nome; o `Fecha` que o encerra é o que devolve a
+    /// profundidade ao nível dele, então o `Fecha` de um descendente de mesmo nome não o encerra
+    /// (os `Fecha` dos descendentes são descartados). Quem tratar um filho de mesmo nome deve
+    /// consumi-lo por inteiro (`pular` ou chamando `dentro` de novo). O fim do documento antes do
+    /// `Fecha` é o erro `XML inválido` de sempre.
+    pub(crate) fn dentro(&mut self, nome: &str) -> Result<Option<Evento>, String> {
+        let nivel = match self.abertos.iter().rposition(|n| n == nome) {
+            Some(i) => i,
+            None => return Err(self.erro(format!("`{nome}` não está aberto"))),
+        };
+        loop {
+            match self.proximo()? {
+                None => return Err(self.erro("fim inesperado do documento")),
+                Some(Evento::Fecha(_)) if self.abertos.len() == nivel => return Ok(None),
+                Some(Evento::Fecha(_)) => {}
+                Some(evento) => return Ok(Some(evento)),
+            }
+        }
+    }
+
     /// Converte um início de elemento em `Abre`; elementos vazios deixam o `Fecha` pendente.
     fn abrir(&mut self, s: &BytesStart, vazio: bool) -> Result<Evento, String> {
         // Conta o elemento vazio também: o `Fecha` pendente devolve a profundidade ao valor anterior.
-        if self.profundidade + 1 > MAX_PROFUNDIDADE_XML {
+        if self.abertos.len() + 1 > MAX_PROFUNDIDADE_XML {
             return Err(self.erro(format!("profundidade acima de {MAX_PROFUNDIDADE_XML}")));
         }
         let nome = self.nome(s.local_name().as_ref())?;
@@ -147,7 +170,7 @@ impl<'a> Leitor<'a> {
             let valor = atributo.unescape_value().map_err(|e| self.erro(e))?;
             atributos.push((chave, valor.into_owned()));
         }
-        self.profundidade += 1;
+        self.abertos.push(nome.clone());
         if vazio {
             self.pendente = Some(Evento::Fecha(nome.clone()));
         }
@@ -163,7 +186,7 @@ impl<'a> Leitor<'a> {
 
     /// Mensagem de erro padrão, com a posição em bytes.
     fn erro(&self, detalhe: impl std::fmt::Display) -> String {
-        format!("XML inválido (byte {}): {detalhe}", self.xml.error_position())
+        mdv_text::sanitize(&format!("XML inválido (byte {}): {detalhe}", self.xml.error_position())).into_owned()
     }
 }
 
@@ -205,6 +228,14 @@ mod tests {
             abre("p"), abre("r"), abre("t"), texto("oi"), fecha("t"), fecha("r"), fecha("p"),
         ];
         assert_eq!(v, esperado);
+    }
+
+    #[test]
+    fn erro_de_xml_com_controle_nao_vai_cru_para_a_mensagem() {
+        // O nome da tag de fechamento (vindo do arquivo) aparece na mensagem do quick-xml.
+        let erro = todos("<a></b\u{1b}c>").unwrap_err();
+        assert!(erro.contains("XML inválido"), "{erro}");
+        assert!(!erro.chars().any(char::is_control), "{erro:?}");
     }
 
     #[test]
@@ -292,6 +323,76 @@ mod tests {
     fn ate_devolve_none_no_fim() {
         let mut l = Leitor::novo(b"<a><b/></a>", &Unlimited);
         assert_eq!(l.ate("z").unwrap(), None);
+    }
+
+    #[test]
+    fn dentro_entrega_filhos_e_texto_ate_o_fecha_do_elemento() {
+        let mut l = Leitor::novo(b"<a><b>x</b><c/></a><d/>", &Unlimited);
+        l.ate("a").unwrap().unwrap();
+        assert_eq!(l.dentro("a").unwrap(), Some(abre("b")));
+        assert_eq!(l.dentro("a").unwrap(), Some(texto("x")));
+        assert_eq!(l.dentro("a").unwrap(), Some(abre("c")));
+        assert_eq!(l.dentro("a").unwrap(), None);
+        assert_eq!(l.proximo().unwrap(), Some(abre("d")), "o Fecha do elemento é consumido");
+    }
+
+    #[test]
+    fn dentro_de_elemento_vazio_termina_de_imediato() {
+        let mut l = Leitor::novo(b"<a/><d/>", &Unlimited);
+        l.ate("a").unwrap().unwrap();
+        assert_eq!(l.dentro("a").unwrap(), None);
+        assert_eq!(l.proximo().unwrap(), Some(abre("d")));
+    }
+
+    #[test]
+    fn dentro_ignora_o_fecha_dos_descendentes() {
+        // Os `Fecha` de `b` e `c` não aparecem nem encerram o laço.
+        let mut l = Leitor::novo(b"<a><b><c/></b></a>", &Unlimited);
+        l.ate("a").unwrap().unwrap();
+        assert_eq!(l.dentro("a").unwrap(), Some(abre("b")));
+        assert_eq!(l.dentro("a").unwrap(), Some(abre("c")));
+        assert_eq!(l.dentro("a").unwrap(), None);
+    }
+
+    #[test]
+    fn dentro_compara_o_nivel_e_nao_so_o_nome() {
+        // O `a` interno tem o mesmo nome do externo: o `Fecha` dele não encerra o externo.
+        let mut l = Leitor::novo(b"<a><a><b/></a><c/></a><d/>", &Unlimited);
+        l.ate("a").unwrap().unwrap();
+        assert_eq!(l.dentro("a").unwrap(), Some(abre("a")));
+        // Quem trata o filho de mesmo nome o consome por inteiro (aqui, recursivamente).
+        assert_eq!(l.dentro("a").unwrap(), Some(abre("b")));
+        assert_eq!(l.dentro("a").unwrap(), None, "fecha o `a` interno");
+        assert_eq!(l.dentro("a").unwrap(), Some(abre("c")));
+        assert_eq!(l.dentro("a").unwrap(), None, "fecha o `a` externo");
+        assert_eq!(l.proximo().unwrap(), Some(abre("d")));
+    }
+
+    #[test]
+    fn dentro_com_filho_pulado_continua_no_mesmo_nivel() {
+        let mut l = Leitor::novo(b"<a><a><b/></a><c/></a><d/>", &Unlimited);
+        l.ate("a").unwrap().unwrap();
+        assert_eq!(l.dentro("a").unwrap(), Some(abre("a")));
+        l.pular().unwrap();
+        assert_eq!(l.dentro("a").unwrap(), Some(abre("c")));
+        assert_eq!(l.dentro("a").unwrap(), None);
+        assert_eq!(l.proximo().unwrap(), Some(abre("d")));
+    }
+
+    #[test]
+    fn dentro_no_fim_do_documento_da_erro_com_o_prefixo_padrao() {
+        let mut l = Leitor::novo(b"<a><b/>", &Unlimited);
+        l.ate("a").unwrap().unwrap();
+        assert_eq!(l.dentro("a").unwrap(), Some(abre("b")));
+        assert!(l.dentro("a").unwrap_err().contains("XML inválido"));
+    }
+
+    #[test]
+    fn dentro_de_elemento_que_nao_esta_aberto_da_erro() {
+        let mut l = Leitor::novo(b"<a><b/></a>", &Unlimited);
+        l.ate("b").unwrap().unwrap();
+        let e = l.dentro("z").unwrap_err();
+        assert!(e.contains("XML inválido") && e.contains("não está aberto"), "{e}");
     }
 
     #[test]

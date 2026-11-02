@@ -950,6 +950,7 @@ dependencies = [
  "mdv-html",
  "mdv-msg",
  "mdv-text",
+ "mdv-xlsx",
  "mermaid-rs-renderer",
  "pulldown-cmark",
  "ratatui",
@@ -987,6 +988,7 @@ dependencies = [
 name = "mdv-html"
 version = "0.9.0"
 dependencies = [
+ "mdv-text",
  "scraper",
  "unicode-width",
 ]
@@ -1015,6 +1017,15 @@ dependencies = [
  "mdv-text",
  "pulldown-cmark",
  "tempfile",
+]
+
+[[package]]
+name = "mdv-xlsx"
+version = "0.9.0"
+dependencies = [
+ "flate2",
+ "mdv-text",
+ "quick-xml",
 ]
 
 [[package]]

@@ -6,24 +6,13 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
-use mdv_export::{convert, Budget, Context, Format, Input, PictureProvider, Select, FORMATS_HELP};
+use mdv_export::{convert, Context, Format, Input, PictureProvider, Select, FORMATS_HELP};
 
 use crate::image::{ImageState, ImageStore};
 use crate::load::{image_store, load_source, Source};
 use crate::plain::write_stdout;
-use crate::{cli, mem, render, Failure};
-
-/// O limite de memória do processo (`mem`), visto pelo `mdv-export`.
-struct MemBudget;
-
-impl Budget for MemBudget {
-    fn check(&self) -> Result<(), String> {
-        mem::check().map_err(|e| e.to_string())
-    }
-    fn check_parse(&self, len: usize) -> Result<(), String> {
-        mem::check_parse(len).map_err(|e| e.to_string())
-    }
-}
+use crate::mem::MemBudget;
+use crate::{cli, render, Failure};
 
 /// O `ImageStore` (disco, `data:`, rede com `--remote`, Mermaid nativo) visto pelo `mdv-export`.
 struct StorePictures<'a>(&'a ImageStore);
@@ -102,7 +91,7 @@ fn check_destination(out: &Path, force: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// `-o x.md` (de `.msg` e `.docx`): grava o Markdown já convertido, com as mesmas checagens e a mesma
+/// `-o x.md` (de `.msg`, `.docx` e `.xlsx`): grava o Markdown já convertido, com as mesmas checagens e a mesma
 /// gravação atômica das demais saídas.
 pub(crate) fn write_markdown(out: &Path, text: &str, force: bool) -> Result<(), String> {
     check_destination(out, force)?;
@@ -151,7 +140,7 @@ pub(crate) fn run_export(cli: &cli::Cli, e: &cli::Export, mem_warning: Option<&s
     }
     let (source, text) = load_source(cli.common.path.as_deref())?;
     if cli::saida_markdown(&e.output) {
-        // A entrada já é o Markdown do `.msg` ou `.docx` (`load_source` converte); só falta gravar.
+        // A entrada já é o Markdown do `.msg`, `.docx` ou `.xlsx` (`load_source` converte); só falta gravar.
         write_markdown(Path::new(&e.output), &text, e.force).map_err(Failure::Runtime)?;
         return write_stdout(&format!("exportado: {}\n", render::sanitize(&e.output)));
     }
@@ -313,13 +302,5 @@ mod tests {
             assert!(w.is_empty(), "{src}: {w:?}");
             assert!(has_entry(&out, "Pictures/"), "{src}");
         }
-    }
-
-    #[test]
-    fn budget_do_mdv_recusa_quando_o_contador_estoura() {
-        // Não altera o limite global (os testes rodam em paralelo): só confere o contrato.
-        assert!(MemBudget.check().is_ok());
-        assert!(MemBudget.check_parse(10).is_ok());
-        assert!(MemBudget.check_parse(usize::MAX).is_err(), "árvore gigante é barrada antes de analisar");
     }
 }

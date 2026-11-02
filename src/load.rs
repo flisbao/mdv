@@ -10,6 +10,9 @@ use crate::{cli, graphics, image, mem, net, Failure};
 /// Teto de bytes lidos de arquivo ou stdin (protege a memória).
 pub(crate) const MAX_INPUT_BYTES: u64 = 16 * 1024 * 1024;
 
+/// Bytes em uma MiB, para exibir os tetos de tamanho nas mensagens.
+const MIB: u64 = 1024 * 1024;
+
 pub(crate) enum Source {
     File(PathBuf),
     Stdin,
@@ -88,17 +91,57 @@ pub(crate) fn read_stdin() -> io::Result<String> {
     read_limited(io::stdin().lock(), MAX_INPUT_BYTES)
 }
 
-/// Lê o documento de um caminho: `.msg` vira Markdown pelo `mdv-msg`, `.docx` pelo `mdv-docx`; HTML vai para `html`; o resto é Markdown puro.
+/// Um formato que o `mdv` converte em Markdown: a extensão (sem ponto, minúscula) e o leitor.
+pub(crate) struct Conversor {
+    pub ext: &'static str,
+    pub ler: fn(&Path) -> io::Result<String>,
+}
+
+/// O registro único dos formatos convertidos. Um formato novo entra só aqui: o seletor de pasta
+/// (`picker::is_listed`), a recusa de `-o .md` (`cli`) e `e_convertido` o acompanham. Só a linha de
+/// extensões do `HELP` é texto fixo, conferida por teste.
+pub(crate) const CONVERSORES: &[Conversor] = &[
+    Conversor { ext: "msg", ler: crate::msg::read_msg_file },
+    Conversor { ext: "docx", ler: crate::docx::read_docx_file },
+    Conversor { ext: "xlsx", ler: crate::xlsx::read_xlsx_file },
+];
+
+/// Leitor de um formato que o `mdv` converte em Markdown (ver `CONVERSORES`), ou `None`.
+pub(crate) fn conversor(path: &Path) -> Option<fn(&Path) -> io::Result<String>> {
+    let ext = path.extension().and_then(|e| e.to_str())?;
+    CONVERSORES.iter().find(|c| ext.eq_ignore_ascii_case(c.ext)).map(|c| c.ler)
+}
+
+/// O arquivo é de um formato que o `mdv` converte em Markdown (tem `conversor`)?
+pub(crate) fn e_convertido(path: &Path) -> bool {
+    conversor(path).is_some()
+}
+
+/// As extensões convertidas para mensagens: `.msg, .docx e .xlsx`.
+pub(crate) fn extensoes_convertidas() -> String {
+    let nomes: Vec<String> = CONVERSORES.iter().map(|c| format!(".{}", c.ext)).collect();
+    match nomes.split_last() {
+        Some((ultimo, resto)) if !resto.is_empty() => format!("{} e {ultimo}", resto.join(", ")),
+        _ => nomes.concat(),
+    }
+}
+
+/// Lê o documento de um caminho: `.msg` vira Markdown pelo `mdv-msg`, `.docx` pelo `mdv-docx`, `.xlsx` pelo `mdv-xlsx` (ver `conversor`); planilha recusada dá erro; HTML vai para `html`; o resto é Markdown puro.
 pub(crate) fn read_document(path: &Path) -> io::Result<String> {
-    if crate::msg::is_msg(path) {
-        crate::msg::read_msg_file(path)
-    } else if crate::docx::is_docx(path) {
-        crate::docx::read_docx_file(path)
+    if let Some(ler) = conversor(path) {
+        ler(path)
+    } else if let Some(recusa) = recusa(path) {
+        Err(io::Error::new(io::ErrorKind::InvalidInput, recusa))
     } else if crate::html::is_html(path) {
         crate::html::read_html_file(path)
     } else {
         read_markdown_file(path)
     }
+}
+
+/// Formato de escritório que o `mdv` reconhece e recusa com uma mensagem clara (documento ou planilha).
+fn recusa(path: &Path) -> Option<&'static str> {
+    crate::docx::documento_nao_suportado(path).or_else(|| crate::xlsx::planilha_nao_suportada(path))
 }
 
 /// Lê um arquivo regular (nunca dispositivo, FIFO ou diretório) respeitando o teto.
@@ -115,12 +158,27 @@ pub(crate) fn read_markdown_file(path: &Path) -> io::Result<String> {
     read_limited(fs::File::open(path)?, MAX_INPUT_BYTES)
 }
 
+/// Lê um arquivo binário regular (nunca dispositivo, FIFO ou diretório) de até `max` bytes.
+/// Recusa antes de ler o que passa do teto (`arquivo {rotulo} grande demais`) ou do limite de memória.
+pub(crate) fn read_binary_capped(path: &Path, max: u64, rotulo: &str) -> io::Result<Vec<u8>> {
+    let meta = fs::metadata(path)?;
+    if !meta.is_file() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "não é um arquivo regular"));
+    }
+    if meta.len() > max {
+        let msg = format!("arquivo {rotulo} grande demais (máximo {} MiB)", max / MIB);
+        return Err(io::Error::new(io::ErrorKind::InvalidData, msg));
+    }
+    mem::check_input(meta.len()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+    read_limited_bytes(fs::File::open(path)?, max)
+}
+
 /// Lê até `max` bytes de `reader` (sem ler além de `max + 1`), falhando se passar do teto.
 pub(crate) fn read_limited_bytes(reader: impl Read, max: u64) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     reader.take(max + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > max {
-        let msg = format!("entrada maior que {} MiB", max / (1024 * 1024));
+        let msg = format!("entrada maior que {} MiB", max / MIB);
         return Err(io::Error::new(io::ErrorKind::InvalidData, msg));
     }
     Ok(bytes)
@@ -149,9 +207,38 @@ mod tests {
         let corpo = "<w:p><w:r><w:t>Olá docx</w:t></w:r></w:p>";
         fs::write(&docx, mdv_docx::testutil::DocxBuilder::novo().corpo(corpo).construir()).unwrap();
         assert!(read_document(&docx).unwrap().contains("Olá docx"));
+        let xlsx = d.path().join("planilha.xlsx");
+        let linha = r#"<row r="1"><c r="A1" t="inlineStr"><is><t>Olá planilha</t></is></c></row>"#;
+        fs::write(&xlsx, mdv_xlsx::testutil::XlsxBuilder::novo().aba("P", linha).construir()).unwrap();
+        assert!(read_document(&xlsx).unwrap().contains("Olá planilha"));
         let md = d.path().join("nota.md");
         fs::write(&md, "# Nota\n\ntexto *puro*\n").unwrap();
         assert_eq!(read_document(&md).unwrap(), "# Nota\n\ntexto *puro*\n");
+    }
+
+    #[test]
+    fn conversor_so_existe_para_msg_docx_e_xlsx() {
+        for nome in ["a.msg", "a.DOCX", "a.xlsx"] {
+            let p = Path::new(nome);
+            assert!(conversor(p).is_some() && e_convertido(p), "{nome}");
+        }
+        for nome in ["a.md", "a.html", "a.xls", "a.ods", "a", "docx", "a.xlsx.md"] {
+            let p = Path::new(nome);
+            assert!(conversor(p).is_none() && !e_convertido(p), "{nome}");
+        }
+    }
+
+    #[test]
+    fn extensoes_convertidas_listam_o_registro() {
+        assert_eq!(extensoes_convertidas(), ".msg, .docx e .xlsx");
+    }
+
+    #[test]
+    fn ajuda_cita_todos_os_formatos_convertidos() {
+        let linha = crate::plain::HELP.lines().find(|l| l.contains("deduzido da extensão")).expect("linha de extensões");
+        for c in CONVERSORES {
+            assert!(linha.contains(&format!(".{}", c.ext)), "a linha de extensões do HELP não cita .{}", c.ext);
+        }
     }
 
     fn kitty(k: &str) -> Option<String> {

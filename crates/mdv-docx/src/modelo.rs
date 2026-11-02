@@ -84,12 +84,38 @@ impl Bloco {
     }
 }
 
+/// Onde o Word guarda a nota: no rodapé da página (`footnotes.xml`) ou no fim do documento
+/// (`endnotes.xml`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TipoNota {
+    Rodape,
+    Fim,
+}
+
+impl TipoNota {
+    /// Nome do elemento de cada nota na parte XML.
+    pub(crate) fn elemento(self) -> &'static str {
+        match self {
+            TipoNota::Rodape => "footnote",
+            TipoNota::Fim => "endnote",
+        }
+    }
+
+    /// Tipo de nota que o elemento de referência (`footnoteReference`/`endnoteReference`) cita.
+    pub(crate) fn da_referencia(nome: &str) -> TipoNota {
+        if nome == "endnoteReference" {
+            TipoNota::Fim
+        } else {
+            TipoNota::Rodape
+        }
+    }
+}
+
 /// Chave de uma nota no mapa `Documento::notas`: `n` para rodapé, `e` para nota de fim.
-pub(crate) fn chave_nota(fim: bool, id: &str) -> String {
-    if fim {
-        format!("e{id}")
-    } else {
-        format!("n{id}")
+pub(crate) fn chave_nota(tipo: TipoNota, id: &str) -> String {
+    match tipo {
+        TipoNota::Rodape => format!("n{id}"),
+        TipoNota::Fim => format!("e{id}"),
     }
 }
 
@@ -137,7 +163,7 @@ mod tests {
 
     #[test]
     fn chave_de_nota_distingue_rodape_de_fim() {
-        assert_eq!(chave_nota(false, "2"), "n2");
-        assert_eq!(chave_nota(true, "2"), "e2");
+        assert_eq!(chave_nota(TipoNota::Rodape, "2"), "n2");
+        assert_eq!(chave_nota(TipoNota::Fim, "2"), "e2");
     }
 }

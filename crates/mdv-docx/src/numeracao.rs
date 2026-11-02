@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use crate::xml_leitor::{Evento, Leitor, Tag};
 use crate::Budget;
-use crate::MAX_NIVEL_LISTA;
+use crate::{MAX_LISTAS, MAX_NIVEL_LISTA};
 
 /// Quantidade de níveis de uma lista (0 até `MAX_NIVEL_LISTA`).
 const NIVEIS: usize = MAX_NIVEL_LISTA as usize + 1;
@@ -55,21 +55,31 @@ impl Numeracao {
 
     /// Lê `numbering.xml`; lista desconhecida não é erro.
     pub(crate) fn ler(xml: &[u8], budget: &dyn Budget) -> Result<Self, String> {
+        Self::ler_com_teto(xml, budget, MAX_LISTAS)
+    }
+
+    /// Como `ler`, com o teto de listas explícito (os testes usam um teto pequeno). O teto vale para
+    /// `abstractNum` e para `num` separadamente e é conferido a cada bloco, antes de lê-lo.
+    pub(crate) fn ler_com_teto(xml: &[u8], budget: &dyn Budget, max_listas: usize) -> Result<Self, String> {
         let mut leitor = Leitor::novo(xml, budget);
         let mut numeracao = Numeracao::vazia();
         // Consome a raiz `w:numbering` antes do laço: o laço trata os filhos dela, não a raiz.
         if leitor.ate("numbering")?.is_none() {
             return Ok(numeracao);
         }
-        while let Some(evento) = leitor.proximo()? {
+        let (mut abstratos, mut nums) = (0usize, 0usize);
+        while let Some(evento) = leitor.dentro("numbering")? {
             match evento {
                 Evento::Abre(tag) if tag.nome == "abstractNum" => {
+                    contar_lista(&mut abstratos, max_listas)?;
                     ler_abstrato(&mut leitor, &tag, &mut numeracao)?
                 }
-                Evento::Abre(tag) if tag.nome == "num" => ler_num(&mut leitor, &tag, &mut numeracao)?,
+                Evento::Abre(tag) if tag.nome == "num" => {
+                    contar_lista(&mut nums, max_listas)?;
+                    ler_num(&mut leitor, &tag, &mut numeracao)?
+                }
                 // Outros filhos da raiz (`numPicBullet`, ...) não interessam e são pulados inteiros.
                 Evento::Abre(_) => leitor.pular()?,
-                Evento::Fecha(nome) if nome == "numbering" => break,
                 Evento::Fecha(_) | Evento::Texto(_) => {}
             }
         }
@@ -102,22 +112,28 @@ impl Numeracao {
     }
 }
 
+/// Conta mais uma lista do tipo e recusa passar do teto.
+fn contar_lista(contagem: &mut usize, max_listas: usize) -> Result<(), String> {
+    *contagem += 1;
+    if *contagem > max_listas {
+        return Err("listas demais".into());
+    }
+    Ok(())
+}
+
 /// Lê um `w:abstractNum` até o fecho. O id é atributo aqui, mas `w:num` o repete como elemento.
 fn ler_abstrato(leitor: &mut Leitor, tag: &Tag, numeracao: &mut Numeracao) -> Result<(), String> {
     let id = tag.attr("abstractNumId").and_then(|v| v.parse::<u32>().ok());
     let mut niveis = [Nivel::default(); NIVEIS];
-    loop {
-        match leitor.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "abstractNum" => break,
-            Some(Evento::Abre(filho)) if filho.nome == "lvl" => {
-                let nivel = ler_lvl(leitor)?;
-                if let Some(n) = ler_nivel(&filho) {
-                    niveis[usize::from(n)] = nivel;
-                }
+    while let Some(evento) = leitor.dentro("abstractNum")? {
+        let Evento::Abre(filho) = evento else { continue };
+        if filho.nome == "lvl" {
+            let nivel = ler_lvl(leitor)?;
+            if let Some(n) = ler_nivel(&filho) {
+                niveis[usize::from(n)] = nivel;
             }
-            Some(Evento::Abre(_)) => leitor.pular()?,
-            Some(_) => {}
+        } else {
+            leitor.pular()?;
         }
     }
     // Sem `abstractNumId` válido o bloco não tem como ser referenciado; é lido e descartado.
@@ -130,27 +146,20 @@ fn ler_abstrato(leitor: &mut Leitor, tag: &Tag, numeracao: &mut Numeracao) -> Re
 /// Lê um `w:lvl` até o fecho: `start` e `numFmt`; o resto (`pPr`, `rPr`...) é pulado.
 fn ler_lvl(leitor: &mut Leitor) -> Result<Nivel, String> {
     let mut nivel = Nivel::default();
-    loop {
-        match leitor.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "lvl" => break,
-            Some(Evento::Abre(tag)) => match tag.nome.as_str() {
-                "start" => {
-                    nivel.start = tag.val().and_then(|v| v.parse::<u32>().ok());
-                    leitor.pular()?;
-                }
-                // Só `bullet` (e `none`, que não mostra nada) é marcador; qualquer formato de número é numerado.
-                "numFmt" => {
-                    nivel.marca = tag.val().map(|v| match v {
-                        "bullet" | "none" => Marca::Marcador,
-                        _ => Marca::Numerada,
-                    });
-                    leitor.pular()?;
-                }
-                _ => leitor.pular()?,
-            },
-            Some(_) => {}
+    while let Some(evento) = leitor.dentro("lvl")? {
+        let Evento::Abre(tag) = evento else { continue };
+        match tag.nome.as_str() {
+            "start" => nivel.start = tag.val().and_then(|v| v.parse::<u32>().ok()),
+            // Só `bullet` (e `none`, que não mostra nada) é marcador; qualquer formato de número é numerado.
+            "numFmt" => {
+                nivel.marca = tag.val().map(|v| match v {
+                    "bullet" | "none" => Marca::Marcador,
+                    _ => Marca::Numerada,
+                });
+            }
+            _ => {}
         }
+        leitor.pular()?;
     }
     Ok(nivel)
 }
@@ -159,19 +168,15 @@ fn ler_lvl(leitor: &mut Leitor) -> Result<Nivel, String> {
 fn ler_num(leitor: &mut Leitor, tag: &Tag, numeracao: &mut Numeracao) -> Result<(), String> {
     let id = tag.attr("numId").and_then(|v| v.parse::<u32>().ok());
     let mut num = Num::default();
-    loop {
-        match leitor.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "num" => break,
-            Some(Evento::Abre(filho)) => match filho.nome.as_str() {
-                "abstractNumId" => {
-                    num.abstrato = filho.val().and_then(|v| v.parse::<u32>().ok());
-                    leitor.pular()?;
-                }
-                "lvlOverride" => ler_override(leitor, &filho, &mut num)?,
-                _ => leitor.pular()?,
-            },
-            Some(_) => {}
+    while let Some(evento) = leitor.dentro("num")? {
+        let Evento::Abre(filho) = evento else { continue };
+        match filho.nome.as_str() {
+            "abstractNumId" => {
+                num.abstrato = filho.val().and_then(|v| v.parse::<u32>().ok());
+                leitor.pular()?;
+            }
+            "lvlOverride" => ler_override(leitor, &filho, &mut num)?,
+            _ => leitor.pular()?,
         }
     }
     if let Some(id) = id {
@@ -183,20 +188,15 @@ fn ler_num(leitor: &mut Leitor, tag: &Tag, numeracao: &mut Numeracao) -> Result<
 /// Lê um `w:lvlOverride`: só o `startOverride` importa; o `lvl` completo que ele pode trazer é pulado.
 fn ler_override(leitor: &mut Leitor, tag: &Tag, num: &mut Num) -> Result<(), String> {
     let nivel = ler_nivel(tag);
-    loop {
-        match leitor.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "lvlOverride" => break,
-            Some(Evento::Abre(filho)) if filho.nome == "startOverride" => {
-                let valor = filho.val().and_then(|v| v.parse::<u32>().ok());
-                if let (Some(n), Some(v)) = (nivel, valor) {
-                    num.sobrepostos[usize::from(n)] = Some(v);
-                }
-                leitor.pular()?;
+    while let Some(evento) = leitor.dentro("lvlOverride")? {
+        let Evento::Abre(filho) = evento else { continue };
+        if filho.nome == "startOverride" {
+            let valor = filho.val().and_then(|v| v.parse::<u32>().ok());
+            if let (Some(n), Some(v)) = (nivel, valor) {
+                num.sobrepostos[usize::from(n)] = Some(v);
             }
-            Some(Evento::Abre(_)) => leitor.pular()?,
-            Some(_) => {}
         }
+        leitor.pular()?;
     }
     Ok(())
 }
@@ -214,9 +214,8 @@ impl Contador {
         Contador { contagens: HashMap::new(), parado: false }
     }
 
-    /// Para ou retoma a contagem e devolve o estado anterior, para restaurá-lo depois.
-    /// Um item numerado dentro de célula ou de nota sai sem marcador; se contasse, deslocaria
-    /// a numeração da lista do corpo que usa o mesmo `numId`.
+    /// Para ou retoma a contagem e devolve o estado anterior. Só `Contexto::sem_contar` a usa, para
+    /// restaurar o estado ao sair do trecho em que a contagem fica parada.
     pub(crate) fn parar(&mut self, parar: bool) -> bool {
         std::mem::replace(&mut self.parado, parar)
     }
@@ -266,6 +265,25 @@ mod tests {
         format!(
             r#"<w:abstractNum w:abstractNumId="0">{niveis}</w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>"#
         )
+    }
+
+    #[test]
+    fn listas_acima_do_teto_sao_recusadas() {
+        let abstratos = |n: usize| -> String {
+            let itens: String = (0..n).map(|i| format!(r#"<w:abstractNum w:abstractNumId="{i}"/>"#)).collect();
+            format!("<w:numbering {NS}>{itens}</w:numbering>")
+        };
+        let nums = |n: usize| -> String {
+            let itens: String = (0..n).map(|i| format!(r#"<w:num w:numId="{i}"/>"#)).collect();
+            format!("<w:numbering {NS}>{itens}</w:numbering>")
+        };
+        for xml in [abstratos(3), nums(3)] {
+            assert!(Numeracao::ler_com_teto(xml.as_bytes(), &Unlimited, 3).is_ok());
+        }
+        for xml in [abstratos(4), nums(4)] {
+            let erro = Numeracao::ler_com_teto(xml.as_bytes(), &Unlimited, 3).err().expect("erro");
+            assert!(erro.contains("listas demais"), "{erro}");
+        }
     }
 
     #[test]

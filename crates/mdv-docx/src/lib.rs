@@ -13,9 +13,9 @@ mod conversao_tests;
 mod escape;
 mod estilo_run;
 mod estilos;
-mod le;
-mod limite;
 mod leitura;
+mod limite;
+mod little_endian;
 mod markdown;
 mod md_bloco;
 #[cfg(test)]
@@ -56,9 +56,9 @@ use partes::Partes;
 /// Tamanho máximo aceito para um arquivo `.docx` inteiro.
 pub const MAX_DOCX_BYTES: u64 = 32 * 1024 * 1024;
 /// Tamanho máximo de uma parte do pacote já descomprimida.
-pub const MAX_PARTE_BYTES: usize = 16 * 1024 * 1024;
+pub(crate) const MAX_PARTE_BYTES: usize = 16 * 1024 * 1024;
 /// Soma máxima dos bytes de todas as partes lidas.
-pub const MAX_TOTAL_BYTES: usize = 40 * 1024 * 1024;
+pub(crate) const MAX_TOTAL_BYTES: usize = 40 * 1024 * 1024;
 /// Número máximo de entradas do diretório do ZIP.
 pub const MAX_ENTRADAS: usize = 5000;
 /// Profundidade máxima da árvore XML analisada.
@@ -66,33 +66,27 @@ pub const MAX_PROFUNDIDADE_XML: usize = 100;
 /// Tamanho máximo do destino de um link; acima disso o texto fica sem link.
 pub const MAX_URL_BYTES: usize = 4096;
 /// Número máximo de colunas de uma tabela convertida.
-pub const MAX_COLUNAS: usize = 200;
+pub(crate) const MAX_COLUNAS: usize = 200;
+/// Número máximo de estilos lidos de `styles.xml`; um documento real do Word tem centenas.
+pub(crate) const MAX_ESTILOS: usize = 20_000;
+/// Número máximo de `abstractNum` (e, à parte, de `num`) lidos de `numbering.xml`.
+pub(crate) const MAX_LISTAS: usize = 20_000;
+/// Maior nível de título (`h6`); níveis acima disso são limitados a ele.
+pub(crate) const MAX_NIVEL_TITULO: u8 = 6;
 /// Nível máximo de recuo de uma lista.
-pub const MAX_NIVEL_LISTA: u8 = 8;
+pub(crate) const MAX_NIVEL_LISTA: u8 = 8;
 /// Tamanho máximo do Markdown produzido.
 pub const MAX_MARKDOWN_BYTES: usize = 16 * 1024 * 1024;
 
-/// Orçamento de trabalho consultado pelos laços de conversão.
-pub trait Budget {
-    /// Confirma que ainda há orçamento; chamado por evento XML, por entrada do ZIP e por bloco.
-    fn check(&self) -> Result<(), String>;
-}
+/// Orçamento de trabalho (`mdv_text::Budget`): chamado por evento XML, por entrada do ZIP e por bloco.
+pub use mdv_text::{Budget, Unlimited};
 
 /// Converte o `.docx` (bytes) em Markdown. Erros viram texto em português; nunca entra em pânico.
 pub fn to_markdown(bytes: &[u8], budget: &dyn Budget) -> Result<String, String> {
     let mut pacote = Pacote::abrir(bytes)?;
     let partes = Partes::carregar(&mut pacote, budget)?;
-    let documento = ler_documento(&partes, budget)?;
+    let documento = ler_documento(partes, budget)?;
     escrever(&documento, budget)
-}
-
-/// Orçamento sem limite, para testes e uso interno controlado.
-pub struct Unlimited;
-
-impl Budget for Unlimited {
-    fn check(&self) -> Result<(), String> {
-        Ok(())
-    }
 }
 
 #[cfg(test)]

@@ -40,9 +40,18 @@ enum Peca {
 /// quebra); só no modo `Bloco` o começo de cada linha é escapado, depois de aparar. Cada modo
 /// muda a quebra, o escape de `|` (célula, inclusive no destino do link) e o negrito (título).
 pub(crate) fn inline(trechos: &[Trecho], notas: &mut Notas, modo: Modo) -> String {
+    inline_de(trechos, notas, modo)
+}
+
+/// Como `inline`, para trechos que vêm de um iterador (filtrados por referência, sem clonar).
+pub(crate) fn inline_de<'a>(
+    trechos: impl IntoIterator<Item = &'a Trecho>,
+    notas: &mut Notas,
+    modo: Modo,
+) -> String {
     let pecas = fundir(trechos, notas, modo);
-    let mut links = 0;
-    let juntos: String = pecas.iter().map(|p| escrever(p, modo, &mut links)).collect();
+    let mut escrita = Escrita { modo, links: 0 };
+    let juntos: String = pecas.iter().map(|p| escrita.escrever(p)).collect();
     let texto = aparar(&juntos, modo);
     if modo == Modo::Bloco {
         escapar_linhas(&texto)
@@ -65,7 +74,7 @@ fn escapar_linhas(texto: &str) -> String {
 }
 
 /// Reduz os trechos a peças, fundindo `Texto` vizinhos de mesmas marcas e mesmo link.
-fn fundir(trechos: &[Trecho], notas: &mut Notas, modo: Modo) -> Vec<Peca> {
+fn fundir<'a>(trechos: impl IntoIterator<Item = &'a Trecho>, notas: &mut Notas, modo: Modo) -> Vec<Peca> {
     let mut pecas: Vec<Peca> = Vec::new();
     for trecho in trechos {
         match trecho {
@@ -143,36 +152,45 @@ fn escapar(texto: &str, modo: Modo) -> String {
     }
 }
 
-/// Escreve uma peça: peça pronta sai como está, grupo recebe escape, marcadores e link.
-/// `links` soma os bytes de destino já escritos (ver `MAX_LINKS_BYTES`).
-fn escrever(peca: &Peca, modo: Modo, links: &mut usize) -> String {
-    match peca {
-        Peca::Pronta(s) => s.clone(),
-        Peca::Grupo { texto, marcas, link } => grupo(texto, *marcas, link.as_deref(), modo, links),
-    }
+/// Estado da escrita de uma linha: o modo e os bytes de destino de link já escritos.
+struct Escrita {
+    modo: Modo,
+    /// Soma dos destinos já escritos (ver `MAX_LINKS_BYTES`).
+    links: usize,
 }
 
-/// Escreve um grupo: espaços das bordas por fora, e por dentro marcadores e, se couber, link.
-fn grupo(texto: &str, marcas: Marcas, link: Option<&str>, modo: Modo, links: &mut usize) -> String {
-    let miolo = texto.trim();
-    if miolo.is_empty() {
-        return escapar(texto, modo);
+impl Escrita {
+    /// Escreve uma peça: peça pronta sai como está, grupo recebe escape, marcadores e link.
+    fn escrever(&mut self, peca: &Peca) -> String {
+        match peca {
+            Peca::Pronta(s) => s.clone(),
+            Peca::Grupo { texto, marcas, link } => self.escrever_grupo(texto, *marcas, link.as_deref()),
+        }
     }
-    let inicio = &texto[..texto.len() - texto.trim_start().len()];
-    let fim = &texto[texto.trim_end().len()..];
-    let mut corpo = if marcas.codigo {
-        codigo(miolo, modo)
-    } else {
-        marcar(&escapar(miolo, modo), marcas, modo)
-    };
-    if let Some(url) = link.filter(|u| md_link::permitido(u) && *links + u.len() <= MAX_LINKS_BYTES) {
-        *links += url.len();
-        // Em célula, `|` no destino dividiria a coluna da tabela GFM.
-        let destino = md_link::destino(url);
-        let destino = if modo == Modo::Celula { destino.replace('|', "%7C") } else { destino };
-        corpo = format!("[{corpo}]({destino})");
+
+    /// Escreve um grupo: espaços das bordas por fora, e por dentro marcadores e, se couber, link.
+    fn escrever_grupo(&mut self, texto: &str, marcas: Marcas, link: Option<&str>) -> String {
+        let modo = self.modo;
+        let miolo = texto.trim();
+        if miolo.is_empty() {
+            return escapar(texto, modo);
+        }
+        let inicio = &texto[..texto.len() - texto.trim_start().len()];
+        let fim = &texto[texto.trim_end().len()..];
+        let mut corpo = if marcas.codigo {
+            codigo(miolo, modo)
+        } else {
+            marcar(&escapar(miolo, modo), marcas, modo)
+        };
+        if let Some(url) = link.filter(|u| md_link::permitido(u) && self.links + u.len() <= MAX_LINKS_BYTES) {
+            self.links += url.len();
+            // Em célula, `|` no destino dividiria a coluna da tabela GFM.
+            let destino = md_link::destino(url);
+            let destino = if modo == Modo::Celula { destino.replace('|', "%7C") } else { destino };
+            corpo = format!("[{corpo}]({destino})");
+        }
+        format!("{}{corpo}{}", escapar(inicio, modo), escapar(fim, modo))
     }
-    format!("{}{corpo}{}", escapar(inicio, modo), escapar(fim, modo))
 }
 
 /// Embrulha o texto já escapado: `~~` por fora, depois `**`, depois `*` (negrito some no título).

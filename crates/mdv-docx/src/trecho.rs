@@ -3,11 +3,8 @@
 
 use crate::contexto::Contexto;
 use crate::estilo_run::ler_rpr;
-use crate::modelo::Trecho;
-use crate::xml_leitor::Leitor;
-
-use crate::modelo::{chave_nota, Marcas};
-use crate::xml_leitor::Evento;
+use crate::modelo::{chave_nota, Marcas, TipoNota, Trecho};
+use crate::xml_leitor::{Evento, Leitor, Tag};
 use mdv_text::sanitize;
 use std::rc::Rc;
 
@@ -18,66 +15,104 @@ pub(crate) fn ler_run(
     link: Option<&Rc<str>>,
     saida: &mut Vec<Trecho>,
 ) -> Result<(), String> {
-    // O `w:rPr` pode vir depois do texto no XML: os trechos saem com marcas padrão e recebem as
-    // do run no fim, a partir deste índice.
-    let inicio = saida.len();
-    let mut marcas = Marcas::default();
-    let mut pendente = String::new();
-    loop {
-        match l.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "r" => break,
-            Some(Evento::Abre(tag)) => match tag.nome.as_str() {
-                "rPr" => marcas = ler_rpr(l, ctx)?,
-                // Só `w:t` é texto do documento; `delText` e `instrText` (abaixo) são pulados.
-                "t" => ler_t(l, &mut pendente)?,
-                "tab" => pendente.push(' '),
-                "noBreakHyphen" => pendente.push('-'),
-                "br" => {
-                    // Quebra de página ou de coluna não é quebra de linha no Markdown.
-                    if matches!(tag.attr("type"), None | Some("textWrapping")) {
-                        esvaziar(&mut pendente, link, saida);
-                        saida.push(Trecho::Quebra);
-                    }
-                }
-                "footnoteReference" | "endnoteReference" => {
-                    esvaziar(&mut pendente, link, saida);
-                    let fim = tag.nome == "endnoteReference";
-                    saida.push(Trecho::NotaRef(chave_nota(fim, tag.attr("id").unwrap_or(""))));
-                }
-                // Desenho é consumido inteiro só para ler o `descr`; o que há dentro (caixas de
-                // texto, formas) é descartado, pois a conversão não trata caixas de texto.
-                "drawing" | "pict" => {
-                    esvaziar(&mut pendente, link, saida);
-                    let descr = ler_desenho(l)?;
-                    saida.push(Trecho::Imagem(sanitize(&descr).into_owned()));
-                }
-                // O Word repete o desenho em `Fallback` para versões antigas; só vale o `Choice`.
-                "object" | "delText" | "instrText" | "Fallback" => l.pular()?,
-                _ => {}
-            },
-            Some(_) => {}
+    let mut run = Run::novo(link, saida);
+    while let Some(evento) = l.dentro("r")? {
+        if let Evento::Abre(tag) = evento {
+            run.filho(l, ctx, &tag)?;
         }
     }
-    esvaziar(&mut pendente, link, saida);
-    for t in &mut saida[inicio..] {
-        if let Trecho::Texto { marcas: m, .. } = t {
-            *m = marcas;
-        }
-    }
+    run.encerrar();
     Ok(())
+}
+
+/// Estado da leitura de um run: o texto ainda não emitido e as marcas do `rPr`.
+struct Run<'a> {
+    link: Option<&'a Rc<str>>,
+    saida: &'a mut Vec<Trecho>,
+    /// Texto acumulado de `t`, `tab` e `noBreakHyphen` até uma quebra, nota, desenho ou o fim.
+    pendente: String,
+    marcas: Marcas,
+    /// O `w:rPr` pode vir depois do texto no XML: os trechos saem com marcas padrão e recebem as
+    /// do run no fim, a partir deste índice de `saida`.
+    inicio: usize,
+}
+
+impl<'a> Run<'a> {
+    fn novo(link: Option<&'a Rc<str>>, saida: &'a mut Vec<Trecho>) -> Self {
+        let inicio = saida.len();
+        Run { link, saida, pendente: String::new(), marcas: Marcas::default(), inicio }
+    }
+
+    /// Trata um filho direto do run (ou um descendente de elemento transparente).
+    fn filho(&mut self, l: &mut Leitor, ctx: &Contexto, tag: &Tag) -> Result<(), String> {
+        match tag.nome.as_str() {
+            "rPr" => self.marcas = ler_rpr(l, ctx)?,
+            // Só `w:t` é texto do documento; `delText` e `instrText` (abaixo) são pulados.
+            "t" => ler_t(l, &mut self.pendente)?,
+            "tab" => self.pendente.push(' '),
+            "noBreakHyphen" => self.pendente.push('-'),
+            "br" => self.quebra(tag),
+            "footnoteReference" | "endnoteReference" => self.nota(tag),
+            // Desenho é consumido inteiro só para ler o `descr`; o que há dentro (caixas de
+            // texto, formas) é descartado, pois a conversão não trata caixas de texto.
+            "drawing" | "pict" => self.desenho(l)?,
+            // O Word repete o desenho em `Fallback` para versões antigas; só vale o `Choice`.
+            "object" | "delText" | "instrText" | "Fallback" => l.pular()?,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Quebra de página ou de coluna não é quebra de linha no Markdown.
+    fn quebra(&mut self, tag: &Tag) {
+        if matches!(tag.attr("type"), None | Some("textWrapping")) {
+            self.esvaziar();
+            self.saida.push(Trecho::Quebra);
+        }
+    }
+
+    fn nota(&mut self, tag: &Tag) {
+        self.esvaziar();
+        let tipo = TipoNota::da_referencia(&tag.nome);
+        self.saida.push(Trecho::NotaRef(chave_nota(tipo, tag.attr("id").unwrap_or(""))));
+    }
+
+    fn desenho(&mut self, l: &mut Leitor) -> Result<(), String> {
+        self.esvaziar();
+        let descr = ler_desenho(l)?;
+        self.saida.push(Trecho::Imagem(sanitize(&descr).into_owned()));
+        Ok(())
+    }
+
+    /// Passa o texto acumulado (já sem controles de terminal) para a saída; vazio não gera trecho.
+    fn esvaziar(&mut self) {
+        if self.pendente.is_empty() {
+            return;
+        }
+        let texto = sanitize(&self.pendente).into_owned();
+        self.pendente.clear();
+        self.saida.push(Trecho::Texto { texto, marcas: Marcas::default(), link: self.link.cloned() });
+    }
+
+    /// Emite o que sobrou e aplica as marcas do `rPr` aos textos deste run.
+    fn encerrar(mut self) {
+        self.esvaziar();
+        for t in &mut self.saida[self.inicio..] {
+            if let Trecho::Texto { marcas, .. } = t {
+                *marcas = self.marcas;
+            }
+        }
+    }
 }
 
 /// Lê o texto de um `w:t` (já aberto) até o `Fecha` dele, juntando em `pendente`.
 fn ler_t(l: &mut Leitor, pendente: &mut String) -> Result<(), String> {
-    loop {
-        match l.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "t" => return Ok(()),
-            Some(Evento::Texto(t)) => pendente.push_str(&t),
-            Some(_) => {}
+    while let Some(evento) = l.dentro("t")? {
+        if let Evento::Texto(t) = evento {
+            pendente.push_str(&t);
         }
     }
+    Ok(())
 }
 
 /// Consome um `drawing`/`pict` (já aberto) e devolve o `descr` do primeiro `docPr`, ou vazio.
@@ -101,16 +136,6 @@ fn ler_desenho(l: &mut Leitor) -> Result<String, String> {
         }
     }
     Ok(descr.unwrap_or_default())
-}
-
-/// Passa o texto acumulado (já sem controles de terminal) para a saída; vazio não gera trecho.
-fn esvaziar(pendente: &mut String, link: Option<&Rc<str>>, saida: &mut Vec<Trecho>) {
-    if pendente.is_empty() {
-        return;
-    }
-    let texto = sanitize(pendente).into_owned();
-    pendente.clear();
-    saida.push(Trecho::Texto { texto, marcas: Marcas::default(), link: link.cloned() });
 }
 
 #[cfg(test)]

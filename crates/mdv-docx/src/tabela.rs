@@ -10,38 +10,32 @@ use crate::MAX_COLUNAS;
 /// `tblPr` e `tblGrid` só descrevem aparência e largura, então são pulados.
 pub(crate) fn ler_tabela(l: &mut Leitor, ctx: &mut Contexto) -> Result<Tabela, String> {
     let mut linhas = Vec::new();
-    loop {
-        match l.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "tbl" => return Ok(Tabela { linhas }),
-            Some(Evento::Abre(tag)) => match tag.nome.as_str() {
-                "tr" => {
-                    ctx.budget.check()?;
-                    linhas.push(ler_linha(l, ctx)?);
-                }
-                "tblPr" | "tblGrid" | "Fallback" => l.pular()?,
-                _ => {}
-            },
-            Some(_) => {}
+    while let Some(evento) = l.dentro("tbl")? {
+        let Evento::Abre(tag) = evento else { continue };
+        match tag.nome.as_str() {
+            "tr" => {
+                ctx.budget.check()?;
+                linhas.push(ler_linha(l, ctx)?);
+            }
+            "tblPr" | "tblGrid" | "Fallback" => l.pular()?,
+            _ => {}
         }
     }
+    Ok(Tabela { linhas })
 }
 
 /// Lê um `w:tr` (depois do `Abre`) e devolve as células; linhas com números diferentes de células são aceitas.
 fn ler_linha(l: &mut Leitor, ctx: &mut Contexto) -> Result<Vec<Celula>, String> {
     let mut celulas = Vec::new();
-    loop {
-        match l.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "tr" => return Ok(celulas),
-            Some(Evento::Abre(tag)) => match tag.nome.as_str() {
-                "tc" => celulas.push(ler_celula(l, ctx)?),
-                "trPr" | "tblPrEx" | "Fallback" => l.pular()?,
-                _ => {}
-            },
-            Some(_) => {}
+    while let Some(evento) = l.dentro("tr")? {
+        let Evento::Abre(tag) = evento else { continue };
+        match tag.nome.as_str() {
+            "tc" => celulas.push(ler_celula(l, ctx)?),
+            "trPr" | "tblPrEx" | "Fallback" => l.pular()?,
+            _ => {}
         }
     }
+    Ok(celulas)
 }
 
 /// Lê um `w:tc` (depois do `Abre`). O GFM não tem tabela dentro de tabela, então uma `w:tbl`
@@ -50,55 +44,46 @@ fn ler_linha(l: &mut Leitor, ctx: &mut Contexto) -> Result<Vec<Celula>, String> 
 /// absurdo não gerar milhares de colunas na saída; `vMerge` sem `val` ou diferente de `restart`
 /// marca a continuação de uma mesclagem vertical. Outros elementos (`sdt`...) são transparentes.
 fn ler_celula(l: &mut Leitor, ctx: &mut Contexto) -> Result<Celula, String> {
-    let antes = ctx.contador.parar(true);
-    let celula = ler_conteudo(l, ctx);
-    ctx.contador.parar(antes);
-    celula
+    ctx.sem_contar(|ctx| ler_conteudo(l, ctx))
 }
 
 /// Lê o conteúdo da célula até o `Fecha("tc")`; `ler_celula` cuida de parar a numeração.
 fn ler_conteudo(l: &mut Leitor, ctx: &mut Contexto) -> Result<Celula, String> {
     let mut celula = Celula { paragrafos: Vec::new(), colunas: 1, continua: false };
-    loop {
-        match l.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "tc" => return Ok(celula),
-            Some(Evento::Abre(tag)) => match tag.nome.as_str() {
-                "p" => {
-                    if let Some(bloco) = ler_paragrafo(l, ctx)? {
-                        celula.paragrafos.extend(bloco.paragrafos());
-                    }
+    while let Some(evento) = l.dentro("tc")? {
+        let Evento::Abre(tag) = evento else { continue };
+        match tag.nome.as_str() {
+            "p" => {
+                if let Some(bloco) = ler_paragrafo(l, ctx)? {
+                    celula.paragrafos.extend(bloco.paragrafos());
                 }
-                "tbl" => {
-                    let interna = ler_tabela(l, ctx)?;
-                    celula.paragrafos.extend(Bloco::Tabela(interna).paragrafos());
-                }
-                "tcPr" => ler_tc(l, &mut celula)?,
-                "Fallback" => l.pular()?,
-                _ => {}
-            },
-            Some(_) => {}
+            }
+            "tbl" => {
+                let interna = ler_tabela(l, ctx)?;
+                celula.paragrafos.extend(Bloco::Tabela(interna).paragrafos());
+            }
+            "tcPr" => ler_tc(l, &mut celula)?,
+            "Fallback" => l.pular()?,
+            _ => {}
         }
     }
+    Ok(celula)
 }
 
 /// Lê o `w:tcPr` (depois do `Abre`): só `gridSpan` e `vMerge` interessam; o resto é pulado.
 fn ler_tc(l: &mut Leitor, celula: &mut Celula) -> Result<(), String> {
-    loop {
-        match l.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "tcPr" => return Ok(()),
-            Some(Evento::Abre(tag)) => match tag.nome.as_str() {
-                "gridSpan" => {
-                    let n = tag.val().and_then(|v| v.trim().parse::<usize>().ok());
-                    celula.colunas = n.unwrap_or(1).clamp(1, MAX_COLUNAS);
-                }
-                "vMerge" => celula.continua = tag.val() != Some("restart"),
-                _ => l.pular()?,
-            },
-            Some(_) => {}
+    while let Some(evento) = l.dentro("tcPr")? {
+        let Evento::Abre(tag) = evento else { continue };
+        match tag.nome.as_str() {
+            "gridSpan" => {
+                let n = tag.val().and_then(|v| v.trim().parse::<usize>().ok());
+                celula.colunas = n.unwrap_or(1).clamp(1, MAX_COLUNAS);
+            }
+            "vMerge" => celula.continua = tag.val() != Some("restart"),
+            _ => l.pular()?,
         }
     }
+    Ok(())
 }
 
 /// Lê o primeiro `w:tbl` do XML; ajuda os testes de tabela.

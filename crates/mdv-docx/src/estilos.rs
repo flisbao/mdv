@@ -3,9 +3,9 @@
 
 use std::collections::HashMap;
 
-use crate::propriedades::ler_ppr;
+use crate::propriedades::{ler_ppr, Propriedades};
 use crate::xml_leitor::{Evento, Leitor};
-use crate::Budget;
+use crate::{Budget, MAX_ESTILOS, MAX_NIVEL_TITULO};
 
 /// Limite de saltos em `basedOn`; cadeia mais longa, ou ciclo, para aqui.
 const MAX_SALTOS: usize = 16;
@@ -41,9 +41,17 @@ impl Estilos {
 
     /// Lê `styles.xml`; estilo desconhecido não é erro.
     pub(crate) fn ler(xml: &[u8], budget: &dyn Budget) -> Result<Self, String> {
+        Self::ler_com_teto(xml, budget, MAX_ESTILOS)
+    }
+
+    /// Como `ler`, com o teto de estilos explícito (os testes usam um teto pequeno).
+    pub(crate) fn ler_com_teto(xml: &[u8], budget: &dyn Budget, max_estilos: usize) -> Result<Self, String> {
         let mut leitor = Leitor::novo(xml, budget);
         let mut brutos = Vec::new();
         while let Some(tag) = leitor.ate("style")? {
+            if brutos.len() >= max_estilos {
+                return Err("estilos demais".into());
+            }
             let id = tag.attr("styleId").unwrap_or("").to_string();
             brutos.push(ler_estilo(&mut leitor, id)?);
         }
@@ -63,28 +71,23 @@ fn ler_estilo(leitor: &mut Leitor, id: String) -> Result<Bruto, String> {
     let mut base = None;
     let mut titulo_outline = None;
     let mut numeracao = None;
-    loop {
-        match leitor.proximo()? {
-            None => return Err("fim inesperado do documento".into()),
-            Some(Evento::Fecha(n)) if n == "style" => break,
-            Some(Evento::Abre(tag)) => match tag.nome.as_str() {
-                "name" => {
-                    nome = tag.val().unwrap_or("").trim().to_lowercase();
-                    leitor.pular()?;
-                }
-                "basedOn" => {
-                    base = tag.val().map(str::to_string);
-                    leitor.pular()?;
-                }
-                // `numId` 0 quer dizer "sem numeração" e `outlineLvl` 9, texto comum.
-                "pPr" => {
-                    let props = ler_ppr(leitor)?;
-                    titulo_outline = props.nivel;
-                    numeracao = props.num.filter(|&(num_id, _)| num_id != 0);
-                }
-                _ => leitor.pular()?,
-            },
-            Some(_) => {}
+    while let Some(evento) = leitor.dentro("style")? {
+        let Evento::Abre(tag) = evento else { continue };
+        match tag.nome.as_str() {
+            "name" => {
+                nome = tag.val().unwrap_or("").trim().to_lowercase();
+                leitor.pular()?;
+            }
+            "basedOn" => {
+                base = tag.val().map(str::to_string);
+                leitor.pular()?;
+            }
+            // `numId` 0 quer dizer "sem numeração" e `outlineLvl` 9, texto comum.
+            "pPr" => {
+                let Propriedades { nivel, num, .. } = ler_ppr(leitor)?;
+                (titulo_outline, numeracao) = (nivel, num.filter(|&(num_id, _)| num_id != 0));
+            }
+            _ => leitor.pular()?,
         }
     }
     // O nome tem prioridade sobre `outlineLvl`: o Word usa o nível do outline só como reserva.
@@ -140,7 +143,7 @@ fn efeito_nome(nome: &str) -> EstiloDoc {
             .strip_prefix("heading ")
             .and_then(|n| n.parse::<u8>().ok())
             .filter(|n| (1..=9).contains(n))
-            .map(|n| n.min(6)),
+            .map(|n| n.min(MAX_NIVEL_TITULO)),
     };
     EstiloDoc {
         titulo,
@@ -165,6 +168,17 @@ mod tests {
     fn ler_xml(corpo: &str) -> Estilos {
         let xml = format!("<w:styles>{corpo}</w:styles>");
         Estilos::ler(xml.as_bytes(), &Unlimited).unwrap()
+    }
+
+    #[test]
+    fn estilos_acima_do_teto_sao_recusados() {
+        let estilos = |n: usize| -> String {
+            let itens: String = (0..n).map(|i| format!(r#"<w:style w:styleId="E{i}"><w:name w:val="x"/></w:style>"#)).collect();
+            format!("<w:styles>{itens}</w:styles>")
+        };
+        assert!(Estilos::ler_com_teto(estilos(3).as_bytes(), &Unlimited, 3).is_ok());
+        let erro = Estilos::ler_com_teto(estilos(4).as_bytes(), &Unlimited, 3).err().expect("erro");
+        assert!(erro.contains("estilos demais"), "{erro}");
     }
 
     #[test]

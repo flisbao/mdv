@@ -5,10 +5,11 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use mdv_html::{Budget, Face, Options, Rgb};
+use mdv_html::{Face, Options, Rgb};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
+use crate::mem::MemBudget;
 use crate::{load, mem, render};
 
 /// Teto do arquivo HTML lido do disco (antes de decodificar).
@@ -82,19 +83,10 @@ fn charset_da_cabeca(bytes: &[u8]) -> Option<String> {
     String::from_utf8(rotulo).ok()
 }
 
-/// Orçamento do `mdv-html` ligado ao limite de memória do processo (`mem`).
-struct HtmlBudget;
-
-impl Budget for HtmlBudget {
-    fn check(&self) -> Result<(), String> {
-        mem::check().map_err(|e| e.to_string())
-    }
-}
-
 /// Converte o HTML em linhas já quebradas em `width` colunas, com cores, links e títulos.
 pub(crate) fn render_html(text: &str, width: usize) -> render::Rendered {
     let opts = Options { width, viewport_px: 0, limits: Default::default() };
-    match mdv_html::render(text, &opts, &HtmlBudget) {
+    match mdv_html::render(text, &opts, &MemBudget) {
         Ok(doc) => montar(&doc, width.clamp(LARGURA_MIN, LARGURA_MAX)),
         Err(e) => render::error_rendered(&e),
     }

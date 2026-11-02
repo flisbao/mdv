@@ -132,6 +132,35 @@ pub fn exceeded() -> bool {
     used() > limit()
 }
 
+/// O limite de memória do processo visto pelas bibliotecas do `mdv` (`mdv-docx`, `mdv-xlsx`,
+/// `mdv-html`, `mdv-msg`, `mdv-export`): o único adaptador de `Budget`. `mdv-msg` e `mdv-export`
+/// têm um método a mais (`check_html`, `check_parse`) e por isso a sua própria `trait`.
+pub struct MemBudget;
+
+impl mdv_text::Budget for MemBudget {
+    fn check(&self) -> Result<(), String> {
+        check().map_err(|e| e.to_string())
+    }
+}
+
+impl mdv_msg::Budget for MemBudget {
+    fn check(&self) -> Result<(), String> {
+        check().map_err(|e| e.to_string())
+    }
+    fn check_html(&self, len: usize) -> Result<(), String> {
+        check_html(len).map_err(|e| e.to_string())
+    }
+}
+
+impl mdv_export::Budget for MemBudget {
+    fn check(&self) -> Result<(), String> {
+        check().map_err(|e| e.to_string())
+    }
+    fn check_parse(&self, len: usize) -> Result<(), String> {
+        check_parse(len).map_err(|e| e.to_string())
+    }
+}
+
 /// Recusa, antes de ler, um arquivo que expandiria além do limite (a renderização costuma
 /// multiplicar o tamanho por 10 a 50; aqui basta ×4 para barrar os casos óbvios).
 pub fn check_input(len: u64) -> Result<(), MemoryLimit> {
@@ -291,6 +320,20 @@ pub fn available() -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mem_budget_serve_a_todas_as_bibliotecas() {
+        // Não altera o limite global (os testes rodam em paralelo): só confere o contrato.
+        assert!(mdv_text::Budget::check(&MemBudget).is_ok());
+        assert!(mdv_msg::Budget::check(&MemBudget).is_ok());
+        assert!(mdv_msg::Budget::check_html(&MemBudget, 10).is_ok());
+        assert!(mdv_export::Budget::check(&MemBudget).is_ok());
+        assert!(mdv_export::Budget::check_parse(&MemBudget, 10).is_ok());
+        assert!(
+            mdv_export::Budget::check_parse(&MemBudget, usize::MAX).is_err(),
+            "árvore gigante é barrada antes de analisar"
+        );
+    }
+
     use super::*;
 
     const MI: usize = 1024 * 1024;

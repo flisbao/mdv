@@ -4,6 +4,7 @@
 use crate::pacote::Pacote;
 use crate::relacoes::{resolver, Relacoes};
 use crate::Budget;
+use mdv_text::sanitize;
 
 /// Partes já lidas do pacote; as opcionais ficam `None` quando o documento não as tem.
 pub(crate) struct Partes {
@@ -12,7 +13,7 @@ pub(crate) struct Partes {
     pub estilos: Option<Vec<u8>>,
     pub numeracao: Option<Vec<u8>>,
     pub notas: Option<Vec<u8>>,
-    pub fim: Option<Vec<u8>>,
+    pub notas_fim: Option<Vec<u8>>,
 }
 
 impl Partes {
@@ -24,7 +25,7 @@ impl Partes {
         let nome_principal = achar_principal(pacote, budget)?;
         let principal = pacote
             .parte(&nome_principal)?
-            .ok_or_else(|| format!("o arquivo não tem {nome_principal}"))?;
+            .ok_or_else(|| format!("o arquivo não tem {}", sanitize(&nome_principal)))?;
         let relacoes = match pacote.parte(&rels_de(&nome_principal))? {
             Some(xml) => Relacoes::ler(&xml, budget)?,
             None => Relacoes::vazias(),
@@ -32,8 +33,8 @@ impl Partes {
         let estilos = ligada(pacote, &relacoes, &nome_principal, "styles")?;
         let numeracao = ligada(pacote, &relacoes, &nome_principal, "numbering")?;
         let notas = ligada(pacote, &relacoes, &nome_principal, "footnotes")?;
-        let fim = ligada(pacote, &relacoes, &nome_principal, "endnotes")?;
-        Ok(Partes { principal, relacoes, estilos, numeracao, notas, fim })
+        let notas_fim = ligada(pacote, &relacoes, &nome_principal, "endnotes")?;
+        Ok(Partes { principal, relacoes, estilos, numeracao, notas, notas_fim })
     }
 }
 
@@ -93,6 +94,16 @@ mod tests {
     }
 
     #[test]
+    fn alvo_com_controle_nao_vai_cru_para_o_erro() {
+        let rels = "<Relationships><Relationship Id=\"rId1\" Type=\"http://x/officeDocument\" Target=\"word/\u{1b}]0;X\u{7}d.xml\"/></Relationships>";
+        let bytes = zip(&[("_rels/.rels", rels.as_bytes())], false);
+        let mut pacote = Pacote::abrir(&bytes).expect("abre");
+        let erro = Partes::carregar(&mut pacote, &Unlimited).err().expect("erro");
+        assert!(erro.contains("o arquivo não tem"), "{erro}");
+        assert!(!erro.chars().any(char::is_control), "{erro:?}");
+    }
+
+    #[test]
     fn acha_parte_principal_com_outro_nome() {
         let rels = br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/principal.xml"/></Relationships>"#;
         let bytes = zip(&[("_rels/.rels", rels), ("word/principal.xml", b"<w:body>x</w:body>")], false);
@@ -109,7 +120,7 @@ mod tests {
         assert!(partes.estilos.is_none());
         assert!(partes.numeracao.is_none());
         assert!(partes.notas.is_none());
-        assert!(partes.fim.is_none());
+        assert!(partes.notas_fim.is_none());
     }
 
     #[test]
@@ -126,6 +137,6 @@ mod tests {
         assert!(partes.estilos.is_some());
         assert!(partes.numeracao.is_some());
         assert!(partes.notas.is_some());
-        assert!(partes.fim.is_some());
+        assert!(partes.notas_fim.is_some());
     }
 }
