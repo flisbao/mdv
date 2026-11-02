@@ -60,8 +60,8 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(failure) => {
             match &failure {
-                Failure::Usage(msg) => eprintln!("mdv: {msg}\nUse `mdv --help` para ver as opções."),
-                Failure::Runtime(msg) => eprintln!("mdv: {msg}"),
+                Failure::Usage(msg) => eprintln!("mdv: {}\nUse `mdv --help` para ver as opções.", render::sanitize(msg)),
+                Failure::Runtime(msg) => eprintln!("mdv: {}", render::sanitize(msg)),
             }
             failure.exit_code()
         }

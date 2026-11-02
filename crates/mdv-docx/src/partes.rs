@@ -4,6 +4,7 @@
 use crate::pacote::Pacote;
 use crate::relacoes::{resolver, Relacoes};
 use crate::Budget;
+use mdv_text::sanitize;
 
 /// Partes já lidas do pacote; as opcionais ficam `None` quando o documento não as tem.
 pub(crate) struct Partes {
@@ -24,7 +25,7 @@ impl Partes {
         let nome_principal = achar_principal(pacote, budget)?;
         let principal = pacote
             .parte(&nome_principal)?
-            .ok_or_else(|| format!("o arquivo não tem {nome_principal}"))?;
+            .ok_or_else(|| format!("o arquivo não tem {}", sanitize(&nome_principal)))?;
         let relacoes = match pacote.parte(&rels_de(&nome_principal))? {
             Some(xml) => Relacoes::ler(&xml, budget)?,
             None => Relacoes::vazias(),
@@ -90,6 +91,16 @@ mod tests {
         let mut pacote = Pacote::abrir(&bytes).expect("abre");
         let erro = Partes::carregar(&mut pacote, &Unlimited).err().expect("erro");
         assert!(erro.contains("word/document.xml"), "{erro}");
+    }
+
+    #[test]
+    fn alvo_com_controle_nao_vai_cru_para_o_erro() {
+        let rels = "<Relationships><Relationship Id=\"rId1\" Type=\"http://x/officeDocument\" Target=\"word/\u{1b}]0;X\u{7}d.xml\"/></Relationships>";
+        let bytes = zip(&[("_rels/.rels", rels.as_bytes())], false);
+        let mut pacote = Pacote::abrir(&bytes).expect("abre");
+        let erro = Partes::carregar(&mut pacote, &Unlimited).err().expect("erro");
+        assert!(erro.contains("o arquivo não tem"), "{erro}");
+        assert!(!erro.chars().any(char::is_control), "{erro:?}");
     }
 
     #[test]

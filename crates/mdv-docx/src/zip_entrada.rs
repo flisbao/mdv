@@ -4,6 +4,7 @@ use crate::le::u16_em;
 use crate::zip_diretorio::Entrada;
 use crate::MAX_PARTE_BYTES;
 use flate2::read::DeflateDecoder;
+use mdv_text::sanitize;
 use std::io::Read;
 
 /// Assinatura do cabeçalho local de cada entrada.
@@ -17,7 +18,7 @@ const LOCAL_TAM: usize = 30;
 /// Os tamanhos do cabeçalho local não são confiados (com o bit 3 de flags eles vêm zerados).
 pub(crate) fn extrair(bytes: &[u8], e: &Entrada) -> Result<Vec<u8>, String> {
     if e.tam_original as usize > MAX_PARTE_BYTES {
-        return Err(format!("parte do .docx grande demais: {}", e.nome));
+        return Err(format!("parte do .docx grande demais: {}", sanitize(&e.nome)));
     }
     let dados = localizar(bytes, e)?;
     let saida = match e.metodo {
@@ -25,7 +26,7 @@ pub(crate) fn extrair(bytes: &[u8], e: &Entrada) -> Result<Vec<u8>, String> {
             // Confere antes de copiar: o tamanho declarado já passou do teto, mas os bytes
             // guardados vêm do arquivo e podem ser bem maiores que ele.
             if dados.len() != e.tam_original as usize {
-                return Err(format!("ZIP inválido: tamanho inconsistente em {}", e.nome));
+                return Err(format!("ZIP inválido: tamanho inconsistente em {}", sanitize(&e.nome)));
             }
             dados.to_vec()
         }
@@ -34,13 +35,13 @@ pub(crate) fn extrair(bytes: &[u8], e: &Entrada) -> Result<Vec<u8>, String> {
             DeflateDecoder::new(dados)
                 .take(e.tam_original as u64 + 1)
                 .read_to_end(&mut saida)
-                .map_err(|_| format!("ZIP inválido: deflate corrompido em {}", e.nome))?;
+                .map_err(|_| format!("ZIP inválido: deflate corrompido em {}", sanitize(&e.nome)))?;
             saida
         }
         m => return Err(format!("método de compressão não suportado: {m}")),
     };
     if saida.len() != e.tam_original as usize {
-        return Err(format!("ZIP inválido: tamanho inconsistente em {}", e.nome));
+        return Err(format!("ZIP inválido: tamanho inconsistente em {}", sanitize(&e.nome)));
     }
     Ok(saida)
 }

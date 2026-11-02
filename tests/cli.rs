@@ -859,6 +859,28 @@ fn docx_antigo_ole2_explica_o_formato() {
 }
 
 #[test]
+fn docx_com_alvo_de_relacao_com_controle_nao_vaza_controle_no_stderr() {
+    use mdv_docx::testutil::zip;
+    let d = tempfile::TempDir::new().unwrap();
+    let rels = "<Relationships><Relationship Id=\"rId1\" Type=\"http://x/officeDocument\" Target=\"word/\u{1b}]0;X\u{7}d.xml\"/></Relationships>";
+    let p = docx_file(&d, "hostil.docx", &zip(&[("_rels/.rels", rels.as_bytes())], false));
+    let out = Command::new(env!("CARGO_BIN_EXE_mdv")).args(["-p", &p]).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("o arquivo não tem"), "{err:?}");
+    assert!(!err.contains('\u{1b}') && !err.contains('\u{7}'), "{err:?}");
+}
+
+#[test]
+fn erro_com_caminho_com_controle_nao_vaza_controle_no_stderr() {
+    let out = Command::new(env!("CARGO_BIN_EXE_mdv")).args(["-p", "/tmp/nao\u{1b}]0;X\u{7}existe.md"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.starts_with("mdv: "), "{err:?}");
+    assert!(!err.contains('\u{1b}') && !err.contains('\u{7}'), "{err:?}");
+}
+
+#[test]
 fn docx_exportado_pelo_mdv_volta_como_markdown() {
     let d = tempfile::TempDir::new().unwrap();
     let md = d.path().join("x.md");

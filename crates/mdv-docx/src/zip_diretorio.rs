@@ -60,7 +60,7 @@ pub(crate) fn listar(bytes: &[u8]) -> Result<Vec<Entrada>, String> {
         }
         // O Word trata "A.xml" e "a.XML" como o mesmo arquivo; duplicata sem diferenciar caixa é ambígua.
         if !nomes.insert(entrada.nome.to_lowercase()) {
-            return Err(format!("ZIP com entrada duplicada: {}", entrada.nome));
+            return Err(format!("ZIP com entrada duplicada: {}", mdv_text::sanitize(&entrada.nome)));
         }
         saida.push(entrada);
     }
@@ -171,6 +171,14 @@ mod tests {
         let bytes = zip(&[("A.xml", b"1"), ("a.XML", b"2")], false);
         let erro = listar(&bytes).unwrap_err();
         assert!(erro.contains("duplicad"), "{erro}");
+    }
+
+    #[test]
+    fn nome_duplicado_com_controle_nao_vai_cru_para_o_erro() {
+        let bytes = zip(&[("a\u{1b}]0;X\u{7}", b"1"), ("a\u{1b}]0;X\u{7}", b"2")], false);
+        let erro = listar(&bytes).unwrap_err();
+        assert!(erro.contains("duplicad"), "{erro}");
+        assert!(!erro.chars().any(char::is_control), "{erro:?}");
     }
 
     #[test]

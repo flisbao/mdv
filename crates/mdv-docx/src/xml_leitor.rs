@@ -163,7 +163,7 @@ impl<'a> Leitor<'a> {
 
     /// Mensagem de erro padrão, com a posição em bytes.
     fn erro(&self, detalhe: impl std::fmt::Display) -> String {
-        format!("XML inválido (byte {}): {detalhe}", self.xml.error_position())
+        mdv_text::sanitize(&format!("XML inválido (byte {}): {detalhe}", self.xml.error_position())).into_owned()
     }
 }
 
@@ -205,6 +205,14 @@ mod tests {
             abre("p"), abre("r"), abre("t"), texto("oi"), fecha("t"), fecha("r"), fecha("p"),
         ];
         assert_eq!(v, esperado);
+    }
+
+    #[test]
+    fn erro_de_xml_com_controle_nao_vai_cru_para_a_mensagem() {
+        // O nome da tag de fechamento (vindo do arquivo) aparece na mensagem do quick-xml.
+        let erro = todos("<a></b\u{1b}c>").unwrap_err();
+        assert!(erro.contains("XML inválido"), "{erro}");
+        assert!(!erro.chars().any(char::is_control), "{erro:?}");
     }
 
     #[test]
