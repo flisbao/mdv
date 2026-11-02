@@ -27,14 +27,12 @@ pub struct Picker {
     pub truncated: bool,
 }
 
-/// Arquivos listados no seletor: Markdown, e-mails `.msg`, `.docx`, planilhas `.xlsx`, YAML e HTML (JSON e CSV/TSV ficam de fora).
+/// Arquivos listados no seletor: Markdown, os formatos convertidos (`load::CONVERSORES`), YAML e HTML (JSON e CSV/TSV ficam de fora).
 fn is_listed(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     n.ends_with(".md")
         || n.ends_with(".markdown")
-        || n.ends_with(".msg")
-        || n.ends_with(".docx")
-        || n.ends_with(".xlsx")
+        || crate::load::e_convertido(Path::new(&n))
         || n.ends_with(".yaml")
         || n.ends_with(".yml")
         || n.ends_with(".html")

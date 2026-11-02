@@ -9,11 +9,6 @@ use mdv_msg::{Budget, MAX_MSG_BYTES};
 
 use crate::{load, mem};
 
-/// Extensão `.msg` (sem diferenciar caixa).
-pub(crate) fn is_msg(path: &Path) -> bool {
-    path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("msg"))
-}
-
 /// O limite de memória do processo (`mem`) visto pelo `mdv-msg`.
 struct MsgBudget;
 
@@ -38,14 +33,6 @@ mod tests {
     use super::*;
     use mdv_msg::testutil::{tags, MsgBuilder};
     use std::fs::{self, File};
-
-    #[test]
-    fn extensao_msg_sem_caixa() {
-        assert!(is_msg(Path::new("A.MSG")));
-        assert!(is_msg(Path::new("pasta/a.msg")));
-        assert!(!is_msg(Path::new("a.md")));
-        assert!(!is_msg(Path::new("msg")));
-    }
 
     #[test]
     fn le_msg_do_disco() {

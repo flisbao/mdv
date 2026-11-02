@@ -9,11 +9,6 @@ use mdv_docx::{Budget, MAX_DOCX_BYTES};
 
 use crate::{load, mem};
 
-/// Extensão `.docx` (sem diferenciar caixa).
-pub(crate) fn is_docx(path: &Path) -> bool {
-    path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("docx"))
-}
-
 /// O limite de memória do processo (`mem`) visto pelo `mdv-docx`.
 struct DocxBudget;
 
@@ -49,15 +44,6 @@ mod tests {
     use super::*;
     use mdv_docx::testutil::DocxBuilder;
     use std::fs::{self, File};
-
-    #[test]
-    fn extensao_docx_sem_caixa() {
-        assert!(is_docx(Path::new("A.DOCX")));
-        assert!(is_docx(Path::new("pasta/a.docx")));
-        assert!(!is_docx(Path::new("a.md")));
-        assert!(!is_docx(Path::new("docx")));
-        assert!(!is_docx(Path::new("a.docx.md")));
-    }
 
     #[test]
     fn documentos_nao_suportados_dao_erro_claro_antes_do_markdown() {

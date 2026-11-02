@@ -91,23 +91,39 @@ pub(crate) fn read_stdin() -> io::Result<String> {
     read_limited(io::stdin().lock(), MAX_INPUT_BYTES)
 }
 
-/// Leitor de um formato que o `mdv` converte em Markdown (`.msg`, `.docx`, `.xlsx`), ou `None`.
-/// É a única lista desses formatos: um novo conversor entra aqui e `e_convertido` o acompanha.
+/// Um formato que o `mdv` converte em Markdown: a extensão (sem ponto, minúscula) e o leitor.
+pub(crate) struct Conversor {
+    pub ext: &'static str,
+    pub ler: fn(&Path) -> io::Result<String>,
+}
+
+/// O registro único dos formatos convertidos. Um formato novo entra só aqui: o seletor de pasta
+/// (`picker::is_listed`), a recusa de `-o .md` (`cli`) e `e_convertido` o acompanham. Só a linha de
+/// extensões do `HELP` é texto fixo, conferida por teste.
+pub(crate) const CONVERSORES: &[Conversor] = &[
+    Conversor { ext: "msg", ler: crate::msg::read_msg_file },
+    Conversor { ext: "docx", ler: crate::docx::read_docx_file },
+    Conversor { ext: "xlsx", ler: crate::xlsx::read_xlsx_file },
+];
+
+/// Leitor de um formato que o `mdv` converte em Markdown (ver `CONVERSORES`), ou `None`.
 pub(crate) fn conversor(path: &Path) -> Option<fn(&Path) -> io::Result<String>> {
-    if crate::msg::is_msg(path) {
-        Some(crate::msg::read_msg_file)
-    } else if crate::docx::is_docx(path) {
-        Some(crate::docx::read_docx_file)
-    } else if crate::xlsx::is_xlsx(path) {
-        Some(crate::xlsx::read_xlsx_file)
-    } else {
-        None
-    }
+    let ext = path.extension().and_then(|e| e.to_str())?;
+    CONVERSORES.iter().find(|c| ext.eq_ignore_ascii_case(c.ext)).map(|c| c.ler)
 }
 
 /// O arquivo é de um formato que o `mdv` converte em Markdown (tem `conversor`)?
 pub(crate) fn e_convertido(path: &Path) -> bool {
     conversor(path).is_some()
+}
+
+/// As extensões convertidas para mensagens: `.msg, .docx e .xlsx`.
+pub(crate) fn extensoes_convertidas() -> String {
+    let nomes: Vec<String> = CONVERSORES.iter().map(|c| format!(".{}", c.ext)).collect();
+    match nomes.split_last() {
+        Some((ultimo, resto)) if !resto.is_empty() => format!("{} e {ultimo}", resto.join(", ")),
+        _ => nomes.concat(),
+    }
 }
 
 /// Lê o documento de um caminho: `.msg` vira Markdown pelo `mdv-msg`, `.docx` pelo `mdv-docx`, `.xlsx` pelo `mdv-xlsx` (ver `conversor`); planilha recusada dá erro; HTML vai para `html`; o resto é Markdown puro.
@@ -206,9 +222,22 @@ mod tests {
             let p = Path::new(nome);
             assert!(conversor(p).is_some() && e_convertido(p), "{nome}");
         }
-        for nome in ["a.md", "a.html", "a.xls", "a.ods", "a"] {
+        for nome in ["a.md", "a.html", "a.xls", "a.ods", "a", "docx", "a.xlsx.md"] {
             let p = Path::new(nome);
             assert!(conversor(p).is_none() && !e_convertido(p), "{nome}");
+        }
+    }
+
+    #[test]
+    fn extensoes_convertidas_listam_o_registro() {
+        assert_eq!(extensoes_convertidas(), ".msg, .docx e .xlsx");
+    }
+
+    #[test]
+    fn ajuda_cita_todos_os_formatos_convertidos() {
+        let linha = crate::plain::HELP.lines().find(|l| l.contains("deduzido da extensão")).expect("linha de extensões");
+        for c in CONVERSORES {
+            assert!(linha.contains(&format!(".{}", c.ext)), "a linha de extensões do HELP não cita .{}", c.ext);
         }
     }
 

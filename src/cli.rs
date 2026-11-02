@@ -284,7 +284,7 @@ fn into_export(
     }
     let entrada_convertida = common.path.as_deref().is_some_and(|p| crate::load::e_convertido(Path::new(p)));
     if md_out && !(matches!(doc, Doc::Markdown) && entrada_convertida) {
-        return Err("-o .md só vale para .msg, .docx e .xlsx".to_string());
+        return Err(format!("-o .md só vale para {}", crate::load::extensoes_convertidas()));
     }
     match &doc {
         Doc::Json { .. } => return Err("JSON ainda não exporta (use .md, .csv ou .tsv)".to_string()),

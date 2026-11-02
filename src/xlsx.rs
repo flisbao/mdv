@@ -9,11 +9,6 @@ use mdv_xlsx::{Budget, MAX_XLSX_BYTES};
 
 use crate::{load, mem};
 
-/// Extensão `.xlsx` (sem diferenciar caixa).
-pub(crate) fn is_xlsx(path: &Path) -> bool {
-    path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("xlsx"))
-}
-
 /// O limite de memória do processo (`mem`) visto pelo `mdv-xlsx`.
 struct XlsxBudget;
 
@@ -73,15 +68,6 @@ mod tests {
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
             .collect::<Vec<_>>()
             .join("\n")
-    }
-
-    #[test]
-    fn extensao_xlsx_sem_caixa() {
-        assert!(is_xlsx(Path::new("A.XLSX")));
-        assert!(is_xlsx(Path::new("pasta/a.xlsx")));
-        assert!(!is_xlsx(Path::new("a.xls")));
-        assert!(!is_xlsx(Path::new("xlsx")));
-        assert!(!is_xlsx(Path::new("a.xlsx.md")));
     }
 
     #[test]
