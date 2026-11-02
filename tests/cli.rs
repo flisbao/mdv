@@ -881,6 +881,18 @@ fn erro_com_caminho_com_controle_nao_vaza_controle_no_stderr() {
 }
 
 #[test]
+fn doc_antigo_e_parentes_dao_erro_claro_e_codigo_1() {
+    let d = tempfile::TempDir::new().unwrap();
+    for nome in ["velho.doc", "macro.docm", "modelo.dotx", "modelo.dotm", "texto.odt"] {
+        let p = docx_file(&d, nome, b"PK qualquer coisa");
+        let out = Command::new(env!("CARGO_BIN_EXE_mdv")).args(["-p", &p]).output().unwrap();
+        assert_eq!(out.status.code(), Some(1), "{nome}");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains("salve como .docx") && !err.contains("UTF-8"), "{nome}: {err}");
+    }
+}
+
+#[test]
 fn docx_exportado_pelo_mdv_volta_como_markdown() {
     let d = tempfile::TempDir::new().unwrap();
     let md = d.path().join("x.md");

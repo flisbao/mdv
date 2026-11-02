@@ -114,13 +114,18 @@ pub(crate) fn e_convertido(path: &Path) -> bool {
 pub(crate) fn read_document(path: &Path) -> io::Result<String> {
     if let Some(ler) = conversor(path) {
         ler(path)
-    } else if let Some(recusa) = crate::xlsx::planilha_nao_suportada(path) {
+    } else if let Some(recusa) = recusa(path) {
         Err(io::Error::new(io::ErrorKind::InvalidInput, recusa))
     } else if crate::html::is_html(path) {
         crate::html::read_html_file(path)
     } else {
         read_markdown_file(path)
     }
+}
+
+/// Formato de escritório que o `mdv` reconhece e recusa com uma mensagem clara (documento ou planilha).
+fn recusa(path: &Path) -> Option<&'static str> {
+    crate::docx::documento_nao_suportado(path).or_else(|| crate::xlsx::planilha_nao_suportada(path))
 }
 
 /// Lê um arquivo regular (nunca dispositivo, FIFO ou diretório) respeitando o teto.

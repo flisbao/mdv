@@ -43,6 +43,20 @@ pub(crate) fn read_docx_file(path: &Path) -> io::Result<String> {
     mdv_docx::to_markdown(&bytes, &DocxBudget).map_err(io::Error::other)
 }
 
+/// Documento que o `mdv` não lê (`.doc` antigo, `.docm`, `.dotx`, `.dotm`, `.odt`): a mensagem em
+/// português que manda salvar como `.docx`. `None` para os outros arquivos.
+pub(crate) fn documento_nao_suportado(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "doc" => "documento .doc (formato antigo) não é suportado: salve como .docx",
+        "docm" => "documento .docm não é suportado ainda: salve como .docx",
+        "dotx" => "modelo .dotx não é suportado ainda: salve como .docx",
+        "dotm" => "modelo .dotm não é suportado ainda: salve como .docx",
+        "odt" => "documento .odt não é suportado ainda: salve como .docx",
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -56,6 +70,23 @@ mod tests {
         assert!(!is_docx(Path::new("a.md")));
         assert!(!is_docx(Path::new("docx")));
         assert!(!is_docx(Path::new("a.docx.md")));
+    }
+
+    #[test]
+    fn documentos_nao_suportados_dao_erro_claro_antes_do_markdown() {
+        let d = tempfile::tempdir().unwrap();
+        for nome in ["a.doc", "a.DOCM", "a.dotx", "a.dotm", "a.odt"] {
+            let p = d.path().join(nome);
+            fs::write(&p, b"qualquer coisa").unwrap();
+            let err = crate::load::read_document(&p).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::InvalidInput, "{nome}");
+            assert!(err.to_string().contains("salve como .docx"), "{nome}: {err}");
+            assert!(!err.to_string().contains("UTF-8"), "{nome}: {err}");
+        }
+        assert!(documento_nao_suportado(Path::new("a.doc")).unwrap().contains(".doc (formato antigo)"));
+        assert!(documento_nao_suportado(Path::new("a.docx")).is_none());
+        assert!(documento_nao_suportado(Path::new("a.md")).is_none());
+        assert!(documento_nao_suportado(Path::new("semextensao")).is_none());
     }
 
     #[test]

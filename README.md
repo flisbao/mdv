@@ -299,7 +299,7 @@ mdv relatorio.docx -o relatorio.pdf        # também .docx, .odt, .xlsx e .ods
 
 **Limites:** arquivo de até 32 MiB, ZIP com no máximo 5000 entradas, 16 MiB por parte do ZIP e 40 MiB descomprimidos no total, XML com até 100 níveis de profundidade, 20 000 relações, 100 000 notas, tabelas de até 200 colunas (o excedente sai com `*(tabela cortada em 200 colunas)*`) e Markdown de até 16 MiB. Tabelas, listas e notas param ao passar do teto de saída. Uma URL de link acima de 4 KiB deixa o texto sem link, e os destinos de link de um parágrafo somam no máximo 64 KiB. Ao contrário do `.xlsx`, passar de 16 MiB de Markdown é erro (`documento convertido grande demais`), não corte. Um arquivo inválido sai com erro e código 1.
 
-**Fora do escopo:** `.doc` antigo, `.docm`, `.dotx` e `.dotm` (não são lidos; a mensagem de erro dessas extensões ainda é genérica) e `.docx` criptografado (só um erro claro), imagens (só o texto alternativo), cabeçalho e rodapé de página, comentários, caixas de texto, campos como o sumário, equações, leitura pelo stdin, numeração automática de títulos e a continuação de numeração entre listas diferentes que compartilham o mesmo modelo.
+**Fora do escopo:** `.doc` antigo, `.docm`, `.dotx`, `.dotm` e `.odt` (não são lidos; o `mdv` recusa a extensão com um erro claro que manda salvar como `.docx`) e `.docx` criptografado (só um erro claro), imagens (só o texto alternativo), cabeçalho e rodapé de página, comentários, caixas de texto, campos como o sumário, equações, leitura pelo stdin, numeração automática de títulos e a continuação de numeração entre listas diferentes que compartilham o mesmo modelo.
 
 ## Planilhas `.xlsx`
 
