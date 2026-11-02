@@ -11,7 +11,7 @@ mod escape;
 mod estilos;
 mod formato;
 mod formato_codigo;
-mod formato_literais;
+mod formato_pecas;
 mod le;
 mod limites;
 mod markdown;

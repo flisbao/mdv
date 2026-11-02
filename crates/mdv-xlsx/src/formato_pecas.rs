@@ -2,14 +2,24 @@
 //! data e os demais sinais. Só a primeira seção entra (até o `;` fora de aspas); negativo, zero
 //! e texto ficam de fora. Cor e condição entre colchetes somem; `[$SÍMBOLO-LCID]` vira literal.
 
+/// Campo de data ou hora que uma letra do código de formato representa.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Campo {
+    Ano,
+    Mes,
+    Dia,
+    Hora,
+    Segundo,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Peca {
     /// Texto que sai como está (aspas, `\x`, espaço, símbolo de moeda, etc.).
     Literal(String),
     /// Marcador de dígito: `0`, `#` ou `?`.
     Marcador(char),
-    /// Letra de data ou hora: `y`, `d`, `m`, `h` ou `s` (minúsculas). `[h]`, `[m]` e `[s]` também.
-    Data(char),
+    /// Letra de data ou hora: `y`, `d`, `m`, `h` ou `s` (maiúsculas também). `[h]`, `[m]` e `[s]` também.
+    Data(Campo),
     Ponto,
     Virgula,
     Percentual,
@@ -57,11 +67,11 @@ pub(crate) fn tokenizar(codigo: &str) -> Vec<Peca> {
                 chars.next();
                 pecas.push(Peca::Cientifico);
             }
-            'y' | 'Y' => pecas.push(Peca::Data('y')),
-            'd' | 'D' => pecas.push(Peca::Data('d')),
-            'm' | 'M' => pecas.push(Peca::Data('m')),
-            'h' | 'H' => pecas.push(Peca::Data('h')),
-            's' | 'S' => pecas.push(Peca::Data('s')),
+            'y' | 'Y' => pecas.push(Peca::Data(Campo::Ano)),
+            'd' | 'D' => pecas.push(Peca::Data(Campo::Dia)),
+            'm' | 'M' => pecas.push(Peca::Data(Campo::Mes)),
+            'h' | 'H' => pecas.push(Peca::Data(Campo::Hora)),
+            's' | 'S' => pecas.push(Peca::Data(Campo::Segundo)),
             outro => empilhar_literal(&mut pecas, &outro.to_string()),
         }
     }
@@ -76,9 +86,9 @@ fn peca_de_colchete(conteudo: &str) -> Option<Peca> {
         return Some(Peca::Literal(simbolo.to_string()));
     }
     match conteudo.to_ascii_lowercase().as_str() {
-        "h" | "hh" => Some(Peca::Data('h')),
-        "m" | "mm" => Some(Peca::Data('m')),
-        "s" | "ss" => Some(Peca::Data('s')),
+        "h" | "hh" => Some(Peca::Data(Campo::Hora)),
+        "m" | "mm" => Some(Peca::Data(Campo::Mes)),
+        "s" | "ss" => Some(Peca::Data(Campo::Segundo)),
         _ => None,
     }
 }

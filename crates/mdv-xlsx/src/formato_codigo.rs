@@ -1,10 +1,10 @@
 //! Código de formato (id embutido ou texto personalizado) → `Formato`.
-//! Id embutido segue a tabela do Excel; código personalizado é lido pelas peças de `formato_literais`.
+//! Id embutido segue a tabela do Excel; código personalizado é lido pelas peças de `formato_pecas`.
 //! Ordem de decisão do personalizado: texto (`@`), científico e fração (viram Geral), data,
 //! percentual e número. Sem marcador nenhum, sobra Geral.
 
 use crate::formato::Formato;
-use crate::formato_literais::{tokenizar, Peca};
+use crate::formato_pecas::{tokenizar, Campo, Peca};
 use crate::numero::MAX_DECIMAIS;
 
 pub(crate) fn classificar(id_embutido: u32, codigo: Option<&str>) -> Formato {
@@ -68,13 +68,13 @@ fn tem_fracao(pecas: &[Peca]) -> bool {
 /// Campos de data: `y` é ano, `d` é dia e `m` é mês, salvo com hora sem ano nem dia (aí é minuto).
 /// Hora se há `h` ou `s`.
 fn data_de(pecas: &[Peca]) -> Option<Formato> {
-    let tem = |c: char| pecas.contains(&Peca::Data(c));
-    let hora = tem('h') || tem('s');
-    let ano = tem('y');
-    let dia = tem('d');
-    let mes = tem('m') && (!hora || ano || dia);
+    let tem = |campo: Campo| pecas.contains(&Peca::Data(campo));
+    let hora = tem(Campo::Hora) || tem(Campo::Segundo);
+    let ano = tem(Campo::Ano);
+    let dia = tem(Campo::Dia);
+    let mes = tem(Campo::Mes) && (!hora || ano || dia);
     let data = ano || mes || dia;
-    (data || hora).then_some(Formato::Data { ano, mes, dia, hora, segundos: tem('s') })
+    (data || hora).then_some(Formato::Data { ano, mes, dia, hora, segundos: tem(Campo::Segundo) })
 }
 
 /// Marcadores depois do ponto decimal, no máximo 15.
