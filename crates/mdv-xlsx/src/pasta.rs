@@ -5,7 +5,7 @@ use mdv_text::sanitize;
 
 use crate::pacote::Pacote;
 use crate::relacoes::{rels_de, resolver, Relacoes};
-use crate::xml_leitor::{Evento, Leitor};
+use crate::xml_leitor::{Evento, Leitor, Tag};
 use crate::{Budget, MAX_ABAS_LEITURA};
 
 /// Uma aba como aparece no `workbook.xml`: nome já saneado, parte do pacote e se está oculta.
@@ -56,19 +56,11 @@ pub(crate) fn abrir_com_teto(
                 data_1904 = tag.attr("date1904").is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
             }
             "sheet" => {
-                let (Some(nome), Some(id)) = (tag.attr("name"), tag.attr("id")) else { continue };
-                let Some(relacao) = relacoes.por_id(id) else { continue };
-                if relacao.tipo != "worksheet" {
-                    continue;
-                }
+                let Some(aba) = ler_aba_ref(&tag, &relacoes, &principal) else { continue };
                 if abas.len() >= max_abas {
                     return Err(format!("planilha com abas demais (máximo {max_abas})"));
                 }
-                abas.push(AbaRef {
-                    nome: sanitize(nome).into_owned(),
-                    parte: resolver(&principal, &relacao.alvo),
-                    oculta: matches!(tag.attr("state"), Some("hidden" | "veryHidden")),
-                });
+                abas.push(aba);
             }
             _ => {}
         }
@@ -76,6 +68,20 @@ pub(crate) fn abrir_com_teto(
     let textos = relacoes.por_tipo("sharedStrings").map(|r| resolver(&principal, &r.alvo));
     let estilos = relacoes.por_tipo("styles").map(|r| resolver(&principal, &r.alvo));
     Ok(Pasta { abas, data_1904, textos, estilos })
+}
+
+/// A aba de um `<sheet>`: `None` sem `name`/`r:id`, com relação desconhecida ou que não é de planilha (ex.: gráfico).
+fn ler_aba_ref(tag: &Tag, relacoes: &Relacoes, principal: &str) -> Option<AbaRef> {
+    let (nome, id) = (tag.attr("name")?, tag.attr("id")?);
+    let relacao = relacoes.por_id(id)?;
+    if relacao.tipo != "worksheet" {
+        return None;
+    }
+    Some(AbaRef {
+        nome: sanitize(nome).into_owned(),
+        parte: resolver(principal, &relacao.alvo),
+        oculta: matches!(tag.attr("state"), Some("hidden" | "veryHidden")),
+    })
 }
 
 /// Nome da parte do workbook: alvo da relação `officeDocument` da raiz, ou `xl/workbook.xml`.
