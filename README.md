@@ -41,15 +41,15 @@ Baixe o pacote da última release, extraia e coloque `mdv` e `mdv-tools` no seu 
 <!-- mdv:install:start -->
 | Plataforma | Download |
 |------------|----------|
-| Linux x86_64 (glibc 2.35+) | [`mdv-v0.8.0-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.8.0/mdv-v0.8.0-linux-x86_64.tar.gz) |
-| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.8.0-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.8.0/mdv-v0.8.0-linux-x86_64-musl.tar.gz) |
-| Linux aarch64 | [`mdv-v0.8.0-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.8.0/mdv-v0.8.0-linux-aarch64.tar.gz) |
-| macOS Apple Silicon | [`mdv-v0.8.0-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.8.0/mdv-v0.8.0-macos-aarch64.tar.gz) |
-| macOS Intel | [`mdv-v0.8.0-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.8.0/mdv-v0.8.0-macos-x86_64.tar.gz) |
-| Windows x86_64 | [`mdv-v0.8.0-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.8.0/mdv-v0.8.0-windows-x86_64.zip) |
-| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.8.0) |
+| Linux x86_64 (glibc 2.35+) | [`mdv-v0.10.0-linux-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.10.0/mdv-v0.10.0-linux-x86_64.tar.gz) |
+| Linux x86_64 (estático, qualquer distro, Alpine inclusive) | [`mdv-v0.10.0-linux-x86_64-musl.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.10.0/mdv-v0.10.0-linux-x86_64-musl.tar.gz) |
+| Linux aarch64 | [`mdv-v0.10.0-linux-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.10.0/mdv-v0.10.0-linux-aarch64.tar.gz) |
+| macOS Apple Silicon | [`mdv-v0.10.0-macos-aarch64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.10.0/mdv-v0.10.0-macos-aarch64.tar.gz) |
+| macOS Intel | [`mdv-v0.10.0-macos-x86_64.tar.gz`](https://github.com/flisbao/mdv/releases/download/v0.10.0/mdv-v0.10.0-macos-x86_64.tar.gz) |
+| Windows x86_64 | [`mdv-v0.10.0-windows-x86_64.zip`](https://github.com/flisbao/mdv/releases/download/v0.10.0/mdv-v0.10.0-windows-x86_64.zip) |
+| Debian/Ubuntu e Fedora/RHEL | pacotes `.deb` e `.rpm` na [página da release](https://github.com/flisbao/mdv/releases/tag/v0.10.0) |
 
-Versão atual: **v0.8.0**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
+Versão atual: **v0.10.0**. Cada release traz um `SHA256SUMS` para conferir os arquivos.
 <!-- mdv:install:end -->
 
 Instaladores de uma linha (o `mdv --version` roda no fim; os binários de macOS e Windows **não são assinados**):
@@ -167,7 +167,7 @@ USO:
     mdv [opções] <planilha.xlsx> [-o <saída.md|pdf|docx|odt|xlsx|ods>]
     mdv csv|tsv [opções] <arquivo|-> -o <saída.xlsx|ods>
     mdv <pasta>            (seletor: .md, .msg, .docx, .xlsx, .yaml/.yml, .xml e .html/.htm da pasta por data, filtro ao digitar)
-    (o formato também é deduzido da extensão: .json, .jsonl, .yaml, .yml, .xml, .csv, .tsv, .html, .htm)
+    (o formato também é deduzido da extensão: .json, .jsonl, .yaml, .yml, .xml, .csv, .tsv, .html, .htm, .msg, .docx, .xlsx)
     HTML (.html, .htm): páginas com cores do CSS, sem JavaScript; é uma aproximação, não um navegador
 
 OPÇÕES:
