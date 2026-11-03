@@ -422,6 +422,16 @@ O `mdv` usa no máximo **512 MiB**. Se um arquivo precisar de mais, ele para e m
 ## Changelog
 
 <!-- mdv:changelog:start -->
+### v0.10.0
+
+_2026-11-02_
+
+- feat(xml): abre .xml na TUI e no --plain sem as tags: árvore recuada ou tabela quando uma lista de registros domina o documento
+- feat(xml): `--as table|schema|text`, `--path`, tecla `v` e `m` (XML original) como no JSON e no YAML; erro de sintaxe na linha certa
+- feat(xml): encoding por BOM ou declaração (ISO-8859-1, windows-1252...), também pelo stdin; seletor de pasta lista .xml
+- fix(xml): `<!DOCTYPE>` recusado (sem XXE nem bomba de entidades) e tetos de nós, profundidade e bytes com o XML original como saída
+- docs(xml): amostras nfe.xml, nfe-assinada.xml, catalogo.xml e quebrado.xml, com goldens
+
 ### v0.9.0
 
 _2026-11-02_

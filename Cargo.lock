@@ -940,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "mdv"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "csv",
  "encoding_rs",
@@ -967,7 +967,7 @@ dependencies = [
 
 [[package]]
 name = "mdv-docx"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "flate2",
  "mdv-text",
@@ -976,7 +976,7 @@ dependencies = [
 
 [[package]]
 name = "mdv-export"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "csv",
  "flate2",
@@ -987,7 +987,7 @@ dependencies = [
 
 [[package]]
 name = "mdv-html"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "mdv-text",
  "scraper",
@@ -996,7 +996,7 @@ dependencies = [
 
 [[package]]
 name = "mdv-msg"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "cfb",
  "encoding_rs",
@@ -1006,14 +1006,14 @@ dependencies = [
 
 [[package]]
 name = "mdv-text"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "pulldown-cmark",
 ]
 
 [[package]]
 name = "mdv-tools"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "mdv-text",
  "pulldown-cmark",
@@ -1022,7 +1022,7 @@ dependencies = [
 
 [[package]]
 name = "mdv-xlsx"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "flate2",
  "mdv-text",
